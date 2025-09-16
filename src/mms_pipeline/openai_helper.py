@@ -1,6 +1,7 @@
 # openai_helper.py
 import os
 import json
+import openai  # capture SDK exceptions such as BadRequestError
 from openai import OpenAI
 
 SYSTEM_PROMPT = """You are a terminologist and lexicographer.
@@ -19,7 +20,7 @@ FIELD RULES
    - If and only if POS="abbr.", set IPA to "" (empty). Otherwise IPA MUST be non-empty (phrases included).
 
 3) POS (exactly one)
-   - Choose from: ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."].
+   - Choose from: ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."]
    - "P." = phrase (Word contains a space). "abbr." = abbreviation/initialism/acronym. "O." = other/unclear.
 
 4) TagEN
@@ -43,29 +44,44 @@ Task:
 Return the JSON with keys: IPA, POS, Rarity, EnDef, PPfix, PPmeans, TagEN."""
 
 class OpenAIHelper:
-  def __init__(self, model: str, api_key: str | None = None, temperature: float = 0.0):
+  def __init__(self, model: str, api_key: str | None = None, temperature: float | None = None):
     self.model = model
     self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
     if not self.client.api_key:
       raise RuntimeError("OPENAI_API_KEY 未设置。请在环境变量中配置。")
-    self.temperature = temperature
+    self.temperature = temperature  # some models (e.g., gpt-5-mini) only accept default temp
 
   def fetch_term_info(self, word: str, zh_def: str) -> dict:
     msg_user = USER_TEMPLATE.format(word=word, zh=zh_def)
-    resp = self.client.chat.completions.create(
-      model=self.model,
-      temperature=self.temperature,
-      response_format={"type": "json_object"},
-      messages=[
+
+    # Build kwargs; include temperature only if explicitly provided
+    kwargs = {
+      "model": self.model,
+      "messages": [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": msg_user}
+        {"role": "user", "content": msg_user},
       ],
-    )
+      "response_format": {"type": "json_object"},
+    }
+    if self.temperature is not None:
+      kwargs["temperature"] = self.temperature
+
+    try:
+      resp = self.client.chat.completions.create(**kwargs)
+    except openai.BadRequestError as e:
+      em = str(e).lower()
+      # Some models reject custom temperature; retry without it
+      if "temperature" in em and "unsupported" in em:
+        kwargs.pop("temperature", None)
+        resp = self.client.chat.completions.create(**kwargs)
+      else:
+        raise
+
     text = resp.choices[0].message.content.strip()
     try:
       return json.loads(text)
     except json.JSONDecodeError:
-      # 偶发防御：截取最外层 JSON
+      # Fallback: extract outermost JSON
       s, e = text.find("{"), text.rfind("}")
       if s != -1 and e != -1 and e > s:
         return json.loads(text[s:e+1])
