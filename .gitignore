@@ -1,0 +1,10 @@
+# dotenv secrets (never commit)
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+*.env
+
+# allow example files
+!.env.example
