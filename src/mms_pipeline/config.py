@@ -5,15 +5,27 @@ import os
 
 NY_TZ = ZoneInfo("America/New_York")
 
+def _env(key: str, default: str | None = None) -> str | None:
+  return os.getenv(key, default)
+
 @dataclass
 class RunConfig:
+  # 必填路径
   input_csv: str
   termlist_csv: str
-  output_dir: str
-  start_memo: int
-  batch_run: int  # 1..26 -> A..Z
-  note: str
-  model_name: str | None = None
+
+  # 可选
+  output_dir: str = "data/output"
+
+  # 批次元信息
+  start_memo: int = 1
+  batch_run: int = 1
+  note: str = ""
+
+  # 文件名里展示的“模型别名”，以及**真正调用 API 的模型 ID**
+  model_name: str = _env("MODEL_NAME", "o4mini") or "o4mini"
+  model: str = _env("MODEL_ID", "gpt-4o-mini") or "gpt-4o-mini"   # ← 新增这个字段
+
   batch_date_YYMMDD: str | None = None
   enforce_phrase_pos: bool = True          # Word 含空格 → P.
   max_retries: int = 2                     # LLM 失败/JSON失败的重试

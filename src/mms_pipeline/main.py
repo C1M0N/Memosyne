@@ -36,6 +36,7 @@ def main():
     batch_run=args.batch_run,
     note=args.note,
     model_name=args.model_name,
+    model=args.model,          # ← 确保这一行存在
     batch_date_YYMMDD=args.batch_date_YYMMDD,
   )
 

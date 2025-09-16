@@ -1,0 +1,17 @@
+﻿WMpair,MemoID,Word,ZhDef,IPA,POS,Tag,Rarity,EnDef,PPfix,PPmeans,BatchID,BatchNote
+Mental disorder - 精神障碍,M000023,Mental disorder,精神障碍,/ˈmɛntəl dɪsˈɔrdər/,P.,精神,,"A mental disorder is a condition that affects a person's thinking, feeling, or behavior.",,,250916G016,「python测试」
+Mental illness - 精神疾病,M000024,Mental illness,精神疾病,/ˈmɛntəl ˈɪlnəs/,P.,精神,,"Mental illness refers to a wide range of mental health conditions that affect mood, thinking, and behavior.",,,250916G016,「python测试」
+Abnormal psychology - 变态心理学,M000025,Abnormal psychology,变态心理学,/æbˈnɔːrməl saɪˈkɒlədʒi/,P.,心理,,Abnormal psychology is the study of abnormal behavior and mental disorders.,,,250916G016,「python测试」
+Psychopathology - 精神病理学,M000026,Psychopathology,精神病理学,/ˌsaɪkoʊpəˈθɑlədʒi/,n.,精神,,Psychopathology is the study of mental disorders and their symptoms.,,,250916G016,「python测试」
+Mental health professional - 精神卫生专业人员,M000027,Mental health professional,精神卫生专业人员,/ˈmɛntəl hɛlθ prəˈfɛʃənl/,P.,心理,,A mental health professional is someone who is trained to help individuals with psychological issues.,,,250916G016,「python测试」
+Psychodiagnosis - 心理诊断,M000028,Psychodiagnosis,心理诊断,/ˌsaɪkoʊdaɪəɡˈnoʊsɪs/,n.,心理,,Psychodiagnosis is the process of diagnosing psychological conditions and disorders.,,,250916G016,「python测试」
+Treatment plan - 治疗计划,M000029,Treatment plan,治疗计划,/ˈtritmənt plæn/,P.,醫學,,A treatment plan is a detailed outline of the therapeutic interventions and strategies to be implemented for a patient.,,,250916G016,「python测试」
+Etiology - 病因学,M000030,Etiology,病因学,/ˌiːtiˈɒlədʒi/,n.,醫學,,Etiology is the study of the causes of diseases.,,,250916G016,「python测试」
+Psychotherapy - 心理治疗,M000031,Psychotherapy,心理治疗,/ˌsaɪ.kəˈθɛr.ə.pi/,n.,心理,,Psychotherapy is a treatment method for mental health issues that involves talking to a trained professional.,,,250916G016,「python测试」
+Hallucination - 幻觉,M000032,Hallucination,幻觉,/həˌluːsɪˈneɪʃən/,n.,精神,,A hallucination is a perception in the absence of external stimulus that can occur in various mental health conditions.,,,250916G016,「python测试」
+Culture - 文化,M000033,Culture,文化,/ˈkʌltʃər/,n.,,,"Culture refers to the social behavior and norms found in human societies, including the culture of a specific group or community.",,,250916G016,「python测试」
+Cultural relativism - 文化相对主义,M000034,Cultural relativism,文化相对主义,/ˈkʌltʃərəl ˌrɛlətɪˈvɪzəm/,P.,,,Cultural relativism is the idea that cultural norms and values derive their meaning within a specific social context.,,,250916G016,「python测试」
+Cultural universality - 文化普遍性,M000035,Cultural universality,文化普遍性,/ˈkʌltʃərəl ˌjuːnɪˈvɜːrsəlɪti/,P.,人類,,Cultural universality refers to the concept that certain cultural traits or practices are common across all human societies.,,,250916G016,「python测试」
+Psychiatric epidemiology - 精神病学流行病学,M000036,Psychiatric epidemiology,精神病学流行病学,/ˌsaɪ.kɪˈætr.ɪk ˌɛp.ɪ.diˈmiː.ə.lə.dʒi/,P.,精神,,Psychiatric epidemiology is the study of the distribution and determinants of mental disorders in populations.,,,250916G016,「python测试」
+Prevalence - 患病率,M000037,Prevalence,患病率,/ˈprɛvələns/,n.,醫學,,The prevalence of a disease refers to the total number of cases in a population at a given time.,,,250916G016,「python测试」
+Lifetime prevalence - 终生患病率,M000038,Lifetime prevalence,终生患病率,/ˈlaɪfˌtaɪm ˈprɛvələns/,P.,醫學,,Lifetime prevalence refers to the proportion of individuals in a population who have experienced a particular condition at any point in their lives.,,,250916G016,「python测试」
