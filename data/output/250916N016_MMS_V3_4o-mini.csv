@@ -1,0 +1,58 @@
+Electrogenic cell - 生电性细胞,M000201,Electrogenic cell,生电性细胞,/ɪˌlɛktrəʊˈdʒɛnɪk sɛl/,P.,生物,,An electrogenic cell is a type of cell that generates electrical energy.,electro genic cell,electricity_producing_cell,250916N016,「pythontest4」
+Organelle - 细胞器,M000202,Organelle,细胞器,/ɔrˈɡænɛl/,n.,生物,,An organelle is a specialized structure within a cell that performs a specific function.,,,250916N016,「pythontest4」
+Regulate - 调节,M000203,Regulate,调节,/ˈrɛɡjʊˌleɪt/,vt.,生物,,To regulate means to control or maintain the rate or speed of something.,,,250916N016,「pythontest4」
+Myelin sheath - 髓鞘,M000204,Myelin sheath,髓鞘,/ˈmaɪəlɪn ʃiːθ/,P.,生物,,The myelin sheath is a protective covering that surrounds nerve fibers.,myelin sheath,protective_covering,250916N016,「pythontest4」
+Neurobiology - 神经生物学,M000205,Neurobiology,神经生物学,/ˌnʊəroʊbaɪˈɒlədʒi/,n.,生物,,Neurobiology is the study of the biology of the nervous system.,neuro bio logy,nerve life_study,250916N016,「pythontest4」
+Receptor - 受体,M000206,Receptor,受体,/rɪˈsɛptər/,n.,生物,,A receptor is a protein molecule that receives and responds to chemical signals in the body.,,,250916N016,「pythontest4」
+ANS - 自主神经系统,M000207,ANS,自主神经系统,/ˈeɪˌɛnˈɛs/,abbr.,醫學,,ANS stands for the autonomic nervous system.,,,250916N016,「pythontest4」
+SNS - 交感神经系统,M000208,SNS,交感神经系统,,abbr.,醫學,,SNS stands for the sympathetic nervous system.,,,250916N016,「pythontest4」
+Forebrain - 前脑,M000209,Forebrain,前脑,/ˈfɔrˌbreɪn/,n.,生物,,"The forebrain is the largest part of the brain, responsible for complex behaviors and cognitive functions.",fore brain,front_part,250916N016,「pythontest4」
+Hindbrain - 后脑,M000210,Hindbrain,后脑,/ˈhɪndˌbreɪn/,n.,生物,,The hindbrain is the part of the brain that includes the cerebellum and the brainstem.,hind brain,back_part_of_brain,250916N016,「pythontest4」
+Radiology - 放射学,M000211,Radiology,放射学,/ˌreɪdiˈɑlədʒi/,n.,醫學,,Radiology is the branch of medicine that uses imaging to diagnose and treat diseases.,radio logy,radiation_study,250916N016,「pythontest4」
+Cortical - 皮层的,M000212,Cortical,皮层的,/ˈkɔrtɪkəl/,adj.,生物,,Cortical refers to anything related to the cortex of an organ or structure.,cort,outer_layer,250916N016,「pythontest4」
+Apical dendrite - 顶端树突,M000213,Apical dendrite,顶端树突,/ˈeɪpɪkəl ˈdɛnˌdraɪt/,P.,,,An apical dendrite is a type of dendrite that extends from the apex of a neuron.,apical dendrite,top_branch,250916N016,「pythontest4」
+Basal dendrite - 基底树突,M000214,Basal dendrite,基底树突,/ˈbeɪsəl ˈdɛnˌdraɪt/,P.,生物,,A basal dendrite is a type of dendrite that extends from the base of a neuron.,basal dendrite,base_dendrite,250916N016,「pythontest4」
+Corpus callosotomy - 胼胝体切开术,M000215,Corpus callosotomy,胼胝体切开术,/ˈkɔːrpəs kəˌloʊsəˈtɑːmi/,P.,醫學,RARE,Corpus callosotomy is a surgical procedure that involves cutting the corpus callosum.,corpus callo tomy,body_of_corpus cutting,250916N016,「pythontest4」
+VTA - 腹侧被盖区,M000216,VTA,腹侧被盖区,,abbr.,,,"VTA stands for the ventral tegmental area, which is involved in the reward circuitry of the brain.",,,250916N016,「pythontest4」
+Basis pedunculi - 基底脚,M000217,Basis pedunculi,基底脚,/ˈbeɪsɪs pɪˈdʌŋkjʊlaɪ/,P.,生物,RARE,The basis pedunculi is a structure in the brain that connects various regions.,basis pedunculi,base_of_stalks,250916N016,「pythontest4」
+Olive - 橄榄核,M000218,Olive,橄榄核,/ˈɑːlɪv/,n.,植物,,"An olive is the fruit of the olive tree, often used to produce olive oil.",,,250916N016,「pythontest4」
+Pyramid - (延髓)锥体,M000219,Pyramid,(延髓)锥体,/ˈpɪr.ə.mɪd/,n.,數學,,"A pyramid is a geometric shape that tapers from a base to a point, resembling a three-dimensional triangle.",,,250916N016,「pythontest4」
+Salivary glands - 唾液腺,M000220,Salivary glands,唾液腺,/səˈlaɪvəri ɡlændz/,P.,生物,,Salivary glands are responsible for producing saliva.,salivary glands,saliva_producing_organs,250916N016,「pythontest4」
+Vestibulocochlear - 前庭蜗神经,M000221,Vestibulocochlear,前庭蜗神经,/ˌvɛstɪbjuˈloʊˌkoʊkliər/,n.,醫學,,The vestibulocochlear nerve is responsible for transmitting sound and balance information from the inner ear to the brain.,vestibulo cochlea,vestibule_of cochlea,250916N016,「pythontest4」
+Glossopharyngeal - 舌咽神经,M000222,Glossopharyngeal,舌咽神经,/ˌɡlɒsəʊfəˈrɪndʒiəl/,adj.,醫學,,The glossopharyngeal nerve is responsible for the sensation of taste from the posterior one-third of the tongue.,glosso pharyngeal,tongue_throat,250916N016,「pythontest4」
+Vagus - 迷走神经,M000223,Vagus,迷走神经,/ˈveɪɡəs/,n.,醫學,,The vagus is a cranial nerve that plays a crucial role in the autonomic nervous system.,,,250916N016,「pythontest4」
+Hypoglossal - 舌下神经,M000224,Hypoglossal,舌下神经,/ˌhaɪpəˈɡlɑsəl/,adj.,醫學,,The hypoglossal nerve is responsible for controlling the muscles of the tongue.,hypo gloss al,below tongue pertaining_to,250916N016,「pythontest4」
+Sympathetic chain - 交感神经干,M000225,Sympathetic chain,交感神经干,/ˌsɪmpəˈθɛtɪk tʃeɪn/,P.,醫學,,The sympathetic chain is a part of the autonomic nervous system.,sympathetic chain,part_of_autonomic_nervous_system,250916N016,「pythontest4」
+Arachnoid trabecula - 蛛网膜小梁,M000226,Arachnoid trabecula,蛛网膜小梁,/əˈræk.nɔɪd trəˈbɛk.jʊ.lə/,P.,醫學,,Arachnoid trabecula are delicate structures that support the arachnoid membrane.,arachnoid trabecula,spider_web_beam,250916N016,「pythontest4」
+Milieu - 环境,M000227,Milieu,环境,/mɪlˈjɜː/,n.,,,The milieu in which one grows up can greatly influence their personality.,,,250916N016,「pythontest4」
+Extracellular - 细胞外的,M000228,Extracellular,细胞外的,/ˌɛkstrəˈsɛljələr/,adj.,生物,,Extracellular refers to the space outside of cells.,extra cell ul ar,outside_of cell,250916N016,「pythontest4」
+Interventricular foramen - 室间孔,M000229,Interventricular foramen,室间孔,/ˌɪntərvɛnˈtrɪkjələr fəˈreɪmən/,P.,醫學,,The interventricular foramen is a passage that connects the lateral ventricles of the brain.,inter ventricul ar foramen,between_ventricles passage,250916N016,「pythontest4」
+Cerebral aqueduct - 中脑导水管,M000230,Cerebral aqueduct,中脑导水管,/ˈsɛrəbrəl ˈækwəˌdʌkt/,P.,解剖,,The cerebral aqueduct is a narrow channel in the brain that connects the third and fourth ventricles.,cerebral aqueduct,brain_channel,250916N016,「pythontest4」
+Central canal - 中央管,M000231,Central canal,中央管,/ˈsɛntrəl kəˈnæl/,P.,生物,,The central canal is a small channel that runs through the spinal cord.,central canal,central_channel,250916N016,「pythontest4」
+SAS - 蛛网膜下腔,M000232,SAS,蛛网膜下腔,,abbr.,醫學,,"SAS stands for subarachnoid space, which is the area between the arachnoid membrane and the pia mater in the brain.",,,250916N016,「pythontest4」
+Resynthesized - 再合成,M000233,Resynthesized,再合成,/ˌriːˈsɪnθəˌsaɪzd/,vt.,音樂,,The sound was resynthesized to create a new audio experience.,re synthesize,again create,250916N016,「pythontest4」
+Utilizes - 利用,M000234,Utilizes,利用,/ˈjuːtəˌlaɪzɪz/,vt.,,,The company utilizes new technology to improve efficiency.,,,250916N016,「pythontest4」
+Metabolic - 代谢的,M000235,Metabolic,代谢的,/məˈtæbəlɪk/,adj.,生物,,Metabolic processes are essential for maintaining life.,meta bol ic,change_throwing_of,250916N016,「pythontest4」
+Glucose - 葡萄糖,M000236,Glucose,葡萄糖,/ˈɡluːkoʊs/,n.,生物,,Glucose is a simple sugar that is an important energy source in living organisms.,,,250916N016,「pythontest4」
+Circle of willis - 大脑动脉环,M000237,Circle of willis,大脑动脉环,/ˈsɜːrkəl əv ˈwɪlɪs/,P.,醫學,,The Circle of Willis is a circular system of arteries at the base of the brain.,circle of willis,circular_system_of_arteries,250916N016,「pythontest4」
+Multipolar neuron - 多极神经元,M000238,Multipolar neuron,多极神经元,/ˌmʌltɪˈpoʊlər ˈnjʊrɒn/,P.,生物,,A multipolar neuron is a type of neuron that has multiple extensions from its cell body.,multi polar neuron,many_poles_neuron,250916N016,「pythontest4」
+Bipolar neuron - 双极神经元,M000239,Bipolar neuron,双极神经元,/ˈbaɪˌpoʊlər ˈnjʊrɒn/,P.,生物,,"A bipolar neuron is a type of neuron that has two extensions, or processes, from its cell body.",bi polar neuron,two_poles_neuron,250916N016,「pythontest4」
+Pseudo-unipolar neuron - 伪单极神经元,M000240,Pseudo-unipolar neuron,伪单极神经元,/ˈsuːdoʊ ˈjuːnɪˌpoʊlər ˈnjʊrɒn/,P.,生物,RARE,A pseudo-unipolar neuron is a type of neuron that has a single process that splits into two branches.,pseudo uni polar neuron,false one pole nerve_cell,250916N016,「pythontest4」
+Horn - (脊髓)角,M000241,Horn,(脊髓)角,/hɔrn/,n.,生物,,"A horn is a hard, permanent outgrowth that usually occurs on the heads of certain animals.",,,250916N016,「pythontest4」
+Satellite cells - 卫星细胞,M000242,Satellite cells,卫星细胞,/ˈsætəˌlaɪt sɛlz/,P.,生物,,Satellite cells are a type of stem cell found in muscle tissue.,satellite cells,stem_cells,250916N016,「pythontest4」
+Polysaccharide - 多糖,M000243,Polysaccharide,多糖,/ˌpɑːliˈsækəraɪd/,n.,生物,,A polysaccharide is a carbohydrate whose molecules consist of a number of sugar molecules bonded together.,poly saccharide,many sugar,250916N016,「pythontest4」
+Lipid - 脂类,M000244,Lipid,脂类,/ˈlɪpɪd/,n.,生物,,A lipid is a type of organic molecule that is insoluble in water and soluble in organic solvents.,,,250916N016,「pythontest4」
+Protein - 蛋白质,M000245,Protein,蛋白质,/ˈproʊtiːn/,n.,,,Protein is an essential nutrient that plays a crucial role in building and repairing tissues.,,,250916N016,「pythontest4」
+Nucleic acid - 核酸,M000246,Nucleic acid,核酸,/njuˈkleɪɪk ˈæsɪd/,P.,生物,,Nucleic acid is a biopolymer essential for all known forms of life.,nucle ic acid,core_of acid,250916N016,「pythontest4」
+Inhibitory - 抑制性,M000247,Inhibitory,抑制性,/ɪnˈhɪbɪtəri/,adj.,生物,,Inhibitory processes are essential for regulating various biological functions.,inhibit ory,to_hinder or_related_to,250916N016,「pythontest4」
+Excitatory - 兴奋性,M000248,Excitatory,兴奋性,/ɪkˈsaɪtəˌtɔri/,adj.,生物,,An excitatory signal can increase the likelihood of a neuron firing.,ex cit a tory,out_of stimulate relating_to,250916N016,「pythontest4」
+Constituent - 构成部分,M000249,Constituent,构成部分,/kənˈstɪtʃuənt/,n.,語言,,"A constituent is a part of something larger, such as a component of a system.",con stit u ent,with stand one who,250916N016,「pythontest4」
+Capillary - 毛细血管,M000250,Capillary,毛细血管,/kəˈpɪlɛri/,n.,生物,,A capillary is a small blood vessel that connects arterioles and venules.,capill,hair,250916N016,「pythontest4」
+Induce - 导致,M000251,Induce,导致,/ɪnˈdus/,vt.,生物,,To induce means to cause something to happen or to bring about a particular result.,,,250916N016,「pythontest4」
+Tight junction - 紧密连接,M000252,Tight junction,紧密连接,/taɪt ˈdʒʌŋkʃən/,P.,生物,,A tight junction is a type of connection between cells that prevents the passage of materials between them.,tight junction,close_connection,250916N016,「pythontest4」
+Lipid-soluble - 脂溶性,M000253,Lipid-soluble,脂溶性,/ˈlɪpɪd ˈsɒljʊbəl/,adj.,生物,,A substance that is lipid-soluble can dissolve in lipids or fats.,lipid soluble,fat_dissolving,250916N016,「pythontest4」
+Amino acid - 氨基酸,M000254,Amino acid,氨基酸,/əˈmiːnoʊ ˈæsɪd/,P.,生物,,An amino acid is a building block of proteins.,amino acid,building_block_of_proteins,250916N016,「pythontest4」
+Appendage - 附属物,M000255,Appendage,附属物,/əˈpɛndɪdʒ/,n.,,,An appendage is something that is attached to a larger or more important thing.,,,250916N016,「pythontest4」
+Astrocyte foot process - 星形胶质细胞足突,M000256,Astrocyte foot process,星形胶质细胞足突,/ˈæstrəˌsaɪt ˈfʊt ˈprɑːsɛs/,P.,生物,,An astrocyte foot process is a structure that connects astrocytes to blood vessels in the brain.,astrocyte foot process,astrocyte_foot_process,250916N016,「pythontest4」
+Carrier mediated - 载体介导运输,M000257,Carrier mediated,载体介导运输,/ˈkæriər ˈmiːdeɪtɪd/,P.,生物,,Carrier mediated transport refers to the process by which substances are moved across cell membranes with the help of carrier proteins.,carrier mediated,substance_transport,250916N016,「pythontest4」
+Transcellular passage - 跨细胞通道,M000258,Transcellular passage,跨细胞通道,/trænˈsɛljʊlər ˈpæsɪdʒ/,P.,生物,,Transcellular passage refers to the movement of substances across the cell membrane.,trans cellular passage,across_cell_membrane,250916N016,「pythontest4」
