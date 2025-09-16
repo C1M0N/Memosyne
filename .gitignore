@@ -7,4 +7,4 @@
 *.env
 
 # allow example files
-!.env
+!.env.example
