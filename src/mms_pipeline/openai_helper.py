@@ -1,7 +1,7 @@
 # openai_helper.py
 import os
 import json
-import openai  # capture SDK exceptions such as BadRequestError
+import openai  # 仅用于捕获 BadRequestError（温度不支持时重试）
 from openai import OpenAI
 
 SYSTEM_PROMPT = """You are a terminologist and lexicographer.
@@ -20,7 +20,7 @@ FIELD RULES
    - If and only if POS="abbr.", set IPA to "" (empty). Otherwise IPA MUST be non-empty (phrases included).
 
 3) POS (exactly one)
-   - Choose from: ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."]
+   - Choose from: ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."].
    - "P." = phrase (Word contains a space). "abbr." = abbreviation/initialism/acronym. "O." = other/unclear.
 
 4) TagEN
@@ -43,25 +43,71 @@ ZhDef: {zh}
 Task:
 Return the JSON with keys: IPA, POS, Rarity, EnDef, PPfix, PPmeans, TagEN."""
 
+# Structured Outputs JSON Schema（严格模式）
+TERM_RESULT_SCHEMA = {
+  "name": "TermResult",
+  "description": "Terminology fields for a single headword.",
+  "strict": True,  # 严格遵循 Schema
+  "schema": {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+      "IPA": {
+        "type": "string",
+        "description": "American IPA between slashes; empty only if POS is abbr.",
+        "pattern": r"^(\/[^\\s\/].*\/|)$"
+      },
+      "POS": {
+        "type": "string",
+        "enum": ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."]
+      },
+      "Rarity": {
+        "type": "string",
+        "enum": ["", "RARE"]
+      },
+      "EnDef": {
+        "type": "string",
+        "minLength": 1
+      },
+      "PPfix": {
+        "type": "string"
+      },
+      "PPmeans": {
+        "type": "string",
+        "description": "ASCII only; use underscores inside a token for multi-word gloss.",
+        "pattern": r"^[\x20-\x7E]*$"
+      },
+      "TagEN": {
+        "type": "string"
+      }
+    },
+    "required": ["IPA", "POS", "Rarity", "EnDef", "PPfix", "PPmeans", "TagEN"]
+  }
+}
+
+
 class OpenAIHelper:
   def __init__(self, model: str, api_key: str | None = None, temperature: float | None = None):
     self.model = model
     self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
     if not self.client.api_key:
-      raise RuntimeError("OPENAI_API_KEY 未设置。请在环境变量中配置。")
-    self.temperature = temperature  # some models (e.g., gpt-5-mini) only accept default temp
+      raise RuntimeError("OPENAI_API_KEY 未设置。请在环境变量或运行配置中提供。")
+    # 可选温度：部分模型（如 gpt-5-mini）不支持自定义温度，只能用默认值
+    self.temperature = temperature
 
   def fetch_term_info(self, word: str, zh_def: str) -> dict:
     msg_user = USER_TEMPLATE.format(word=word, zh=zh_def)
 
-    # Build kwargs; include temperature only if explicitly provided
     kwargs = {
       "model": self.model,
       "messages": [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": msg_user},
       ],
-      "response_format": {"type": "json_object"},
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": TERM_RESULT_SCHEMA
+      },
     }
     if self.temperature is not None:
       kwargs["temperature"] = self.temperature
@@ -69,20 +115,13 @@ class OpenAIHelper:
     try:
       resp = self.client.chat.completions.create(**kwargs)
     except openai.BadRequestError as e:
+      # 小兼容：若模型不支持自定义 temperature，则去掉后重试
       em = str(e).lower()
-      # Some models reject custom temperature; retry without it
       if "temperature" in em and "unsupported" in em:
         kwargs.pop("temperature", None)
         resp = self.client.chat.completions.create(**kwargs)
       else:
         raise
 
-    text = resp.choices[0].message.content.strip()
-    try:
-      return json.loads(text)
-    except json.JSONDecodeError:
-      # Fallback: extract outermost JSON
-      s, e = text.find("{"), text.rfind("}")
-      if s != -1 and e != -1 and e > s:
-        return json.loads(text[s:e+1])
-      raise
+    # strict=true 下返回就是合法 JSON 字符串
+    return json.loads(resp.choices[0].message.content)

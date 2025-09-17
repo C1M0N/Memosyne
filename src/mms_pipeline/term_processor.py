@@ -2,57 +2,21 @@
 from typing import List
 from term_data import InRow, TermList
 from openai_helper import OpenAIHelper
-import sys
 from time import perf_counter
-try:
-  from tqdm import tqdm  # optional; if missing we fallback to a simple progress bar
-except Exception:  # ImportError or any env issue
-  tqdm = None
+from tqdm import tqdm  # 项目要求：必须使用 tqdm
 
-ALLOWED_POS = {"n.","vt.","vi.","adj.","adv.","P.","O.","abbr."}
 
-def _render_progress(i: int, total: int, start_ts: float, bar_len: int = 30):
-  if total <= 0:
-    return
-  # clamp
-  i = max(0, min(i, total))
-  ratio = i / total
-  filled = int(bar_len * ratio)
-  left = bar_len - filled
-  elapsed = perf_counter() - start_ts
-  eta = (elapsed / i * (total - i)) if i else 0.0
-  sys.stdout.write(
-    "\r[{done}{todo}] {cur}/{tot}  {pct:>5.1f}%  ETA {eta:.1f}s".format(
-      done="=" * filled,
-      todo="." * left,
-      cur=i,
-      tot=total,
-      pct=ratio * 100,
-      eta=eta,
-    )
+def _iter_with_progress(rows, desc: str = "LLM"):
+  """只用 tqdm 显示进度条。"""
+  total = len(rows)
+  bar_fmt = "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
+  it = enumerate(
+    tqdm(rows, desc=desc, total=total, ncols=80, ascii=True, bar_format=bar_fmt, leave=True),
+    start=0
   )
-  sys.stdout.flush()
+  for i, row in it:
+    yield i, row
 
-def _memo_id(start: int, i: int) -> str:
-  # start=2700, i从0计，首条返回 M002701
-  return f"M{(start + i + 1):06d}"
-
-def _wmpair(word: str, zh: str) -> str:
-  return f"{word.strip()} - {zh.strip()}"
-
-def _force_pos_for_phrase(word: str, pos: str) -> str:
-  if " " in word and pos != "abbr.":
-    return "P."
-  return pos if pos in ALLOWED_POS else ("P." if " " in word else "O.")
-
-def _clean_rarity(val: str) -> str:
-  return "RARE" if (val or "").strip().upper() == "RARE" else ""
-
-def _align_pp(ppfix: str, ppmeans: str) -> tuple[str, str]:
-  fx = " ".join((ppfix or "").replace("-", " ").split()).lower()
-  # token 内多词用下划线；token 间用空格
-  mm = " ".join((ppmeans or "").replace("-", "_").split()).lower()
-  return fx, mm
 
 class TermProcessor:
   def __init__(self, openai_helper: OpenAIHelper, term_list: TermList,
@@ -63,85 +27,54 @@ class TermProcessor:
     self.batch_id = batch_id
     self.batch_note = f"「{(batch_note or '').strip()}」" if batch_note else ""
 
+  def _memo_id(self, i: int) -> str:
+    # start=2700, i 从 0 计，首条返回 M002701
+    return f"M{(self.start + i + 1):06d}"
+
+  def _wmpair(self, word: str, zh: str) -> str:
+    return f"{word.strip()} - {zh.strip()}"
+
+  def _post_fixups(self, word: str, info: dict) -> dict:
+    """
+    仅保留与 schema 无重叠的业务兜底：
+    1) 词组（含空格）→ 强制 POS='P.'（但 abbr. 例外）
+    2) POS='abbr.' → IPA 必须为空
+    3) PPfix/PPmeans 轻度正规化（小写、空白折叠）
+    """
+    pos = (info.get("POS") or "").strip()
+    if " " in word and pos != "abbr.":
+      info["POS"] = "P."
+
+    if info.get("POS") == "abbr." and (info.get("IPA") or "").strip():
+      info["IPA"] = ""  # 与业务规则一致：缩写不标 IPA
+
+    info["PPfix"] = " ".join((info.get("PPfix") or "").lower().split())
+    info["PPmeans"] = " ".join((info.get("PPmeans") or "").lower().split())
+    return info
+
   def process(self, rows: List[InRow], model_name: str) -> List[dict]:
     out: List[dict] = []
+    for i, row in _iter_with_progress(rows, desc="LLM"):
+      # LLM 严格按 schema 返回
+      info = self.llm.fetch_term_info(row.Word, row.ZhDef)
 
-    if tqdm is not None:
-      bar_fmt = "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
-      iterator = enumerate(tqdm(rows, desc="LLM", total=len(rows), ncols=80, ascii=True, bar_format=bar_fmt, leave=True), start=0)
-      for i, row in iterator:
-        info = self.llm.fetch_term_info(row.Word, row.ZhDef)
+      # 仅做业务兜底与映射
+      info = self._post_fixups(row.Word, info)
+      tag_cn = self.terms.to_cn(info.get("TagEN") or "")
 
-        ipa = (info.get("IPA") or "").strip()
-        pos = (info.get("POS") or "").strip()
-        pos = _force_pos_for_phrase(row.Word, pos)
-        if pos != "abbr." and not ipa:
-          pass  # keep empty to surface issues
-
-        rarity = _clean_rarity(info.get("Rarity") or "")
-        endef = (info.get("EnDef") or "").strip()
-
-        ppfix, ppmeans = _align_pp(info.get("PPfix") or "", info.get("PPmeans") or "")
-
-        tag_en = (info.get("TagEN") or "").strip()
-        tag_cn = self.terms.to_cn(tag_en)
-
-        out.append({
-          "WMpair": _wmpair(row.Word, row.ZhDef),
-          "MemoID": _memo_id(self.start, i),
-          "Word": row.Word,
-          "ZhDef": row.ZhDef,
-          "IPA": ipa,
-          "POS": pos,
-          "Tag": tag_cn,
-          "Rarity": rarity,
-          "EnDef": endef,
-          "PPfix": ppfix,
-          "PPmeans": ppmeans,
-          "BatchID": self.batch_id,
-          "BatchNote": self.batch_note,
-        })
-    else:
-      total = len(rows)
-      start_ts = perf_counter()
-      _render_progress(0, total, start_ts)
-
-      for i, row in enumerate(rows, start=0):
-        info = self.llm.fetch_term_info(row.Word, row.ZhDef)
-
-        ipa = (info.get("IPA") or "").strip()
-        pos = (info.get("POS") or "").strip()
-        pos = _force_pos_for_phrase(row.Word, pos)
-        if pos != "abbr." and not ipa:
-          pass
-
-        rarity = _clean_rarity(info.get("Rarity") or "")
-        endef = (info.get("EnDef") or "").strip()
-
-        ppfix, ppmeans = _align_pp(info.get("PPfix") or "", info.get("PPmeans") or "")
-
-        tag_en = (info.get("TagEN") or "").strip()
-        tag_cn = self.terms.to_cn(tag_en)
-
-        out.append({
-          "WMpair": _wmpair(row.Word, row.ZhDef),
-          "MemoID": _memo_id(self.start, i),
-          "Word": row.Word,
-          "ZhDef": row.ZhDef,
-          "IPA": ipa,
-          "POS": pos,
-          "Tag": tag_cn,
-          "Rarity": rarity,
-          "EnDef": endef,
-          "PPfix": ppfix,
-          "PPmeans": ppmeans,
-          "BatchID": self.batch_id,
-          "BatchNote": self.batch_note,
-        })
-
-        _render_progress(i + 1, total, start_ts)
-
-      sys.stdout.write("\n")
-      sys.stdout.flush()
-
+      out.append({
+        "WMpair": self._wmpair(row.Word, row.ZhDef),
+        "MemoID": self._memo_id(i),
+        "Word": row.Word,
+        "ZhDef": row.ZhDef,
+        "IPA": info.get("IPA", ""),
+        "POS": info.get("POS", ""),
+        "Tag": tag_cn,
+        "Rarity": info.get("Rarity", ""),
+        "EnDef": info.get("EnDef", ""),
+        "PPfix": info.get("PPfix", ""),
+        "PPmeans": info.get("PPmeans", ""),
+        "BatchID": self.batch_id,
+        "BatchNote": self.batch_note,
+      })
     return out
