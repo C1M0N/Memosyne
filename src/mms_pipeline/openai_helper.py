@@ -43,11 +43,10 @@ ZhDef: {zh}
 Task:
 Return the JSON with keys: IPA, POS, Rarity, EnDef, PPfix, PPmeans, TagEN."""
 
-# Structured Outputs JSON Schema（严格模式）
 TERM_RESULT_SCHEMA = {
   "name": "TermResult",
   "description": "Terminology fields for a single headword.",
-  "strict": True,  # 严格遵循 Schema
+  "strict": True,
   "schema": {
     "type": "object",
     "additionalProperties": False,
@@ -59,7 +58,7 @@ TERM_RESULT_SCHEMA = {
       },
       "POS": {
         "type": "string",
-        "enum": ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."]
+        "enum": ["n.", "vt.", "vi.", "adj.", "adv.", "P.", "O.", "abbr."]
       },
       "Rarity": {
         "type": "string",
@@ -87,21 +86,28 @@ TERM_RESULT_SCHEMA = {
 
 
 class OpenAIHelper:
-  def __init__(self, model: str, api_key: str | None = None, temperature: float | None = None):
+  # A.初始化函数
+  def __init__(self, model: str, api_key: str | None = None,
+      temperature: float | None = None):
+    # I.定义变量
     self.model = model
+    self.temperature = temperature
     self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
+
+    # II.API错误强制报错
     if not self.client.api_key:
       raise RuntimeError("OPENAI_API_KEY 未设置。请在环境变量或运行配置中提供。")
-    # 可选温度：部分模型（如 gpt-5-mini）不支持自定义温度，只能用默认值
-    self.temperature = temperature
 
-  def fetch_term_info(self, word: str, zh_def: str) -> dict:
+  # B.填充完整prompt
+  def complete_prompt(self, word: str, zh_def: str) -> dict:
+    # I.填充user message
     msg_user = USER_TEMPLATE.format(word=word, zh=zh_def)
 
-    kwargs = {
+    # II.填充prompt
+    prompt = {
       "model": self.model,
       "messages": [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "developer", "content": SYSTEM_PROMPT},
         {"role": "user", "content": msg_user},
       ],
       "response_format": {
@@ -110,18 +116,19 @@ class OpenAIHelper:
       },
     }
     if self.temperature is not None:
-      kwargs["temperature"] = self.temperature
+      prompt["temperature"] = self.temperature
 
+    # III.收取返回内容 + Temperature向下兼容
     try:
-      resp = self.client.chat.completions.create(**kwargs)
+      response = self.client.chat.completions.create(**prompt)
     except openai.BadRequestError as e:
-      # 小兼容：若模型不支持自定义 temperature，则去掉后重试
       em = str(e).lower()
+
       if "temperature" in em and "unsupported" in em:
-        kwargs.pop("temperature", None)
-        resp = self.client.chat.completions.create(**kwargs)
+        prompt.pop("temperature", None)
+        response = self.client.chat.completions.create(**prompt)
       else:
         raise
 
-    # strict=true 下返回就是合法 JSON 字符串
-    return json.loads(resp.choices[0].message.content)
+    # IV.返回dict格式prompt
+    return json.loads(response.choices[0].message.content)

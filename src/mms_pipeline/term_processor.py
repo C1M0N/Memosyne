@@ -56,7 +56,7 @@ class TermProcessor:
     out: List[dict] = []
     for i, row in _iter_with_progress(rows, desc="LLM"):
       # LLM 严格按 schema 返回
-      info = self.llm.fetch_term_info(row.Word, row.ZhDef)
+      info = self.llm.complete_prompt(row.Word, row.ZhDef)
 
       # 仅做业务兜底与映射
       info = self._post_fixups(row.Word, info)
