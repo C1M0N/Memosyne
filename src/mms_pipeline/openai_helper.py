@@ -1,134 +1,183 @@
 # openai_helper.py
 import os
 import json
-import openai  # 仅用于捕获 BadRequestError（温度不支持时重试）
+import re
+import openai
+from typing import Dict, List, Optional
 from openai import OpenAI
 
+SKIP = "__SKIP__"  # 仅允许用于 IPA/EnDef/Example 三个可跳过字段
+
+# —— System Prompt：语义规则（结构约束交给 json_schema）——
 SYSTEM_PROMPT = """You are a terminologist and lexicographer.
 
-OUTPUT
-- Return ONLY one compact JSON object with keys: IPA, POS, Rarity, EnDef, PPfix, PPmeans, TagEN.
-- No markdown, no code fences, no commentary, no extra keys.
+OUTPUT RULES
+- Return ONLY one JSON object that matches the provided JSON Schema strictly.
+- No markdown, no extra text, no comments.
 
-FIELD RULES
-1) EnDef
-   - Exactly ONE sentence and must literally contain the target word (anywhere).
-   - Must fit the given Chinese gloss (ZhDef); learner can infer meaning from EnDef alone.
-
-2) IPA
-   - American IPA between slashes, e.g., "/ˈsʌmplɚ/".
-   - If and only if POS="abbr.", set IPA to "" (empty). Otherwise IPA MUST be non-empty (phrases included).
-
-3) POS (exactly one)
-   - Choose from: ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."].
-   - "P." = phrase (Word contains a space). "abbr." = abbreviation/initialism/acronym. "O." = other/unclear.
-
-4) TagEN
-   - Output ONE English domain label (e.g., psychology, psychiatry, medicine, biology, culture, linguistics...).
-   - Do NOT output Chinese in TagEN. If uncertain, use "".
-
-5) Rarity
-   - Allowed: "" or "RARE". Use "RARE" only if reputable dictionaries mark THIS sense as uncommon/technical.
-
-6) Morphemes
-   - Fill ONLY for widely recognized Greek/Latin morphemes.
-   - PPfix: space-separated lowercase tokens, no hyphens (e.g., "psycho dia gnosis").
-   - PPmeans: space-separated ASCII tokens 1-to-1 with PPfix; if a single token is a multi-word gloss, use underscores (e.g., "study_of").
+FIELD SEMANTICS (must be followed in addition to the schema)
+• EnDef: exactly ONE sentence; must literally contain the headword (anywhere); learner-friendly dictionary tone; must match the given Chinese gloss (ZhDef).
+• Example: exactly ONE natural usage sentence for the *same* sense; NOT a definition; no quotes.
+• IPA:
+  - For normal words and phrases: American IPA between slashes, e.g., "/ˈsʌmplɚ/".
+  - For abbreviations (POS="abbr."): IPA MUST be "" (empty). Do NOT invent an expanded form.
+• POS: exactly one of ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."].
+  - "P." means multi-word phrase (Word contains a space) unless it is an abbreviation.
+  - "abbr." for abbreviation/initialism/acronym (e.g., ATP, Na+/K+, S-P).
+• Rarity: "" or "RARE"; use "RARE" ONLY if reliable dictionaries indicate THIS sense is uncommon/technical.
+• Morphemes:
+  - Only include widely recognized classical morphemes (Greek/Latin).
+  - PPfix: space-separated lowercase tokens, no hyphens.
+  - PPmeans: space-separated ASCII tokens, 1-to-1 with PPfix; use underscores inside a token for multi-word gloss (e.g., study_of).
+• TagEN:
+  - Choose ONE domain label strictly from the whitelist provided by the user message; if none apply, return "".
+IMPORTANT
+- The special token "__SKIP__" is allowed ONLY for fields explicitly marked to skip (IPA/EnDef/Example). NEVER use "__SKIP__" for POS, Rarity, TagEN, PPfix, or PPmeans.
 """
+
+def _schema_main(allowed_en: List[str], skip_ipa: bool, skip_endef: bool, skip_example: bool) -> Dict:
+  """严格 JSON Schema（Structured Outputs）。只允许 IPA/EnDef/Example 使用 __SKIP__。"""
+  def _skip_prop() -> Dict:
+    return {"type": "string", "enum": [SKIP]}
+
+  def _nonempty_no_skip() -> Dict:
+    return {"type": "string", "pattern": rf"^(?!{SKIP}$).+$", "minLength": 1}
+
+  # 非 skip 时，IPA 必须是 /.../；abbr. 的 IPA=空串，会由业务层结合 POS 再行校验允许空
+  ipa_prop = {"type": "string", "pattern": r"^(?!__SKIP__$)(\/[^\s\/].*\/)$"}
+
+  return {
+    "name": "TermRecord",
+    "strict": True,
+    "schema": {
+      "type": "object",
+      "additionalProperties": False,
+      "properties": {
+        "IPA": _skip_prop() if skip_ipa else ipa_prop,
+        "POS": {"type": "string", "enum": ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."]},
+        "Rarity": {"type": "string", "enum": ["", "RARE"]},
+        "EnDef": _skip_prop() if skip_endef else _nonempty_no_skip(),
+        "Example": _skip_prop() if skip_example else _nonempty_no_skip(),
+        "PPfix": {"type": "string"},   # 可空；ASCII 由模型自守；业务层再清洗
+        "PPmeans": {
+          "type": "string",
+          "pattern": r"^[\x20-\x7E]*$"   # ASCII; 下划线允许
+        },
+        "TagEN": {"type": "string", "enum": (sorted(set([s.lower() for s in allowed_en])) + [""])}
+      },
+      "required": ["IPA","POS","Rarity","EnDef","Example","PPfix","PPmeans","TagEN"]
+    }
+  }
+
+def _schema_single(key: str) -> Dict:
+  """兜底单字段：IPA/EnDef/Example；此处不允许 __SKIP__。"""
+  if key == "IPA":
+    prop = {"type": "string", "pattern": r"^\/[^\s\/].*\/$"}  # 必须 /.../
+  else:
+    prop = {"type": "string", "minLength": 1}
+  return {
+    "name": f"{key}Only",
+    "strict": True,
+    "schema": {
+      "type": "object",
+      "additionalProperties": False,
+      "properties": {key: prop},
+      "required": [key]
+    }
+  }
 
 USER_TEMPLATE = """Given:
 Word: {word}
 ZhDef: {zh}
 
-Task:
-Return the JSON with keys: IPA, POS, Rarity, EnDef, PPfix, PPmeans, TagEN."""
+Allowed domains (choose ONE from the whitelist below, or "" if none applies):
+{whitelist}
 
-TERM_RESULT_SCHEMA = {
-  "name": "TermResult",
-  "description": "Terminology fields for a single headword.",
-  "strict": True,
-  "schema": {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-      "IPA": {
-        "type": "string",
-        "description": "American IPA between slashes; empty only if POS is abbr.",
-        "pattern": r"^(\/[^\\s\/].*\/|)$"
-      },
-      "POS": {
-        "type": "string",
-        "enum": ["n.", "vt.", "vi.", "adj.", "adv.", "P.", "O.", "abbr."]
-      },
-      "Rarity": {
-        "type": "string",
-        "enum": ["", "RARE"]
-      },
-      "EnDef": {
-        "type": "string",
-        "minLength": 1
-      },
-      "PPfix": {
-        "type": "string"
-      },
-      "PPmeans": {
-        "type": "string",
-        "description": "ASCII only; use underscores inside a token for multi-word gloss.",
-        "pattern": r"^[\x20-\x7E]*$"
-      },
-      "TagEN": {
-        "type": "string"
-      }
-    },
-    "required": ["IPA", "POS", "Rarity", "EnDef", "PPfix", "PPmeans", "TagEN"]
-  }
-}
+Skip plan for generation:
+- IPA: {skip_ipa}
+- EnDef: {skip_endef}
+- Example: {skip_example}
+"""
 
+_fence = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.I)
+
+def _extract_json(text: str) -> Dict:
+  text = (text or "").strip()
+  try:
+    return json.loads(text)
+  except Exception:
+    pass
+  cleaned = _fence.sub("", text).strip()
+  return json.loads(cleaned)  # 若失败，让上层抛出真实错误以便排查
 
 class OpenAIHelper:
-  # A.初始化函数
-  def __init__(self, model: str, api_key: str | None = None,
-      temperature: float | None = None):
-    # I.定义变量
+  def __init__(self, model: str, api_key: Optional[str] = None, temperature: Optional[float] = None):
     self.model = model
-    self.temperature = temperature
     self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
-
-    # II.API错误强制报错
     if not self.client.api_key:
-      raise RuntimeError("OPENAI_API_KEY 未设置。请在环境变量或运行配置中提供。")
+      raise RuntimeError("OPENAI_API_KEY 未设置。")
+    self.temperature = temperature
+    self._usage = {"prompt": 0, "completion": 0, "total": 0}
 
-  # B.填充完整prompt
-  def complete_prompt(self, word: str, zh_def: str) -> dict:
-    # I.填充user message
-    msg_user = USER_TEMPLATE.format(word=word, zh=zh_def)
+  def _record_usage(self, resp) -> None:
+    u = getattr(resp, "usage", None)
+    if not u:
+      return
+    pt = getattr(u, "prompt_tokens", 0) or 0
+    ct = getattr(u, "completion_tokens", 0) or 0
+    self._usage["prompt"] += pt
+    self._usage["completion"] += ct
+    self._usage["total"] += (pt + ct)
 
-    # II.填充prompt
-    prompt = {
-      "model": self.model,
-      "messages": [
-        {"role": "developer", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": msg_user},
-      ],
-      "response_format": {
-        "type": "json_schema",
-        "json_schema": TERM_RESULT_SCHEMA
-      },
-    }
+  def usage_summary(self) -> Dict[str, int]:
+    return dict(self._usage)
+
+  def _call(self, messages: List[Dict], response_format: Dict) -> Dict:
+    kwargs = {"model": self.model, "messages": messages, "response_format": response_format}
     if self.temperature is not None:
-      prompt["temperature"] = self.temperature
-
-    # III.收取返回内容 + Temperature向下兼容
+      kwargs["temperature"] = self.temperature
     try:
-      response = self.client.chat.completions.create(**prompt)
+      resp = self.client.chat.completions.create(**kwargs)
     except openai.BadRequestError as e:
       em = str(e).lower()
-
+      # 某些模型不接受自定义温度
       if "temperature" in em and "unsupported" in em:
-        prompt.pop("temperature", None)
-        response = self.client.chat.completions.create(**prompt)
+        kwargs.pop("temperature", None)
+        resp = self.client.chat.completions.create(**kwargs)
       else:
         raise
+    self._record_usage(resp)
+    text = resp.choices[0].message.content or ""
+    return _extract_json(text)
 
-    # IV.返回dict格式prompt
-    return json.loads(response.choices[0].message.content)
+  def fetch_main(self, word: str, zh: str, allowed_tag_en: List[str],
+      skip_ipa: bool, skip_endef: bool, skip_example: bool) -> Dict:
+    schema = _schema_main(allowed_tag_en, skip_ipa, skip_endef, skip_example)
+    wl = "\n".join(f"- {s}" for s in sorted(set([s.lower() for s in allowed_tag_en]))[:120]) or "(no domain)"
+    msg_user = USER_TEMPLATE.format(
+      word=word, zh=zh, whitelist=wl,
+      skip_ipa=str(skip_ipa).lower(),
+      skip_endef=str(skip_endef).lower(),
+      skip_example=str(skip_example).lower(),
+    )
+    messages = [
+      {"role": "system", "content": SYSTEM_PROMPT},
+      {"role": "user", "content": msg_user},
+    ]
+    return self._call(messages, {"type": "json_schema", "json_schema": schema})
+
+  def fetch_single(self, key: str, word: str, zh: str) -> str:
+    assert key in ("IPA","EnDef","Example")
+    schema = _schema_single(key)
+    if key == "IPA":
+      instr = "Return only IPA strictly in American slashes '/.../' for the headword."
+    elif key == "EnDef":
+      instr = "Return only EnDef: exactly ONE sentence; must contain the headword; must match the Chinese gloss."
+    else:
+      instr = "Return only Example: exactly ONE natural usage sentence for the same sense; not a definition."
+    messages = [
+      {"role": "system", "content": SYSTEM_PROMPT},
+      {"role": "user", "content": f"Word: {word}\nZhDef: {zh}\n{instr}"}
+    ]
+    data = self._call(messages, {"type": "json_schema", "json_schema": schema})
+    return data[key]
