@@ -141,6 +141,7 @@ def write_output_csv(path: str, rows: List[dict]) -> None:
         r["Tag"],
         r["Rarity"],
         r["EnDef"],
+        r["Example"],
         r["PPfix"],
         r["PPmeans"],
         r["BatchID"],

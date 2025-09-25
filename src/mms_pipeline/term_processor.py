@@ -48,8 +48,15 @@ class TermProcessor:
     if info.get("POS") == "abbr." and (info.get("IPA") or "").strip():
       info["IPA"] = ""  # 与业务规则一致：缩写不标 IPA
 
+    ex = (info.get("Example") or "").strip()
+    if ex and ex.lower() == (info.get("EnDef") or "").strip().lower():
+      info["Example"] = ""
+
     info["PPfix"] = " ".join((info.get("PPfix") or "").lower().split())
     info["PPmeans"] = " ".join((info.get("PPmeans") or "").lower().split())
+
+
+
     return info
 
   def process(self, rows: List[InRow], model_name: str) -> List[dict]:
@@ -72,6 +79,7 @@ class TermProcessor:
         "Tag": tag_cn,
         "Rarity": info.get("Rarity", ""),
         "EnDef": info.get("EnDef", ""),
+        "Example": info.get("Example", ""),
         "PPfix": info.get("PPfix", ""),
         "PPmeans": info.get("PPmeans", ""),
         "BatchID": self.batch_id,
