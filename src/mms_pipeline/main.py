@@ -45,20 +45,20 @@ def _resolve_input_csv(user_input: str) -> Path:
   """输入CSV：留空或只给文件名 -> 默认 data/input/"""
   s = (user_input or "").strip()
   if not s:
-    cand = ROOT / "data" / "input" / "n8n.csv"
+    cand = ROOT / "data" / "input" / "memo" / "short.csv"
     return cand
   p = Path(s)
   if p.is_absolute() or any(ch in s for ch in ("/", "\\")):
     return p
   # 只有文件名：默认到 data/input/ 下找
-  return ROOT / "data" / "input" / s
+  return ROOT / "data" / "input" / "memo" / s
 
 
 def _resolve_termlist_csv(user_input: str) -> Path:
   """术语表：留空 -> data/term_list_v1.csv；只给文件名会在多个目录尝试"""
   s = (user_input or "").strip()
   if not s:
-    return ROOT / "data" / "term_list_v1.csv"
+    return ROOT / "db" / "term_list_v1.csv"
   p = Path(s)
   if p.is_absolute() or any(ch in s for ch in ("/", "\\")):
     return p
@@ -67,13 +67,13 @@ def _resolve_termlist_csv(user_input: str) -> Path:
     cand = ROOT / sub / s
     if cand.exists():
       return cand
-  return ROOT / "data" / s
+  return ROOT / "db" / s
 
 
 def _resolve_output_path(user_input: str, batch_id: str, model_name: str) -> Path:
   """输出：留空 -> data/output/BatchID_MMS_V3_模型名.csv；目录则自动拼文件名并防覆盖"""
   s = (user_input or "").strip()
-  default_dir = ROOT / "data" / "output"
+  default_dir = ROOT / "data" / "output" / "memo"
   filename = f"{batch_id}_MMS_V3_{model_name}.csv"
 
   if not s:

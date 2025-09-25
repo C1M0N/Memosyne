@@ -45,11 +45,11 @@ def _resolve_input_md(user_input: str) -> Path:
   """
   s = (user_input or "").strip()
   if not s:
-    return ROOT / "data" / "input" / "Chapter 3 Quiz- Assessment and Classification of Mental Disorders.md"
+    return ROOT / "data" / "input" / "parser" / "Chapter 3 Quiz- Assessment and Classification of Mental Disorders.md"
   p = Path(s)
   if p.is_absolute() or any(ch in s for ch in ("/", "\\")):
     return p
-  return ROOT / "data" / "input" / s
+  return ROOT / "data" / "input" / "parser" / s
 
 
 def _resolve_output_path(user_input: str) -> Path:
@@ -59,7 +59,7 @@ def _resolve_output_path(user_input: str) -> Path:
   如果给的是具体文件名 -> 直接使用并防覆盖。
   """
   s = (user_input or "").strip()
-  default_dir = ROOT / "data" / "output"
+  default_dir = ROOT / "data" / "output" / "parser"
   default_name = "ShouldBe.txt"
 
   if not s:
