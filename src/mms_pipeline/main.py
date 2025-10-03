@@ -168,13 +168,16 @@ def _output_path(batch_id: str, model_display: str) -> Path:
 
 
 # ========== .env 加载 ==========
-def _init_openai(model_id: str) -> OpenAIHelper:
+# 原：def _init_openai(model_id: str) -> OpenAIHelper:
+def _init_llm(model_id: str):
   try:
-    helper = OpenAIHelper(model=model_id)
+    if model_id.startswith("claude"):
+      from anthropic_helper import AnthropicHelper
+      return AnthropicHelper(model=model_id)
+    else:
+      return OpenAIHelper(model=model_id)
   except Exception as e:
-    raise RuntimeError(f"OpenAI 初始化失败：{e}")
-  return helper
-
+    raise RuntimeError(f"LLM 初始化失败：{e}")
 
 # ========== 主流程 ==========
 def main():
@@ -229,7 +232,7 @@ def main():
 
   # OpenAI
   try:
-    helper = _init_openai(model_id)
+    helper = _init_llm(model_id)
   except Exception as e:
     print(e)
     return

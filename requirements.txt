@@ -3,3 +3,4 @@ pandas>=2.0.0
 jsonschema>=4.20.0
 python-dotenv>=1.0.1
 tqdm>=4.66.0
+anthropic>=0.31.0
