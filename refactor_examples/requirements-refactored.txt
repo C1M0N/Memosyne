@@ -1,0 +1,26 @@
+# === 核心依赖（与原项目一致）===
+openai>=1.30.0
+pandas>=2.0.0
+jsonschema>=4.20.0
+python-dotenv>=1.0.1
+tqdm>=4.66.0
+anthropic>=0.31.0
+
+# === 新增：重构所需依赖 ===
+pydantic>=2.5.0              # 数据验证和设置管理
+pydantic-settings>=2.0.0     # 配置管理
+structlog>=23.2.0            # 结构化日志
+
+# === 可选：CLI 美化（提升用户体验）===
+click>=8.1.0                 # 更强大的 CLI 框架
+rich>=13.7.0                 # 终端美化（彩色输出、表格）
+
+# === 开发依赖 ===
+# 安装方式：pip install -r requirements-refactored.txt -e ".[dev]"
+# 或单独安装：pip install pytest pytest-cov mypy ruff
+
+# pytest>=7.4.0              # 单元测试框架
+# pytest-cov>=4.1.0          # 测试覆盖率
+# pytest-mock>=3.12.0        # Mock 工具
+# mypy>=1.7.0                # 静态类型检查
+# ruff>=0.1.0                # 代码检查和格式化（替代 black + isort + flake8）
