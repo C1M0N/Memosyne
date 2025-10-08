@@ -7,8 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v2.0** (推荐) - 重构版本，采用现代化架构，位于 `src/memosyne/`
-- **v1.0** (遗留) - 原始版本，位于 `src/mms_pipeline/` 和 `src/exparser/`
+- **v2.0** (当前) - 重构版本，采用现代化架构，位于 `src/memosyne/`
 
 主要功能：
 1. **MMS Pipeline** - 术语记忆处理管道，用于生成结构化术语卡片
@@ -16,38 +15,31 @@ Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析
 
 ## 常用命令
 
-### 运行项目 (v2.0 - 推荐)
+### 运行项目
 
 ```bash
-# MMS Pipeline - 术语处理
+# 方式 1: 交互式 CLI
+python src/memosyne/cli/mms.py       # MMS - 术语处理
+python src/memosyne/cli/exparser.py  # ExParser - Quiz 解析
+
+# 方式 2: Python 模块
 python -m memosyne.cli.mms
+python -m memosyne.cli.exparser
 
-# ExParser - 测验解析 (即将推出)
-# python -m memosyne.cli.parser
-```
-
-### 运行项目 (v1.0 - 遗留)
-
-```bash
-# 1. MMS Pipeline - 术语处理
-python src/mms_pipeline/main.py
-
-# 2. ExParser - 测验解析
-python src/exparser/main.py
+# 方式 3: 编程 API
+python -c "from memosyne import process_terms; help(process_terms)"
 ```
 
 ### 依赖管理
 
 ```bash
-# v2.0 依赖（推荐）
-pip install -r requirements-v2.txt
-
-# v1.0 依赖
+# 安装依赖
 pip install -r requirements.txt
 
-# 创建虚拟环境（如需要）
+# 创建虚拟环境（推荐）
 python -m venv .venv
 source .venv/bin/activate  # macOS/Linux
+.venv\Scripts\activate     # Windows
 ```
 
 ### 环境配置
@@ -110,18 +102,26 @@ src/memosyne/
 
 **输出字段**: WMpair, MemoID, Word, ZhDef, IPA, POS, Tag, Rarity, EnDef, Example, PPfix, PPmeans, BatchID, BatchNote
 
-### ExParser 架构
+### ExParser 架构 (v2.0)
 
-**入口**: `src/exparser/main.py`
+**入口**: `src/memosyne/cli/exparser.py`
 
 处理流程：
-1. **Markdown 解析** (`openai_quiz_helper.py`):
-   - `OpenAIQuizHelper` - 使用 LLM 解析 Markdown 测验文本为结构化 JSON
+1. **Quiz 解析** (`services/quiz_parser.py`):
+   - `QuizParser` - 使用依赖注入的 LLM Provider
+   - 支持 OpenAI 和 Anthropic
+   - 使用 JSON Schema 确保结构化输出
+   - 返回 `QuizItem` Pydantic 模型列表
 
-2. **格式化输出** (`formatter.py`):
-   - `format_items_to_shouldbe()` - 将解析结果转换为 ShouldBe 格式
+2. **格式化输出** (`utils/quiz_formatter.py`):
+   - `QuizFormatter.format()` - 将 QuizItem 转换为 ShouldBe 格式
    - 支持题型：MCQ（选择题）、CLOZE（填空题）、ORDER（排序题）
-   - 处理图片占位符（`§Pic.N§`）、选项标准化、题干清理
+   - 自动处理图片占位符（`§Pic.N§`）
+   - 清理题干垃圾行、规范化选项文本
+
+3. **编程 API** (`api.py`):
+   - `parse_quiz(input_md, model, provider, ...)` - 直接调用
+   - 返回包含成功状态、输出路径、题目数量的 dict
 
 **输入**: `data/input/parser/*.md` - Markdown 格式测验文件
 **输出**: `data/output/parser/ShouldBe.txt` - 标准化测验文本
@@ -210,12 +210,71 @@ settings = get_settings()  # 自动从 .env 加载
 - **错误处理**: 使用自定义异常（`LLMError`, `ConfigError` 等）
 - **编码**: 统一使用 UTF-8
 
-## 从 v1.0 迁移到 v2.0
+## 文档维护规范
 
-详见 `MIGRATION_GUIDE.md`。简要步骤：
+**IMPORTANT**: 每次代码更改后，必须同时更新以下文档：
 
-1. 安装新依赖：`pip install -r requirements-v2.txt`
-2. 运行新版本：`python -m memosyne.cli.mms`
-3. 无需修改 `.env` 文件或数据格式
+1. **CLAUDE.md** (本文件) - 更新命令、架构、流程说明
+2. **README.md** - 更新功能列表、使用示例、安装步骤
+3. **ARCHITECTURE.md** - 更新架构图、设计决策、UML 图
 
-v1.0 版本仍可继续使用，两者可并行运行。
+### 更新检查清单
+
+修改代码后，检查：
+- [ ] 是否有新的依赖？→ 更新 `requirements.txt`
+- [ ] 是否有新的 CLI 命令？→ 更新所有文档的"快速开始"部分
+- [ ] 是否修改了架构？→ 更新 `ARCHITECTURE.md` 中的图表
+- [ ] 是否添加了新功能？→ 更新 `README.md` 的特性列表
+- [ ] 是否修改了 API？→ 更新 `API_GUIDE.md`
+
+## Git 工作流程
+
+详见 `GIT_GUIDE.md`。关键点：
+
+- **提交前**: 确保代码能运行，测试通过
+- **提交信息**: 使用清晰的描述（如 "添加批量处理 API"）
+- **频繁提交**: 小步快走，每完成一个小功能就提交
+- **同步文档**: 代码和文档同时提交
+- **及时推送**: 每天至少 Push 一次
+
+## 版本发布流程
+
+1. **更新版本号**: 修改 `src/memosyne/__init__.py` 中的 `__version__`
+2. **更新 CHANGELOG**: 在 `README.md` 中添加版本变更记录
+3. **创建 Git 标签**: `git tag -a v2.x.x -m "Release v2.x.x"`
+4. **推送标签**: `git push origin v2.x.x`
+5. **GitHub Release**: 在 GitHub 上创建正式 Release
+
+## ExParser 架构 (v2.0 已重构)
+
+**入口**: `src/memosyne/cli/exparser.py`
+
+处理流程：
+1. **Quiz 解析** (`services/quiz_parser.py`):
+   - `QuizParser` - 使用 LLM Provider 解析 Markdown
+   - 支持 OpenAI 和 Anthropic
+   - 返回 `QuizItem` Pydantic 模型列表
+
+2. **格式化输出** (`utils/quiz_formatter.py`):
+   - `QuizFormatter` - 将 QuizItem 转换为 ShouldBe 格式
+   - 支持题型：MCQ（选择题）、CLOZE（填空题）、ORDER（排序题）
+   - 自动清理题干、规范化选项
+
+3. **编程 API** (`api.py`):
+   - `parse_quiz()` - 可在代码中直接调用
+   - 返回详细结果 dict
+
+**输入**: `data/input/parser/*.md` - Markdown 格式测验文件
+**输出**: `data/output/parser/ShouldBe.txt` - 标准化测验文本
+
+## 项目文档结构
+
+```
+Memosyne/
+├── README.md              # 项目主文档
+├── CLAUDE.md              # Claude Code 工作指南 (本文件)
+├── ARCHITECTURE.md        # 架构设计文档（含所有图表）
+├── API_GUIDE.md           # API 使用指南
+├── GIT_GUIDE.md           # Git 项目管理指南
+└── refactor_examples/     # 重构示例代码
+```

@@ -153,17 +153,9 @@ LOG_FORMAT=console
 
 ## 📚 文档
 
-### 主要文档
-
 - **[API 使用指南](API_GUIDE.md)** - 完整的 API 文档和示例
 - **[架构说明](ARCHITECTURE.md)** - 系统架构和设计决策
-- **[迁移指南](MIGRATION_GUIDE.md)** - 从 v1.0 迁移到 v2.0
-- **[代码评审](CODE_REVIEW.md)** - v1.0 代码问题分析
-- **[重构总结](REFACTORING_SUMMARY.md)** - 重构工作总结
-
-### 示例程序
-
-- **[example_api_usage.py](example_api_usage.py)** - API 使用示例
+- **[Git 使用指南](GIT_GUIDE.md)** - Git 项目管理完整教程
 
 ---
 
