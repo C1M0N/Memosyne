@@ -4,13 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具，包含两个主要管道：
-1. **MMS Pipeline** (`src/mms_pipeline/`) - 术语记忆处理管道，用于生成结构化术语卡片
-2. **ExParser** (`src/exparser/`) - 测验解析器，将 Markdown 格式的测验转换为标准化格式
+Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
+
+**版本信息**:
+- **v2.0** (推荐) - 重构版本，采用现代化架构，位于 `src/memosyne/`
+- **v1.0** (遗留) - 原始版本，位于 `src/mms_pipeline/` 和 `src/exparser/`
+
+主要功能：
+1. **MMS Pipeline** - 术语记忆处理管道，用于生成结构化术语卡片
+2. **ExParser** - 测验解析器，将 Markdown 格式的测验转换为标准化格式
 
 ## 常用命令
 
-### 运行项目
+### 运行项目 (v2.0 - 推荐)
+
+```bash
+# MMS Pipeline - 术语处理
+python -m memosyne.cli.mms
+
+# ExParser - 测验解析 (即将推出)
+# python -m memosyne.cli.parser
+```
+
+### 运行项目 (v1.0 - 遗留)
 
 ```bash
 # 1. MMS Pipeline - 术语处理
@@ -23,7 +39,10 @@ python src/exparser/main.py
 ### 依赖管理
 
 ```bash
-# 安装依赖
+# v2.0 依赖（推荐）
+pip install -r requirements-v2.txt
+
+# v1.0 依赖
 pip install -r requirements.txt
 
 # 创建虚拟环境（如需要）
@@ -42,28 +61,52 @@ MODEL_NAME=o4mini  # 可选：默认模型名
 
 **注意**: `.env` 文件已在 `.gitignore` 中，绝不能提交到版本控制。
 
-## 核心架构
+## 核心架构 (v2.0)
 
-### MMS Pipeline 架构
+### 分层架构
 
-**入口**: `src/mms_pipeline/main.py`
+```
+src/memosyne/
+├── config/          # 配置层：Pydantic Settings
+├── core/            # 核心层：抽象接口、异常定义
+├── models/          # 模型层：Pydantic 数据模型
+├── providers/       # 提供商层：LLM Provider 实现
+├── repositories/    # 仓储层：数据访问（CSV、术语表）
+├── services/        # 服务层：业务逻辑
+├── utils/           # 工具层：路径、批次ID生成等
+└── cli/             # 界面层：命令行接口
+```
 
-处理流程：
-1. **数据读取** (`term_data.py`):
-   - `read_input_csv()` - 宽松解析 CSV（自动识别分隔符、BOM、多语言列名）
-   - `TermList` - 加载术语表映射（英文→两字中文）
+### MMS Pipeline 处理流程
 
-2. **LLM 处理** (`term_processor.py`):
-   - `TermProcessor` - 批量处理术语，调用 LLM 生成结构化字段
+**入口**: `src/memosyne/cli/mms.py`
+
+1. **配置加载** (`config/settings.py`):
+   - `Settings` - Pydantic Settings 自动验证 API Key
+   - `get_settings()` - 单例模式获取配置
+
+2. **数据读取** (`repositories/csv_repository.py`):
+   - `CSVTermRepository.read_input()` - 读取输入 CSV
+   - 自动识别分隔符、BOM、多语言列名
+   - 返回 `TermInput` Pydantic 模型列表
+
+3. **术语表加载** (`repositories/term_list_repository.py`):
+   - `TermListRepo.load()` - 加载术语表
+   - `get_chinese_tag()` - 英文标签 → 中文映射
+
+4. **LLM 处理** (`services/term_processor.py`):
+   - `TermProcessor` - 依赖注入 LLM Provider
+   - 调用 `process()` 批量处理术语
    - 使用 tqdm 显示进度条
 
-3. **LLM 引擎** (可切换):
-   - `openai_helper.py` - OpenAI API（支持 JSON Schema 强制输出）
-   - `anthropic_helper.py` - Anthropic Claude API（使用 tools + tool_choice 强制结构化）
-   - 两者输出接口一致，可互换
+5. **LLM Provider** (`providers/`):
+   - `OpenAIProvider` - OpenAI 实现
+   - `AnthropicProvider` - Anthropic 实现
+   - 均继承 `BaseLLMProvider` 抽象基类
+   - 接口一致，可互换
 
-4. **数据写出** (`term_data.py`):
-   - `write_output_csv()` - 输出到 `data/output/memo/` 目录
+6. **数据写出** (`repositories/csv_repository.py`):
+   - `CSVTermRepository.write_output()` - 写出到 `data/output/memo/`
 
 **输出字段**: WMpair, MemoID, Word, ZhDef, IPA, POS, Tag, Rarity, EnDef, Example, PPfix, PPmeans, BatchID, BatchNote
 
@@ -99,33 +142,80 @@ db/
 └── mmsdb/            # 其他数据库文件
 ```
 
-## 关键设计模式
+## 关键设计模式 (v2.0)
 
-### 1. 路径自动解析
-两个管道均使用 `_find_project_root()` 自动定位项目根目录（通过查找 `data/` 目录）。所有路径计算基于项目根，无需手动配置。
+### 1. 依赖注入
+所有组件通过构造函数注入依赖，而非全局状态：
+```python
+processor = TermProcessor(
+    llm_provider=llm_provider,        # 可替换为任何实现
+    term_list_mapping=repo.mapping,    # 可注入测试数据
+    start_memo_index=2700,
+    batch_id="251007A015"
+)
+```
 
-### 2. BatchID 生成（MMS Pipeline）
-格式：`YYMMDD + RunLetter + NNN`
+### 2. 抽象接口 (Protocol/ABC)
+LLM Provider 使用 Protocol 定义接口：
+```python
+class LLMProvider(Protocol):
+    def complete_prompt(self, word: str, zh_def: str) -> dict: ...
+```
+任何实现了此方法的类都可作为 Provider，无需显式继承。
+
+### 3. Pydantic 数据验证
+所有数据模型使用 Pydantic，自动验证：
+```python
+class TermInput(BaseModel):
+    word: str = Field(..., min_length=1)
+    zh_def: str = Field(..., min_length=1)
+
+    @field_validator("word", "zh_def")
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("字段不能为空")
+        return v.strip()
+```
+
+### 4. 配置管理
+使用 Pydantic Settings 自动加载和验证配置：
+```python
+from memosyne.config import get_settings
+
+settings = get_settings()  # 自动从 .env 加载
+# 如果 API Key 缺失或无效，会抛出 ValidationError
+```
+
+### 5. BatchID 生成
+使用独立的 `BatchIDGenerator` 类：
+- 格式：`YYMMDD + RunLetter + NNN`
 - `YYMMDD`: 纽约时区当日日期
 - `RunLetter`: 当日批次字母（A-Z）
 - `NNN`: 本批词条数（3 位零填充）
+- 示例：`251007A015` = 2025-10-07 的首批（A），包含 15 个词条
 
-示例：`251007A015` = 2025-10-07 的首批（A），包含 15 个词条
+### 6. 仓储模式
+数据访问通过 Repository 层隔离：
+- `CSVTermRepository` - CSV 读写
+- `TermListRepo` - 术语表管理
 
-### 3. LLM 统一接口
-`OpenAIHelper` 和 `AnthropicHelper` 均实现 `complete_prompt(word, zh_def) -> dict` 接口：
-- 使用相同的 `SYSTEM_PROMPT` 和 `TERM_RESULT_SCHEMA`
-- 返回严格符合 schema 的 JSON（8 个字段）
-- 自动处理 API 错误（如不支持的参数）
+## 开发约定 (v2.0)
 
-### 4. 容错输入处理
-- CSV 读取支持：BOM 清除、多分隔符嗅探（`,` `;` `\t`）、大小写不敏感列名、中英文同义词映射
-- 路径解析支持：绝对路径、相对路径、纯文件名、数字快捷方式
-- 防覆盖：输出文件若存在，自动添加 `_2`, `_3` 后缀
+- **类型提示**: 所有函数/方法必须有完整的类型提示
+- **数据验证**: 使用 Pydantic 模型，而非 dict 或 dataclass
+- **依赖注入**: 避免全局状态，通过构造函数传递依赖
+- **抽象优于具体**: 依赖抽象接口（Protocol/ABC），而非具体实现
+- **进度显示**: 使用 tqdm 显示进度条
+- **错误处理**: 使用自定义异常（`LLMError`, `ConfigError` 等）
+- **编码**: 统一使用 UTF-8
 
-## 开发约定
+## 从 v1.0 迁移到 v2.0
 
-- **提示词**: 所有 LLM 提示词和 Schema 定义集中在 `openai_helper.py`，由两个引擎共享
-- **进度显示**: 必须使用 tqdm 显示进度条（项目要求）
-- **错误处理**: 初始化失败时抛出 `RuntimeError` 并提供清晰错误信息
-- **编码**: 统一使用 UTF-8（读写文件时指定 `encoding="utf-8"` 或 `utf-8-sig`）
+详见 `MIGRATION_GUIDE.md`。简要步骤：
+
+1. 安装新依赖：`pip install -r requirements-v2.txt`
+2. 运行新版本：`python -m memosyne.cli.mms`
+3. 无需修改 `.env` 文件或数据格式
+
+v1.0 版本仍可继续使用，两者可并行运行。
