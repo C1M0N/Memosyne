@@ -2,7 +2,7 @@
 """
 MMS CLI - 重构版本
 
-这玩意以后会叫Reanimate！
+这玩意以后会叫Reanimate！！！
 
 基于原 src/mms_pipeline/main.py
 改进：依赖注入、模块化、使用新架构
