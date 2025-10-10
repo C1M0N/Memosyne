@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-MMS CLI - 重构版本
+Reanimater CLI - 重构版本
 
 基于原 src/mms_pipeline/main.py
 改进：依赖注入、模块化、使用新架构
 
 运行方式：
-    python -m memosyne.cli.mms
+    python -m memosyne.cli.reanimater
     或
-    python src/memosyne/cli/mms.py
+    python src/memosyne/cli/reanimater.py
 """
 import sys
 from pathlib import Path
@@ -22,7 +22,7 @@ if __name__ == "__main__":
 from memosyne.config import get_settings
 from memosyne.providers import OpenAIProvider, AnthropicProvider
 from memosyne.repositories import CSVTermRepository, TermListRepo
-from memosyne.services import TermProcessor
+from memosyne.services import Reanimater
 from memosyne.utils import BatchIDGenerator, resolve_input_path, unique_path
 from memosyne.cli.prompts import ask
 
@@ -100,8 +100,8 @@ def resolve_input_and_memo(
 
 
 def main():
-    """MMS 主流程"""
-    print("=== MMS | 术语处理工具（重构版 v2.0）===")
+    """Reanimater 主流程"""
+    print("=== Reanimater | 术语处理工具（重构版 v2.0）===")
 
     # 1. 加载配置
     try:
@@ -123,7 +123,7 @@ def main():
     # 3. 解析选择
     try:
         provider_type, model_id, model_display = resolve_model_choice(model_input)
-        input_path, start_memo = resolve_input_and_memo(path_input, settings.mms_input_dir)
+        input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimater_input_dir)
     except Exception as e:
         print(f"解析失败：{e}")
         return
@@ -176,7 +176,7 @@ def main():
     # 7. 生成 BatchID
     try:
         batch_gen = BatchIDGenerator(
-            output_dir=settings.mms_output_dir,
+            output_dir=settings.reanimater_output_dir,
             timezone=settings.batch_timezone
         )
         batch_id = batch_gen.generate(term_count=len(terms_input))
@@ -187,12 +187,12 @@ def main():
 
     # 8. 生成输出路径（防覆盖）
     output_filename = f"{batch_id}.csv"
-    output_path = unique_path(settings.mms_output_dir / output_filename)
+    output_path = unique_path(settings.reanimater_output_dir / output_filename)
     print(f"[Output  ] {output_path}")
 
     # 9. 处理术语
     try:
-        processor = TermProcessor(
+        processor = Reanimater(
             llm_provider=llm_provider,
             term_list_mapping=term_list_repo.mapping,
             start_memo_index=start_memo,

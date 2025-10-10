@@ -10,8 +10,8 @@ Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析
 - **v2.0** (当前) - 重构版本，采用现代化架构，位于 `src/memosyne/`
 
 主要功能：
-1. **MMS Pipeline** - 术语记忆处理管道，用于生成结构化术语卡片
-2. **ExParser** - 测验解析器，将 Markdown 格式的测验转换为标准化格式
+1. **Reanimater Pipeline（术语重生器）** - 术语记忆处理管道，用于生成结构化术语卡片
+2. **Lithoformer（Quiz重塑器）** - 测验解析器，将 Markdown 格式的测验转换为标准化格式
 
 ## 常用命令
 
@@ -19,15 +19,16 @@ Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析
 
 ```bash
 # 方式 1: 交互式 CLI
-python src/memosyne/cli/mms.py       # MMS - 术语处理
-python src/memosyne/cli/exparser.py  # ExParser - Quiz 解析
+python src/memosyne/cli/reanimater.py    # Reanimater - 术语处理
+python src/memosyne/cli/lithoformer.py   # Lithoformer - Quiz 解析
 
 # 方式 2: Python 模块
-python -m memosyne.cli.mms
-python -m memosyne.cli.exparser
+python -m memosyne.cli.reanimater
+python -m memosyne.cli.lithoformer
 
 # 方式 3: 编程 API
-python -c "from memosyne import process_terms; help(process_terms)"
+python -c "from memosyne import reanimate; help(reanimate)"
+# 注：旧名 process_terms 仍可用以保持向后兼容
 ```
 
 ### 依赖管理
@@ -57,9 +58,23 @@ ANTHROPIC_API_KEY=your-key-here
 DEFAULT_OPENAI_MODEL=gpt-4o-mini
 DEFAULT_ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 LOG_LEVEL=INFO
+
+# 配置项（Settings）命名已更新：
+# reanimater_input_dir=data/input/reanimater
+# reanimater_output_dir=data/output/reanimater
+# lithoformer_input_dir=data/input/lithoformer
+# lithoformer_output_dir=data/output/lithoformer
+# REANIMATER_TERM_LIST_VERSION=1
 ```
 
 **注意**: `.env` 文件已在 `.gitignore` 中，绝不能提交到版本控制。
+
+**配置项命名变更说明**（v2.0 重命名）：
+- `mms_input_dir` → `reanimater_input_dir`
+- `mms_output_dir` → `reanimater_output_dir`
+- `parser_input_dir` → `lithoformer_input_dir`
+- `parser_output_dir` → `lithoformer_output_dir`
+- `TERM_LIST_VERSION` → `REANIMATER_TERM_LIST_VERSION`
 
 ## 核心架构 (v2.0)
 
@@ -77,9 +92,9 @@ src/memosyne/
 └── cli/             # 界面层：命令行接口
 ```
 
-### MMS Pipeline 处理流程
+### Reanimater Pipeline 处理流程（术语重生器）
 
-**入口**: `src/memosyne/cli/mms.py`
+**入口**: `src/memosyne/cli/reanimater.py`
 
 1. **配置加载** (`config/settings.py`):
    - `Settings` - Pydantic Settings 自动验证 API Key
@@ -95,7 +110,7 @@ src/memosyne/
    - `get_chinese_tag()` - 英文标签 → 中文映射
 
 4. **LLM 处理** (`services/term_processor.py`):
-   - `TermProcessor` - 依赖注入 LLM Provider
+   - `Reanimater` - 依赖注入 LLM Provider
    - 调用 `process()` 批量处理术语
    - 使用 tqdm 显示进度条
 
@@ -106,17 +121,17 @@ src/memosyne/
    - 接口一致，可互换
 
 6. **数据写出** (`repositories/csv_repository.py`):
-   - `CSVTermRepository.write_output()` - 写出到 `data/output/memo/`
+   - `CSVTermRepository.write_output()` - 写出到 `data/output/reanimater/`
 
 **输出字段**: WMpair, MemoID, Word, ZhDef, IPA, POS, Tag, Rarity, EnDef, Example, PPfix, PPmeans, BatchID, BatchNote
 
-### ExParser 架构 (v2.0)
+### Lithoformer 架构（Quiz重塑器，v2.0）
 
-**入口**: `src/memosyne/cli/exparser.py`
+**入口**: `src/memosyne/cli/lithoformer.py`
 
 处理流程：
 1. **Quiz 解析** (`services/quiz_parser.py`):
-   - `QuizParser` - 使用依赖注入的 LLM Provider
+   - `Lithoformer` - 使用依赖注入的 LLM Provider
    - 支持 OpenAI 和 Anthropic
    - 使用 JSON Schema 确保结构化输出
    - 返回 `QuizItem` Pydantic 模型列表
@@ -128,26 +143,27 @@ src/memosyne/
    - 清理题干垃圾行、规范化选项文本
 
 3. **编程 API** (`api.py`):
-   - `parse_quiz(input_md, model, provider, ...)` - 直接调用
+   - `lithoform(input_md, model, provider, ...)` - 直接调用
+   - 注：旧名 `parse_quiz()` 仍可用以保持向后兼容
    - 返回包含成功状态、输出路径、题目数量的 dict
 
-**输入**: `data/input/parser/*.md` - Markdown 格式测验文件
-**输出**: `data/output/parser/ShouldBe.txt` - 标准化测验文本
+**输入**: `data/input/lithoformer/*.md` - Markdown 格式测验文件
+**输出**: `data/output/lithoformer/ShouldBe.txt` - 标准化测验文本
 
 ## 数据目录结构
 
 ```
 data/
 ├── input/
-│   ├── memo/      # MMS Pipeline 输入 CSV（Word, ZhDef）
-│   └── parser/    # ExParser 输入 Markdown 测验
+│   ├── reanimater/    # Reanimater 输入 CSV（Word, ZhDef）
+│   └── lithoformer/   # Lithoformer 输入 Markdown 测验
 ├── output/
-│   ├── memo/      # MMS Pipeline 输出 CSV
-│   ├── parser/    # ExParser 输出 TXT
-│   └── archived/  # 历史归档文件
+│   ├── reanimater/    # Reanimater 输出 CSV
+│   ├── lithoformer/   # Lithoformer 输出 TXT
+│   └── archived/      # 历史归档文件
 db/
-├── term_list_v1.csv  # 术语表（英文→两字中文）
-└── mmsdb/            # 其他数据库文件
+├── term_list_v1.csv   # 术语表（英文→两字中文）
+└── reanimater_db/     # Reanimater 数据库文件
 ```
 
 ## 关键设计模式 (v2.0)
@@ -155,7 +171,7 @@ db/
 ### 1. 依赖注入
 所有组件通过构造函数注入依赖，而非全局状态：
 ```python
-processor = TermProcessor(
+reanimater = Reanimater(
     llm_provider=llm_provider,        # 可替换为任何实现
     term_list_mapping=repo.mapping,    # 可注入测试数据
     start_memo_index=2700,
@@ -171,8 +187,8 @@ class LLMProvider(Protocol):
     def complete_structured(self, system_prompt: str, user_prompt: str, schema: dict, schema_name: str = "Response") -> dict: ...
 ```
 任何实现了这两个方法的类都可作为 Provider，无需显式继承。
-- `complete_prompt()` 用于 MMS 术语处理
-- `complete_structured()` 用于 ExParser Quiz 解析（结构化 JSON 输出）
+- `complete_prompt()` 用于 Reanimater 术语处理
+- `complete_structured()` 用于 Lithoformer Quiz 解析（结构化 JSON 输出）
 
 ### 3. Pydantic 数据验证
 所有数据模型使用 Pydantic，自动验证：
@@ -227,7 +243,7 @@ logger.info("开始处理术语")
 logger.warning("Example 与 EnDef 相同")
 logger.error("LLM 调用失败", exc_info=True)
 ```
-服务层（TermProcessor、QuizParser）使用日志记录器替代 print，支持依赖注入。
+服务层（Reanimater、Lithoformer）使用日志记录器替代 print，支持依赖注入。
 
 ## 开发约定 (v2.0)
 
@@ -274,13 +290,13 @@ logger.error("LLM 调用失败", exc_info=True)
 4. **推送标签**: `git push origin v2.x.x`
 5. **GitHub Release**: 在 GitHub 上创建正式 Release
 
-## ExParser 架构 (v2.0 已重构)
+## Lithoformer 详细说明（Quiz重塑器，v2.0 已重构）
 
-**入口**: `src/memosyne/cli/exparser.py`
+**入口**: `src/memosyne/cli/lithoformer.py`
 
 处理流程：
 1. **Quiz 解析** (`services/quiz_parser.py`):
-   - `QuizParser` - 使用 LLM Provider 解析 Markdown
+   - `Lithoformer` - 使用 LLM Provider 解析 Markdown
    - 支持 OpenAI 和 Anthropic
    - 返回 `QuizItem` Pydantic 模型列表
 
@@ -290,11 +306,12 @@ logger.error("LLM 调用失败", exc_info=True)
    - 自动清理题干、规范化选项
 
 3. **编程 API** (`api.py`):
-   - `parse_quiz()` - 可在代码中直接调用
+   - `lithoform()` - 可在代码中直接调用
+   - 注：旧名 `parse_quiz()` 仍可用以保持向后兼容
    - 返回详细结果 dict
 
-**输入**: `data/input/parser/*.md` - Markdown 格式测验文件
-**输出**: `data/output/parser/ShouldBe.txt` - 标准化测验文本
+**输入**: `data/input/lithoformer/*.md` - Markdown 格式测验文件
+**输出**: `data/output/lithoformer/ShouldBe.txt` - 标准化测验文本
 
 ## 项目文档结构
 

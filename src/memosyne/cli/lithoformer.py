@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-ExParser CLI - Quiz 解析工具（重构版 v2.0）
+Lithoformer CLI - Quiz 解析工具（重构版 v2.0）
 
 功能：将 Markdown 格式的 Quiz 解析并格式化为 ShouldBe.txt
 
 使用：
-    python src/memosyne/cli/exparser.py
+    python src/memosyne/cli/lithoformer.py
 
 重构改进：
 - ✅ 使用统一的 Settings 和 Provider
@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
 from memosyne.config import get_settings
 from memosyne.providers import OpenAIProvider, AnthropicProvider
-from memosyne.services.quiz_parser import QuizParser
+from memosyne.services import Lithoformer
 from memosyne.utils import QuizFormatter, unique_path
 from memosyne.cli.prompts import ask
 
@@ -62,20 +62,20 @@ def _resolve_input_md(user_input: str, settings) -> Path:
     解析输入 Markdown 路径
 
     - 留空：使用默认文件
-    - 只给文件名：从 parser_input_dir 查找
+    - 只给文件名：从 lithoformer_input_dir 查找
     - 完整路径：直接使用
     """
     s = (user_input or "").strip()
     default_file = "Chapter 3 Quiz- Assessment and Classification of Mental Disorders.md"
 
     if not s:
-        return settings.parser_input_dir / default_file
+        return settings.lithoformer_input_dir / default_file
 
     p = Path(s)
     if p.is_absolute() or any(ch in s for ch in ("/", "\\")):
         return p
 
-    return settings.parser_input_dir / s
+    return settings.lithoformer_input_dir / s
 
 
 def _resolve_output_path(user_input: str, settings) -> Path:
@@ -87,7 +87,7 @@ def _resolve_output_path(user_input: str, settings) -> Path:
     - 文件：使用指定文件名（防重名）
     """
     s = (user_input or "").strip()
-    default_dir = settings.parser_output_dir
+    default_dir = settings.lithoformer_output_dir
     default_name = "ShouldBe.txt"
 
     if not s:
@@ -107,7 +107,7 @@ def _resolve_output_path(user_input: str, settings) -> Path:
 
 def main():
     """CLI 主函数"""
-    print("=== ExParser | Quiz 解析工具（重构版 v2.0）===")
+    print("=== Lithoformer | Quiz 解析工具（重构版 v2.0）===")
 
     # 1. 加载配置
     settings = get_settings()
@@ -181,7 +181,7 @@ def main():
 
     # 8. 解析 Markdown
     try:
-        parser = QuizParser(llm_provider=llm)
+        parser = Lithoformer(llm_provider=llm)
         items = parser.parse(md_text)
         print(f"✅ 解析成功：{len(items)} 道题")
     except Exception as e:

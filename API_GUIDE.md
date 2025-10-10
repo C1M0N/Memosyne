@@ -6,13 +6,14 @@
 
 - [快速开始](#快速开始)
 - [API 函数详解](#api-函数详解)
-  - [process_terms()](#process_terms)
-  - [parse_quiz()](#parse_quiz)
+  - [reanimate() (原 process_terms)](#reanimate-原-process_terms)
+  - [lithoform() (原 parse_quiz)](#lithoform-原-parse_quiz)
 - [返回值说明](#返回值说明)
 - [错误处理](#错误处理)
 - [高级用法](#高级用法)
 - [最佳实践](#最佳实践)
 - [常见问题](#常见问题)
+- [向后兼容性](#向后兼容性)
 
 ---
 
@@ -33,19 +34,21 @@
 
 3. **导入 API**：
    ```python
+   from memosyne.api import reanimate, lithoform
+   # 向后兼容：旧名称仍可用
    from memosyne.api import process_terms, parse_quiz
    ```
 
-### 示例 1：处理术语列表
+### 示例 1：重生术语列表 (Reanimater)
 
 ```python
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 
 # 处理术语（使用默认的 OpenAI gpt-4o-mini 模型）
-result = process_terms(
-    input_csv="data/input/memo/terms.csv",  # 输入 CSV 文件
-    start_memo_index=2700,                   # 起始 Memo 编号（M002701）
-    batch_note="心理学术语"                  # 批次备注
+result = reanimate(
+    input_csv="data/input/reanimater/terms.csv",  # 输入 CSV 文件
+    start_memo_index=2700,                         # 起始 Memo 编号（M002701）
+    batch_note="心理学术语"                        # 批次备注
 )
 
 print(f"✓ 成功处理 {result['processed_count']} 个术语")
@@ -53,16 +56,16 @@ print(f"✓ 批次ID: {result['batch_id']}")
 print(f"✓ 输出文件: {result['output_path']}")
 ```
 
-### 示例 2：解析测验文档
+### 示例 2：石化测验文档 (Lithoformer)
 
 ```python
-from memosyne.api import parse_quiz
+from memosyne.api import lithoform
 
 # 解析 Quiz Markdown 文档
-result = parse_quiz(
-    input_md="data/input/parser/chapter3.md",  # 输入 Markdown 文件
-    title_main="Chapter 3 Quiz",               # 主标题
-    title_sub="Assessment and Classification"  # 副标题
+result = lithoform(
+    input_md="data/input/lithoformer/chapter3.md",  # 输入 Markdown 文件
+    title_main="Chapter 3 Quiz",                    # 主标题
+    title_sub="Assessment and Classification"       # 副标题
 )
 
 print(f"✓ 成功解析 {result['item_count']} 道题")
@@ -73,14 +76,14 @@ print(f"✓ 输出文件: {result['output_path']}")
 
 ## API 函数详解
 
-### process_terms()
+### reanimate() (原 process_terms)
 
-处理术语列表，生成结构化术语卡片（MMS Pipeline）。
+处理术语列表，生成结构化术语卡片（Reanimater Pipeline，原 MMS Pipeline）。
 
 #### 函数签名
 
 ```python
-def process_terms(
+def reanimate(
     input_csv: str | Path,
     start_memo_index: int,
     output_csv: str | Path | None = None,
@@ -92,13 +95,15 @@ def process_terms(
 ) -> dict:
 ```
 
+**向后兼容别名**: `process_terms()` - 功能完全相同，已弃用但保留支持
+
 #### 参数说明
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `input_csv` | str \| Path | ✓ | 输入 CSV 文件路径，包含 `word` 和 `zh_def` 列 |
 | `start_memo_index` | int | ✓ | 起始 Memo 编号（如 `2700` 表示从 M002701 开始） |
-| `output_csv` | str \| Path \| None | ✗ | 输出 CSV 文件路径（默认自动生成到 `data/output/memo/`） |
+| `output_csv` | str \| Path \| None | ✗ | 输出 CSV 文件路径（默认自动生成到 `data/output/reanimater/`） |
 | `model` | str | ✗ | 模型 ID，默认 `"gpt-4o-mini"` |
 | `provider` | "openai" \| "anthropic" | ✗ | LLM 提供商，默认 `"openai"` |
 | `batch_note` | str | ✗ | 批次备注（会出现在输出 CSV 的 BatchNote 列） |
@@ -112,7 +117,7 @@ def process_terms(
 ```python
 {
     "success": True,                  # 是否成功
-    "output_path": "data/output/memo/251010A015.csv",  # 输出文件路径
+    "output_path": "data/output/reanimater/251010A015.csv",  # 输出文件路径
     "batch_id": "251010A015",         # 批次 ID（格式：YYMMDD + 批次字母 + 词条数）
     "processed_count": 15,            # 处理的术语数量
     "results": [TermOutput(...), ...]  # 处理结果列表（Pydantic 模型）
@@ -162,9 +167,9 @@ hippocampus,海马体
 **示例 1：基础用法（使用 OpenAI）**
 
 ```python
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 
-result = process_terms(
+result = reanimate(
     input_csv="terms.csv",
     start_memo_index=2700
 )
@@ -173,7 +178,7 @@ result = process_terms(
 **示例 2：使用 Anthropic Claude**
 
 ```python
-result = process_terms(
+result = reanimate(
     input_csv="terms.csv",
     start_memo_index=2700,
     provider="anthropic",
@@ -184,10 +189,10 @@ result = process_terms(
 **示例 3：自定义输出路径**
 
 ```python
-result = process_terms(
+result = reanimate(
     input_csv="terms.csv",
     start_memo_index=2700,
-    output_csv="my_output.csv",  # 将保存到 data/output/memo/my_output.csv
+    output_csv="my_output.csv",  # 将保存到 data/output/reanimater/my_output.csv
     batch_note="测试批次"
 )
 ```
@@ -195,7 +200,7 @@ result = process_terms(
 **示例 4：调整 LLM 参数**
 
 ```python
-result = process_terms(
+result = reanimate(
     input_csv="terms.csv",
     start_memo_index=2700,
     model="gpt-4o",             # 使用更强大的模型
@@ -204,16 +209,27 @@ result = process_terms(
 )
 ```
 
+**示例 5：使用旧名称（向后兼容）**
+
+```python
+from memosyne.api import process_terms  # 已弃用但保留
+
+result = process_terms(  # 功能与 reanimate() 完全相同
+    input_csv="terms.csv",
+    start_memo_index=2700
+)
+```
+
 ---
 
-### parse_quiz()
+### lithoform() (原 parse_quiz)
 
-解析 Markdown 格式的测验文档，转换为标准化格式（ExParser）。
+解析 Markdown 格式的测验文档，转换为标准化格式（Lithoformer，原 ExParser）。
 
 #### 函数签名
 
 ```python
-def parse_quiz(
+def lithoform(
     input_md: str | Path,
     output_txt: str | Path | None = None,
     model: str = "gpt-4o-mini",
@@ -224,12 +240,14 @@ def parse_quiz(
 ) -> dict:
 ```
 
+**向后兼容别名**: `parse_quiz()` - 功能完全相同，已弃用但保留支持
+
 #### 参数说明
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `input_md` | str \| Path | ✓ | 输入 Markdown 文件路径 |
-| `output_txt` | str \| Path \| None | ✗ | 输出 TXT 文件路径（默认自动生成到 `data/output/parser/`） |
+| `output_txt` | str \| Path \| None | ✗ | 输出 TXT 文件路径（默认自动生成到 `data/output/lithoformer/`） |
 | `model` | str | ✗ | 模型 ID，默认 `"gpt-4o-mini"` |
 | `provider` | "openai" \| "anthropic" | ✗ | LLM 提供商，默认 `"openai"` |
 | `title_main` | str \| None | ✗ | 主标题（`None` 自动从文件名推断） |
@@ -243,7 +261,7 @@ def parse_quiz(
 ```python
 {
     "success": True,                  # 是否成功
-    "output_path": "data/output/parser/ShouldBe.txt",  # 输出文件路径
+    "output_path": "data/output/lithoformer/ShouldBe.txt",  # 输出文件路径
     "item_count": 25,                 # 解析的题目数量
     "title_main": "Chapter 3 Quiz",   # 主标题
     "title_sub": "Assessment and Classification"  # 副标题
@@ -283,11 +301,11 @@ Correct answer: C
 **示例 1：基础用法（自动推断标题）**
 
 ```python
-from memosyne.api import parse_quiz
+from memosyne.api import lithoform
 
 # 文件名：Chapter 3 Quiz- Assessment and Classification.md
 # 自动推断标题
-result = parse_quiz(input_md="chapter3.md")
+result = lithoform(input_md="chapter3.md")
 print(result['title_main'])  # "Chapter 3 Quiz"
 print(result['title_sub'])   # "Assessment and Classification"
 ```
@@ -295,7 +313,7 @@ print(result['title_sub'])   # "Assessment and Classification"
 **示例 2：手动指定标题**
 
 ```python
-result = parse_quiz(
+result = lithoform(
     input_md="quiz.md",
     title_main="Midterm Exam",
     title_sub="Chapters 1-5"
@@ -305,7 +323,7 @@ result = parse_quiz(
 **示例 3：使用 Claude 模型**
 
 ```python
-result = parse_quiz(
+result = lithoform(
     input_md="quiz.md",
     provider="anthropic",
     model="claude-3-5-sonnet-20241022"
@@ -315,9 +333,20 @@ result = parse_quiz(
 **示例 4：自定义输出路径**
 
 ```python
-result = parse_quiz(
+result = lithoform(
     input_md="quiz.md",
-    output_txt="chapter3_output.txt",  # 保存到 data/output/parser/chapter3_output.txt
+    output_txt="chapter3_output.txt",  # 保存到 data/output/lithoformer/chapter3_output.txt
+    title_main="Chapter 3 Quiz"
+)
+```
+
+**示例 5：使用旧名称（向后兼容）**
+
+```python
+from memosyne.api import parse_quiz  # 已弃用但保留
+
+result = parse_quiz(  # 功能与 lithoform() 完全相同
+    input_md="quiz.md",
     title_main="Chapter 3 Quiz"
 )
 ```
@@ -355,11 +384,11 @@ result = parse_quiz(
 ### 基础错误处理
 
 ```python
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 from memosyne.core.interfaces import LLMError, ConfigError
 
 try:
-    result = process_terms(
+    result = reanimate(
         input_csv="terms.csv",
         start_memo_index=2700
     )
@@ -385,14 +414,14 @@ except Exception as e:
 
 ```python
 import time
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 from memosyne.core.interfaces import LLMError
 
 MAX_RETRIES = 3
 
 for attempt in range(MAX_RETRIES):
     try:
-        result = process_terms(
+        result = reanimate(
             input_csv="terms.csv",
             start_memo_index=2700
         )
@@ -417,15 +446,15 @@ for attempt in range(MAX_RETRIES):
 
 ```python
 from pathlib import Path
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 
-input_dir = Path("data/input/memo")
+input_dir = Path("data/input/reanimater")
 start_index = 2700
 
 for csv_file in input_dir.glob("*.csv"):
     print(f"\n处理文件: {csv_file.name}")
 
-    result = process_terms(
+    result = reanimate(
         input_csv=csv_file,
         start_memo_index=start_index,
         batch_note=f"批量处理 {csv_file.stem}"
@@ -441,7 +470,7 @@ for csv_file in input_dir.glob("*.csv"):
 
 ```python
 import logging
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 from memosyne.utils.logger import setup_logger
 
 # 配置日志
@@ -455,7 +484,7 @@ logger = setup_logger(
 logger.info("开始处理术语")
 
 try:
-    result = process_terms(
+    result = reanimate(
         input_csv="terms.csv",
         start_memo_index=2700
     )
@@ -469,7 +498,7 @@ except Exception as e:
 ### 示例 3：处理大型数据集（流式处理）
 
 ```python
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 from memosyne.models import TermInput
 
 def term_generator():
@@ -481,15 +510,15 @@ def term_generator():
             yield TermInput(word=row["word"], zh_def=row["zh_def"])
 
 # 注意：当前 API 会在内部转换为列表
-# 如果需要真正的流式处理，需要直接使用 TermProcessor
+# 如果需要真正的流式处理，需要直接使用 Reanimater 服务
 ```
 
 ### 示例 4：访问详细结果
 
 ```python
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 
-result = process_terms(
+result = reanimate(
     input_csv="terms.csv",
     start_memo_index=2700
 )
@@ -512,11 +541,11 @@ for term_output in result['results']:
 ```python
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 
 def process_file(csv_file, start_index):
     """处理单个文件"""
-    result = process_terms(
+    result = reanimate(
         input_csv=csv_file,
         start_memo_index=start_index,
         show_progress=False  # 并发时关闭进度条
@@ -524,7 +553,7 @@ def process_file(csv_file, start_index):
     return csv_file.name, result
 
 # 准备任务
-input_dir = Path("data/input/memo")
+input_dir = Path("data/input/reanimater")
 tasks = [
     (csv_file, 2700 + i * 100)
     for i, csv_file in enumerate(input_dir.glob("*.csv"))
@@ -556,9 +585,9 @@ with ThreadPoolExecutor(max_workers=3) as executor:
 **推荐做法**：
 ```python
 # ✓ 使用 .env 文件管理 API 密钥
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 
-result = process_terms(...)  # 自动从 .env 读取密钥
+result = reanimate(...)  # 自动从 .env 读取密钥
 ```
 
 **不推荐做法**：
@@ -602,10 +631,10 @@ os.environ["OPENAI_API_KEY"] = "sk-..."  # 容易泄露
 
 ```python
 # 使用 OpenAI（默认）
-result = process_terms(..., provider="openai", model="gpt-4o-mini")
+result = reanimate(..., provider="openai", model="gpt-4o-mini")
 
 # 使用 Anthropic
-result = process_terms(..., provider="anthropic", model="claude-3-5-sonnet-20241022")
+result = reanimate(..., provider="anthropic", model="claude-3-5-sonnet-20241022")
 ```
 
 确保 `.env` 中配置了相应的 API 密钥。
@@ -620,7 +649,7 @@ from memosyne.core.interfaces import LLMError
 
 for attempt in range(3):
     try:
-        result = process_terms(...)
+        result = reanimate(...)
         break
     except LLMError as e:
         if "rate" in str(e).lower():
@@ -648,7 +677,7 @@ from memosyne.utils.logger import setup_logger
 logger = setup_logger(name="memosyne", level="DEBUG")
 
 # 现在会输出详细的调试信息
-result = process_terms(...)
+result = reanimate(...)
 ```
 
 ### Q5: 支持哪些模型？
@@ -670,12 +699,12 @@ result = process_terms(...)
 
 ```python
 from fastapi import FastAPI, UploadFile
-from memosyne.api import process_terms
+from memosyne.api import reanimate
 import tempfile
 
 app = FastAPI()
 
-@app.post("/process-terms")
+@app.post("/reanimate")
 async def upload_terms(file: UploadFile, start_index: int):
     # 保存上传的文件
     with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
@@ -684,7 +713,7 @@ async def upload_terms(file: UploadFile, start_index: int):
         tmp_path = tmp.name
 
     # 处理术语
-    result = process_terms(
+    result = reanimate(
         input_csv=tmp_path,
         start_memo_index=start_index
     )
@@ -709,8 +738,55 @@ df = pd.read_csv("input.csv", encoding="gbk")
 df.to_csv("input_utf8.csv", encoding="utf-8", index=False)
 
 # 使用 API 处理
-result = process_terms(input_csv="input_utf8.csv", ...)
+result = reanimate(input_csv="input_utf8.csv", ...)
 ```
+
+---
+
+## 向后兼容性
+
+为了确保现有代码能够继续工作，Memosyne 保留了旧名称作为别名：
+
+### 函数别名映射
+
+| 新名称 | 旧名称 (已弃用) | 状态 |
+|--------|----------------|------|
+| `reanimate()` | `process_terms()` | ✓ 完全兼容，功能相同 |
+| `lithoform()` | `parse_quiz()` | ✓ 完全兼容，功能相同 |
+
+### 使用建议
+
+1. **新项目**: 使用新名称 `reanimate()` 和 `lithoform()`
+2. **现有项目**: 可以继续使用 `process_terms()` 和 `parse_quiz()`，但建议逐步迁移
+3. **迁移策略**:
+   ```python
+   # 方式 1: 直接替换函数名
+   from memosyne.api import reanimate, lithoform
+
+   # 方式 2: 使用别名保持兼容
+   from memosyne.api import process_terms as reanimate
+   from memosyne.api import parse_quiz as lithoform
+
+   # 方式 3: 同时导入（过渡期）
+   from memosyne.api import reanimate, process_terms  # 两者完全相同
+   ```
+
+### 路径变更
+
+旧路径和新路径均有效，系统会自动处理：
+
+| 组件 | 新路径 | 旧路径 (兼容) |
+|------|--------|--------------|
+| 术语输入 | `data/input/reanimater/` | `data/input/memo/` |
+| 术语输出 | `data/output/reanimater/` | `data/output/memo/` |
+| 测验输入 | `data/input/lithoformer/` | `data/input/parser/` |
+| 测验输出 | `data/output/lithoformer/` | `data/output/parser/` |
+
+### 弃用时间表
+
+- **当前 (v2.0)**: 新旧名称并存，旧名称不会产生警告
+- **未来 (v3.0)**: 旧名称将产生 `DeprecationWarning`
+- **远期 (v4.0)**: 旧名称可能被移除
 
 ---
 
@@ -719,6 +795,7 @@ result = process_terms(input_csv="input_utf8.csv", ...)
 - [README.md](README.md) - 项目概览
 - [ARCHITECTURE.md](ARCHITECTURE.md) - 架构设计
 - [GIT_GUIDE.md](GIT_GUIDE.md) - Git 工作流程
+- [CLAUDE.md](CLAUDE.md) - Claude Code 工作指南
 
 ---
 

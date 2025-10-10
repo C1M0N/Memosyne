@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.0.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.6.2-orange.svg)]()
 
 *专业、类型安全、易于扩展的 LLM 工作流工具*
 
@@ -20,7 +20,7 @@
 
 Memosyne 是一个基于大语言模型（LLM）的术语处理和 Quiz 解析工具包，提供两个核心功能：
 
-### 🔤 **MMS (Memo Management System)**
+### 🔤 **术语处理 (Reanimater)**
 将术语列表（英文单词 + 中文释义）扩展为完整的记忆卡片信息：
 - 音标（IPA）
 - 词性（POS）
@@ -29,7 +29,7 @@ Memosyne 是一个基于大语言模型（LLM）的术语处理和 Quiz 解析�
 - 词根词缀（PPfix/PPmeans）
 - 领域标签（TagEN）
 
-### 📝 **ExParser (Exam Parser)**
+### 📝 **Quiz解析 (Lithoformer)**
 将 Markdown 格式的 Quiz 文档解析为结构化的 ShouldBe.txt 格式，支持：
 - 多选题（MCQ）
 - 填空题（CLOZE）
@@ -57,8 +57,8 @@ Memosyne 是一个基于大语言模型（LLM）的术语处理和 Quiz 解析�
 - ✅ **批量处理** - 支持大规模数据处理
 
 ### 📊 **完善的数据流**
-- ✅ CSV 输入/输出（MMS）
-- ✅ Markdown 输入 / TXT 输出（ExParser）
+- ✅ CSV 输入/输出（Reanimater）
+- ✅ Markdown 输入 / TXT 输出（Lithoformer）
 - ✅ 自动批次 ID 生成（格式：YYMMDD + RunLetter + Count）
 - ✅ 防重名输出路径
 
@@ -69,20 +69,20 @@ Memosyne 是一个基于大语言模型（LLM）的术语处理和 Quiz 解析�
 ### 方式 1：交互式 CLI
 
 ```bash
-# MMS - 术语处理
-python src/memosyne/cli/mms.py
+# 术语处理 (Reanimater)
+python src/memosyne/cli/reanimater.py
 
-# ExParser - Quiz 解析
-python src/memosyne/cli/exparser.py
+# Quiz解析 (Lithoformer)
+python src/memosyne/cli/lithoformer.py
 ```
 
 ### 方式 2：编程 API
 
 ```python
-from memosyne import process_terms, parse_quiz
+from memosyne import reanimate, lithoform
 
-# 处理术语
-result = process_terms(
+# 处理术语 (新名称: reanimate, 旧名称 process_terms 仍兼容)
+result = reanimate(
     input_csv="221.csv",
     start_memo_index=221,
     model="gpt-4o-mini"
@@ -90,8 +90,8 @@ result = process_terms(
 print(f"✅ 处理了 {result['processed_count']} 个术语")
 print(f"📁 输出: {result['output_path']}")
 
-# 解析 Quiz
-result = parse_quiz(
+# 解析 Quiz (新名称: lithoform, 旧名称 parse_quiz 仍兼容)
+result = lithoform(
     input_md="quiz.md",
     model="gpt-4o-mini"
 )
@@ -189,23 +189,23 @@ Memosyne/
 │   │   ├── csv_repository.py
 │   │   └── term_list_repository.py
 │   ├── services/              # 业务逻辑
-│   │   ├── term_processor.py
-│   │   └── quiz_parser.py
+│   │   ├── reanimater.py
+│   │   └── lithoformer.py
 │   ├── utils/                 # 工具函数
 │   │   ├── batch.py           # 批次ID生成
 │   │   ├── path.py            # 路径工具
 │   │   ├── quiz_formatter.py  # Quiz格式化
 │   │   └── logger.py          # 日志配置
 │   └── cli/                   # CLI 入口
-│       ├── mms.py
-│       └── exparser.py
+│       ├── reanimater.py
+│       └── lithoformer.py
 ├── data/                      # 数据文件
 │   ├── input/
-│   │   ├── memo/              # MMS 输入
-│   │   └── parser/            # ExParser 输入
+│   │   ├── reanimater/        # Reanimater 输入
+│   │   └── lithoformer/       # Lithoformer 输入
 │   └── output/
-│       ├── memo/              # MMS 输出
-│       └── parser/            # ExParser 输出
+│       ├── reanimater/        # Reanimater 输出
+│       └── lithoformer/       # Lithoformer 输出
 ├── db/                        # 数据库/术语表
 ├── requirements.txt           # 依赖
 └── .env                       # 环境变量
@@ -233,15 +233,15 @@ Memosyne/
 
 ## 💡 使用示例
 
-### MMS - 批量处理术语
+### Reanimater - 批量处理术语
 
 ```python
-from memosyne import process_terms
+from memosyne import reanimate
 
 files = ["221.csv", "222.csv", "223.csv"]
 
 for i, filename in enumerate(files, start=221):
-    result = process_terms(
+    result = reanimate(
         input_csv=filename,
         start_memo_index=i,
         model="gpt-4o-mini",
@@ -250,12 +250,12 @@ for i, filename in enumerate(files, start=221):
     print(f"✅ {filename}: {result['batch_id']}")
 ```
 
-### ExParser - 使用 Claude
+### Lithoformer - 使用 Claude
 
 ```python
-from memosyne import parse_quiz
+from memosyne import lithoform
 
-result = parse_quiz(
+result = lithoform(
     input_md="chapter3_quiz.md",
     model="claude-3-5-sonnet-20241022",
     provider="anthropic",
@@ -268,7 +268,7 @@ print(f"✅ 解析了 {result['item_count']} 道题")
 
 ```python
 from flask import Flask, request, jsonify
-from memosyne import parse_quiz
+from memosyne import lithoform
 import tempfile
 
 app = Flask(__name__)
@@ -281,7 +281,7 @@ def api_parse():
         f.write(md_content)
         f.flush()
 
-        result = parse_quiz(input_md=f.name, model="gpt-4o-mini")
+        result = lithoform(input_md=f.name, model="gpt-4o-mini")
 
         return jsonify({
             'success': result['success'],
@@ -300,7 +300,7 @@ def api_parse():
 python test_api.py
 
 # 测试组件
-python test_exparser.py
+python test_lithoformer.py
 ```
 
 ### 代码风格
@@ -328,7 +328,7 @@ class MyProvider(BaseLLMProvider):
         super().__init__(model=model, temperature=temperature)
 
     def complete_prompt(self, word: str, zh_def: str) -> dict:
-        """用于 MMS 术语处理"""
+        """用于 Reanimater 术语处理"""
         # 实现你的逻辑
         pass
 
@@ -339,7 +339,7 @@ class MyProvider(BaseLLMProvider):
         schema: dict,
         schema_name: str = "Response"
     ) -> dict:
-        """用于 ExParser Quiz 解析"""
+        """用于 Lithoformer Quiz 解析"""
         # 实现结构化输出逻辑
         pass
 ```
@@ -348,7 +348,7 @@ class MyProvider(BaseLLMProvider):
 
 ## 📊 性能
 
-### MMS 处理速度
+### Reanimater 处理速度
 
 | 术语数量 | 模型 | 耗时 |
 |---------|------|------|
@@ -356,7 +356,7 @@ class MyProvider(BaseLLMProvider):
 | 36 | claude-3-5-sonnet | ~3 分钟 |
 | 100 | gpt-4o-mini | ~5 分钟 |
 
-### ExParser 解析速度
+### Lithoformer 解析速度
 
 | 题目数量 | 模型 | 耗时 |
 |---------|------|------|
@@ -392,7 +392,7 @@ class MyProvider(BaseLLMProvider):
 **原因**：输入文件路径错误
 
 **解决**：
-1. 使用相对路径时，文件应在 `data/input/memo/` 或 `data/input/parser/`
+1. 使用相对路径时，文件应在 `data/input/reanimater/` 或 `data/input/lithoformer/`
 2. 使用绝对路径确保路径正确
 3. 检查文件名拼写
 
@@ -420,10 +420,10 @@ class MyProvider(BaseLLMProvider):
 - ✨ 新增：Provider 抽象方法 `complete_structured()` 用于结构化输出
 - ✨ 新增：`.env.example` 环境变量模板文件
 - ✨ 新增：API_GUIDE.md 完整文档（40+ 示例）
-- ✅ 改进：QuizParser 添加结果校验，空题目列表会抛出错误
-- ✅ 改进：TermProcessor 添加告警日志（Example 与 EnDef 相同时）
-- ✅ 改进：TermProcessor 内存优化，避免强制转换迭代器为列表
-- 🔧 修复：QuizParser 破坏 Provider 抽象的问题，现使用统一接口
+- ✅ 改进：Lithoformer 添加结果校验，空题目列表会抛出错误
+- ✅ 改进：Reanimater 添加告警日志（Example 与 EnDef 相同时）
+- ✅ 改进：Reanimater 内存优化，避免强制转换迭代器为列表
+- 🔧 修复：Lithoformer 破坏 Provider 抽象的问题，现使用统一接口
 - 📚 文档：更新 CLAUDE.md、ARCHITECTURE.md、README.md
 
 ### v2.0.0 (2025-10-07)
@@ -431,7 +431,7 @@ class MyProvider(BaseLLMProvider):
 **重大重构**
 
 - ✨ 全新架构：采用 SOLID 原则和分层设计
-- ✨ 编程 API：提供 `process_terms()` 和 `parse_quiz()` 函数
+- ✨ 编程 API：提供 `reanimate()` 和 `lithoform()` 函数
 - ✨ 类型安全：使用 Pydantic 2.x 进行数据验证
 - ✨ 双 Provider：支持 OpenAI 和 Anthropic
 - 🔧 修复：项目根目录检测 bug
@@ -442,7 +442,7 @@ class MyProvider(BaseLLMProvider):
 ### v1.0.0 (2024-09)
 
 - 初始版本
-- 基础 MMS 和 ExParser 功能
+- 基础 Reanimater 和 Lithoformer 功能
 
 ---
 
