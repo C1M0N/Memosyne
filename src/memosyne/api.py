@@ -1,21 +1,21 @@
 """
 Memosyne API - 编程接口
 
-提供简单的函数调用接口，用于在其他程序中使用 MMS 和 ExParser 功能
+提供简单的函数调用接口，用于在其他程序中使用 Reanimater 和 Lithoformer 功能
 
 Example:
-    >>> from memosyne.api import process_terms, parse_quiz
+    >>> from memosyne.api import reanimate, lithoform
     >>>
-    >>> # 处理术语
-    >>> results = process_terms(
-    ...     input_csv="data/input/memo/221.csv",
+    >>> # 处理术语 (Reanimater)
+    >>> results = reanimate(
+    ...     input_csv="data/input/reanimater/221.csv",
     ...     start_memo_index=221,
     ...     model="gpt-4o-mini"
     ... )
     >>>
-    >>> # 解析 Quiz
-    >>> output_path = parse_quiz(
-    ...     input_md="data/input/parser/quiz.md",
+    >>> # 解析 Quiz (Lithoformer)
+    >>> output_path = lithoform(
+    ...     input_md="data/input/lithoformer/quiz.md",
     ...     model="gpt-4o-mini"
     ... )
 """
@@ -25,12 +25,12 @@ from typing import Literal
 from .config import get_settings
 from .providers import OpenAIProvider, AnthropicProvider
 from .repositories import CSVTermRepository, TermListRepo
-from .services import TermProcessor, QuizParser
+from .services import Reanimater, Lithoformer
 from .utils import BatchIDGenerator, QuizFormatter, unique_path
 from .models import TermOutput
 
 
-def process_terms(
+def reanimate(
     input_csv: str | Path,
     start_memo_index: int,
     output_csv: str | Path | None = None,
@@ -41,12 +41,12 @@ def process_terms(
     show_progress: bool = True,
 ) -> dict:
     """
-    处理术语列表（MMS Pipeline）
+    处理术语列表（Reanimater Pipeline - 术语处理）
 
     Args:
         input_csv: 输入 CSV 文件路径（包含 word, zh_def 列）
         start_memo_index: 起始 Memo 编号（如 221 表示从 M000222 开始）
-        output_csv: 输出 CSV 文件路径（默认自动生成到 data/output/memo/）
+        output_csv: 输出 CSV 文件路径（默认自动生成到 data/output/reanimater/）
         model: 模型 ID（默认 gpt-4o-mini）
         provider: LLM 提供商（openai 或 anthropic）
         batch_note: 批次备注
@@ -67,8 +67,8 @@ def process_terms(
         LLMError: LLM 调用失败
 
     Example:
-        >>> results = process_terms(
-        ...     input_csv="data/input/memo/221.csv",
+        >>> results = reanimate(
+        ...     input_csv="data/input/reanimater/221.csv",
         ...     start_memo_index=221,
         ...     model="gpt-4o-mini",
         ...     batch_note="测试批次"
@@ -82,7 +82,7 @@ def process_terms(
     # 1. 解析输入路径
     input_path = Path(input_csv)
     if not input_path.is_absolute():
-        input_path = settings.mms_input_dir / input_path
+        input_path = settings.reanimater_input_dir / input_path
     if not input_path.exists():
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
 
@@ -97,7 +97,7 @@ def process_terms(
 
     # 4. 生成批次 ID
     batch_gen = BatchIDGenerator(
-        output_dir=settings.mms_output_dir,
+        output_dir=settings.reanimater_output_dir,
         timezone=settings.batch_timezone
     )
     batch_id = batch_gen.generate(term_count=len(term_inputs))
@@ -121,7 +121,7 @@ def process_terms(
         raise ValueError(f"不支持的 provider: {provider}")
 
     # 6. 创建处理器
-    processor = TermProcessor(
+    processor = Reanimater(
         llm_provider=llm,
         term_list_mapping=term_list_repo.mapping,
         start_memo_index=start_memo_index,
@@ -134,11 +134,11 @@ def process_terms(
 
     # 8. 确定输出路径
     if output_csv is None:
-        output_path = settings.mms_output_dir / f"{batch_id}.csv"
+        output_path = settings.reanimater_output_dir / f"{batch_id}.csv"
     else:
         output_path = Path(output_csv)
         if not output_path.is_absolute():
-            output_path = settings.mms_output_dir / output_path
+            output_path = settings.reanimater_output_dir / output_path
 
     # 9. 写出结果
     CSVTermRepository.write_output(output_path, results)
@@ -152,7 +152,7 @@ def process_terms(
     }
 
 
-def parse_quiz(
+def lithoform(
     input_md: str | Path,
     output_txt: str | Path | None = None,
     model: str = "gpt-4o-mini",
@@ -162,11 +162,11 @@ def parse_quiz(
     temperature: float | None = None,
 ) -> dict:
     """
-    解析 Quiz Markdown 文档（ExParser）
+    解析 Quiz Markdown 文档（Lithoformer - Quiz 解析）
 
     Args:
         input_md: 输入 Markdown 文件路径
-        output_txt: 输出 TXT 文件路径（默认自动生成到 data/output/parser/）
+        output_txt: 输出 TXT 文件路径（默认自动生成到 data/output/lithoformer/）
         model: 模型 ID（默认 gpt-4o-mini）
         provider: LLM 提供商（openai 或 anthropic）
         title_main: 主标题（None 则自动从文件名推断）
@@ -187,8 +187,8 @@ def parse_quiz(
         LLMError: LLM 调用失败
 
     Example:
-        >>> result = parse_quiz(
-        ...     input_md="data/input/parser/chapter3.md",
+        >>> result = lithoform(
+        ...     input_md="data/input/lithoformer/chapter3.md",
         ...     model="gpt-4o-mini"
         ... )
         >>> print(f"成功解析 {result['item_count']} 道题")
@@ -200,7 +200,7 @@ def parse_quiz(
     # 1. 解析输入路径
     input_path = Path(input_md)
     if not input_path.is_absolute():
-        input_path = settings.parser_input_dir / input_path
+        input_path = settings.lithoformer_input_dir / input_path
     if not input_path.exists():
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
 
@@ -232,7 +232,7 @@ def parse_quiz(
         raise ValueError(f"不支持的 provider: {provider}")
 
     # 5. 解析 Quiz
-    parser = QuizParser(llm_provider=llm)
+    parser = Lithoformer(llm_provider=llm)
     items = parser.parse(md_text)
 
     # 6. 格式化输出
@@ -241,12 +241,12 @@ def parse_quiz(
 
     # 7. 确定输出路径
     if output_txt is None:
-        output_path = settings.parser_output_dir / "ShouldBe.txt"
+        output_path = settings.lithoformer_output_dir / "ShouldBe.txt"
         output_path = unique_path(output_path)
     else:
         output_path = Path(output_txt)
         if not output_path.is_absolute():
-            output_path = settings.parser_output_dir / output_path
+            output_path = settings.lithoformer_output_dir / output_path
 
     # 8. 写出结果
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,14 +288,18 @@ def _infer_titles_from_filename(path: Path) -> tuple[str, str]:
 
 
 # ============================================================
-# 便捷别名
+# 便捷别名（保留旧名兼容）
 # ============================================================
-mms = process_terms
-exparser = parse_quiz
+process_terms = reanimate  # 旧名
+parse_quiz = lithoform     # 旧名
+mms = reanimate           # 旧别名
+exparser = lithoform      # 旧别名
 
 __all__ = [
-    "process_terms",
-    "parse_quiz",
-    "mms",
-    "exparser",
+    "reanimate",
+    "lithoform",
+    "process_terms",  # 保留旧名兼容
+    "parse_quiz",     # 保留旧名兼容
+    "mms",           # 保留旧别名
+    "exparser",      # 保留旧别名
 ]

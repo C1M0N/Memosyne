@@ -1,9 +1,9 @@
 """Business logic layer - Services"""
 
-from .term_processor import TermProcessor
-from .quiz_parser import QuizParser
+from .reanimater import Reanimater
+from .lithoformer import Lithoformer
 
 __all__ = [
-    "TermProcessor",
-    "QuizParser",
+    "Reanimater",
+    "Lithoformer",
 ]

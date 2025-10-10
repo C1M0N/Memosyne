@@ -34,7 +34,7 @@ def _infer_titles_from_filename(path: Path) -> tuple[str, str]:
     从文件名推断标题
 
     Example:
-        'Chapter 3 Quiz- Assessment and Classification.md'
+        'Chapter 3 Quiz-Assessment and Classification.md'
         -> ('Chapter 3 Quiz', 'Assessment and Classification')
     """
     name = path.stem  # 不含扩展名

@@ -1,5 +1,5 @@
 """
-术语处理服务 - 重构版本
+术语处理服务（Reanimater） - 重构版本
 
 重构改进：
 - ✅ 依赖注入：LLM Provider 和配置通过构造函数传入
@@ -17,9 +17,9 @@ from ..models.term import TermInput, LLMResponse, TermOutput
 from ..utils.logger import get_logger
 
 
-class TermProcessor:
+class Reanimater:
     """
-    术语处理服务
+    Reanimater - 术语处理服务（重生器）
 
     负责：
     1. 调用 LLM 生成术语信息
@@ -33,7 +33,7 @@ class TermProcessor:
         >>>
         >>> settings = get_settings()
         >>> llm = OpenAIProvider.from_settings(settings)
-        >>> processor = TermProcessor(
+        >>> processor = Reanimater(
         ...     llm_provider=llm,
         ...     term_list_mapping={"psychology": "心理"},
         ...     start_memo_index=2700,
@@ -67,7 +67,7 @@ class TermProcessor:
         self.start_memo = start_memo_index
         self.batch_id = batch_id
         self.batch_note = f"「{batch_note.strip()}」" if batch_note else ""
-        self.logger = logger or get_logger("memosyne.term_processor")
+        self.logger = logger or get_logger("memosyne.reanimater")
 
     def process(
         self,
@@ -253,7 +253,7 @@ if __name__ == "__main__":
     }
 
     # 2. 创建处理器
-    processor = TermProcessor(
+    processor = Reanimater(
         llm_provider=llm_provider,
         term_list_mapping=term_mapping,
         start_memo_index=2700,

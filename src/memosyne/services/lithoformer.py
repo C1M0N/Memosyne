@@ -1,5 +1,5 @@
 """
-Quiz 解析服务
+Quiz 解析服务（Lithoformer）
 
 负责使用 LLM 将 Markdown 格式的 Quiz 解析成结构化数据
 """
@@ -111,9 +111,9 @@ QUIZ_SCHEMA = {
 }
 
 
-class QuizParser:
+class Lithoformer:
     """
-    Quiz 解析器
+    Lithoformer - Quiz 解析器（重塑器）
 
     使用 LLM 将 Markdown 格式的 Quiz 解析成结构化的 QuizItem 列表
 
@@ -123,7 +123,7 @@ class QuizParser:
         >>>
         >>> settings = get_settings()
         >>> llm = OpenAIProvider.from_settings(settings)
-        >>> parser = QuizParser(llm_provider=llm)
+        >>> parser = Lithoformer(llm_provider=llm)
         >>>
         >>> md_text = "1. What is...\\nA. Option A\\nB. Option B"
         >>> items = parser.parse(md_text)
@@ -190,7 +190,7 @@ if __name__ == "__main__":
     llm_provider = OpenAIProvider.from_settings(settings)
 
     # 2. 创建解析器
-    parser = QuizParser(llm_provider=llm_provider)
+    parser = Lithoformer(llm_provider=llm_provider)
 
     # 3. 示例 Markdown
     sample_md = """

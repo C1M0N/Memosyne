@@ -74,6 +74,14 @@ class Settings(BaseSettings):
         extra="ignore",  # 忽略额外的环境变量
     )
 
+    @field_validator("anthropic_api_key", mode="before")
+    @classmethod
+    def optional_api_key_empty_to_none(cls, v: str | None) -> str | None:
+        """将空字符串转换为 None（用于可选的 API Key）"""
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
     @field_validator("default_temperature", mode="before")
     @classmethod
     def empty_str_to_none(cls, v: str | float | None) -> float | None:
