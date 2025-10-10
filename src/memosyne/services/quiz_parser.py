@@ -3,9 +3,6 @@ Quiz 解析服务
 
 负责使用 LLM 将 Markdown 格式的 Quiz 解析成结构化数据
 """
-import json
-from openai import BadRequestError
-
 from ..core.interfaces import LLMError
 from ..models.quiz import QuizItem, QuizResponse
 
@@ -154,40 +151,31 @@ class QuizParser:
         """
         user_message = USER_TEMPLATE.format(md=markdown_text)
 
-        kwargs = {
-            "model": self.llm.model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": QUIZ_SCHEMA
-            },
-        }
-
-        if self.llm.temperature is not None:
-            kwargs["temperature"] = self.llm.temperature
-
         try:
-            resp = self.llm.client.chat.completions.create(**kwargs)
-        except BadRequestError as e:
-            em = str(e).lower()
-            if "temperature" in em and "unsupported" in em:
-                kwargs.pop("temperature", None)
-                resp = self.llm.client.chat.completions.create(**kwargs)
-            else:
-                raise LLMError(f"OpenAI API 错误：{e}") from e
-        except Exception as e:
-            raise LLMError(f"调用 LLM 时发生意外错误：{e}") from e
-
-        # 解析 JSON 响应
-        try:
-            data = json.loads(resp.choices[0].message.content)
+            # 使用统一的 Provider 接口
+            data = self.llm.complete_structured(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=user_message,
+                schema=QUIZ_SCHEMA["schema"],
+                schema_name="QuizItems"
+            )
             response = QuizResponse(**data)
+
+            # 校验：确保至少有一个题目
+            if not response.items:
+                raise LLMError(
+                    "LLM 返回空题目列表。可能的原因：\n"
+                    "1. 输入的 Markdown 格式不规范\n"
+                    "2. 输入中没有可识别的题目\n"
+                    "3. LLM 解析失败\n"
+                    "请检查输入文件格式。"
+                )
+
             return response.items
+        except LLMError:
+            raise
         except Exception as e:
-            raise LLMError(f"解析 LLM 响应失败：{e}") from e
+            raise LLMError(f"解析 Quiz 失败：{e}") from e
 
 
 # ============================================================

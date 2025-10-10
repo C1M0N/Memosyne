@@ -44,11 +44,19 @@ source .venv/bin/activate  # macOS/Linux
 
 ### 环境配置
 
-项目需要 `.env` 文件配置 API 密钥：
+项目提供 `.env.example` 模板文件，首次使用时复制并配置：
+```bash
+cp .env.example .env
+# 编辑 .env 文件，填入真实的 API 密钥
+```
+
+`.env` 文件示例：
 ```bash
 OPENAI_API_KEY=your-key-here
 ANTHROPIC_API_KEY=your-key-here
-MODEL_NAME=o4mini  # 可选：默认模型名
+DEFAULT_OPENAI_MODEL=gpt-4o-mini
+DEFAULT_ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+LOG_LEVEL=INFO
 ```
 
 **注意**: `.env` 文件已在 `.gitignore` 中，绝不能提交到版本控制。
@@ -65,7 +73,7 @@ src/memosyne/
 ├── providers/       # 提供商层：LLM Provider 实现
 ├── repositories/    # 仓储层：数据访问（CSV、术语表）
 ├── services/        # 服务层：业务逻辑
-├── utils/           # 工具层：路径、批次ID生成等
+├── utils/           # 工具层：路径、批次ID生成、日志系统、Quiz格式化
 └── cli/             # 界面层：命令行接口
 ```
 
@@ -160,8 +168,11 @@ LLM Provider 使用 Protocol 定义接口：
 ```python
 class LLMProvider(Protocol):
     def complete_prompt(self, word: str, zh_def: str) -> dict: ...
+    def complete_structured(self, system_prompt: str, user_prompt: str, schema: dict, schema_name: str = "Response") -> dict: ...
 ```
-任何实现了此方法的类都可作为 Provider，无需显式继承。
+任何实现了这两个方法的类都可作为 Provider，无需显式继承。
+- `complete_prompt()` 用于 MMS 术语处理
+- `complete_structured()` 用于 ExParser Quiz 解析（结构化 JSON 输出）
 
 ### 3. Pydantic 数据验证
 所有数据模型使用 Pydantic，自动验证：
@@ -199,6 +210,24 @@ settings = get_settings()  # 自动从 .env 加载
 数据访问通过 Repository 层隔离：
 - `CSVTermRepository` - CSV 读写
 - `TermListRepo` - 术语表管理
+
+### 7. 统一日志系统
+使用标准 `logging` 模块，提供灵活的日志配置：
+```python
+from memosyne.utils.logger import setup_logger
+
+logger = setup_logger(
+    name="memosyne",
+    level="INFO",         # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    log_file="logs/app.log",  # 可选的日志文件
+    format_type="simple"   # simple 或 detailed
+)
+
+logger.info("开始处理术语")
+logger.warning("Example 与 EnDef 相同")
+logger.error("LLM 调用失败", exc_info=True)
+```
+服务层（TermProcessor、QuizParser）使用日志记录器替代 print，支持依赖注入。
 
 ## 开发约定 (v2.0)
 

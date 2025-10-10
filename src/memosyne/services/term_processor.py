@@ -6,13 +6,16 @@
 - ✅ 职责分离：批次 ID 生成委托给 BatchIDGenerator
 - ✅ 使用 Pydantic 模型：类型安全的数据流
 - ✅ 业务逻辑集中：_post_fixups 移到 LLMResponse 验证器
+- ✅ 统一日志系统：使用 logging 而非 print
 """
+import logging
 from typing import Iterable
 from tqdm import tqdm
 
 from ..core.interfaces import LLMProvider, LLMError
 from ..models.term import TermInput, LLMResponse, TermOutput
 from ..utils.batch import BatchIDGenerator
+from ..utils.logger import get_logger
 
 
 class TermProcessor:
@@ -49,6 +52,7 @@ class TermProcessor:
         start_memo_index: int,
         batch_id: str,
         batch_note: str = "",
+        logger: logging.Logger | None = None,
     ):
         """
         Args:
@@ -57,47 +61,61 @@ class TermProcessor:
             start_memo_index: 起始 Memo 编号（如 2700 表示从 M002701 开始）
             batch_id: 批次 ID
             batch_note: 批次备注
+            logger: 日志记录器（None 则使用默认）
         """
         self.llm = llm_provider
         self.term_mapping = term_list_mapping
         self.start_memo = start_memo_index
         self.batch_id = batch_id
         self.batch_note = f"「{batch_note.strip()}」" if batch_note else ""
+        self.logger = logger or get_logger("memosyne.term_processor")
 
     def process(
         self,
         terms: Iterable[TermInput],
-        show_progress: bool = True
+        show_progress: bool = True,
+        total: int | None = None
     ) -> list[TermOutput]:
         """
         批量处理术语
 
         Args:
-            terms: 术语输入列表
+            terms: 术语输入（可以是列表或迭代器）
             show_progress: 是否显示进度条
+            total: 术语总数（如果未提供且 terms 有 __len__，会自动获取）
 
         Returns:
             术语输出列表
 
         Raises:
             LLMError: LLM 调用失败
+
+        Note:
+            为了优化内存使用，本方法不会强制将迭代器转换为列表。
+            如果需要显示进度百分比，请传入 total 参数，或确保 terms 有 __len__ 方法。
         """
         results: list[TermOutput] = []
-        term_list = list(terms)  # 转为列表以便计算总数
+
+        # 尝试获取总数（避免强制转换为列表）
+        if total is None and hasattr(terms, '__len__'):
+            try:
+                total = len(terms)
+            except TypeError:
+                total = None
 
         # 配置进度条
-        iterator = enumerate(term_list)
         if show_progress:
-            iterator = enumerate(
-                tqdm(
-                    term_list,
-                    desc="LLM Processing",
-                    total=len(term_list),
-                    ncols=80,
-                    ascii=True,
-                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
-                )
-            )
+            pbar_kwargs = {
+                "desc": "LLM Processing",
+                "ncols": 80,
+                "ascii": True,
+                "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
+            }
+            if total is not None:
+                pbar_kwargs["total"] = total
+            iterator = enumerate(tqdm(terms, **pbar_kwargs))
+        else:
+            iterator = enumerate(terms)
 
         # 处理每个术语
         for index, term_input in iterator:
@@ -133,11 +151,11 @@ class TermProcessor:
                 results.append(output)
 
             except LLMError as e:
-                print(f"❌ LLM 调用失败 [{term_input.word}]: {e}")
+                self.logger.error(f"LLM 调用失败 [{term_input.word}]: {e}")
                 raise  # 重新抛出，让调用者决定如何处理
 
             except Exception as e:
-                print(f"❌ 处理失败 [{term_input.word}]: {e}")
+                self.logger.error(f"处理失败 [{term_input.word}]: {e}", exc_info=True)
                 raise
 
         return results
@@ -163,8 +181,12 @@ class TermProcessor:
 
         # 规则2：缩写词 → IPA 必须为空（已在 LLMResponse 验证器处理）
 
-        # 规则3：Example 与 EnDef 相同 → 清空 Example
+        # 规则3：Example 与 EnDef 相同 → 清空 Example 并记录告警
         if llm_response.example.strip().lower() == llm_response.en_def.strip().lower():
+            self.logger.warning(
+                f"词条 [{word}] 的 Example 与 EnDef 相同，已清空。"
+                f"EnDef: {llm_response.en_def[:50]}..."
+            )
             llm_response.example = ""
 
         # 规则4：PPfix/PPmeans 规范化（小写、空白折叠）

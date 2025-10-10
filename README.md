@@ -44,6 +44,7 @@ Memosyne 是一个基于大语言模型（LLM）的术语处理和 Quiz 解析�
 - ✅ **分层架构**：Config → Core → Models → Providers → Services → CLI
 - ✅ **依赖注入**：无全局状态，完全可测试
 - ✅ **类型安全**：使用 Pydantic 2.x 进行运行时验证
+- ✅ **统一日志系统**：使用 logging 模块，支持多种输出格式
 
 ### 🔌 **灵活扩展**
 - ✅ 支持 **OpenAI** 和 **Anthropic** 双 Provider
@@ -126,12 +127,19 @@ pip install -r requirements.txt
 
 ### 4. 配置环境变量
 
-创建 `.env` 文件：
+复制 `.env.example` 文件并填入你的 API 密钥：
+
+```bash
+cp .env.example .env
+# 编辑 .env 文件
+```
+
+`.env` 文件示例：
 
 ```env
 # === LLM API 密钥（必填）===
-OPENAI_API_KEY=sk-proj-...
-ANTHROPIC_API_KEY=sk-ant-...  # 可选
+OPENAI_API_KEY=your-openai-api-key-here
+ANTHROPIC_API_KEY=your-anthropic-api-key-here  # 可选
 
 # === 默认模型配置 ===
 DEFAULT_LLM_PROVIDER=openai
@@ -184,9 +192,10 @@ Memosyne/
 │   │   ├── term_processor.py
 │   │   └── quiz_parser.py
 │   ├── utils/                 # 工具函数
-│   │   ├── batch.py
-│   │   ├── path.py
-│   │   └── quiz_formatter.py
+│   │   ├── batch.py           # 批次ID生成
+│   │   ├── path.py            # 路径工具
+│   │   ├── quiz_formatter.py  # Quiz格式化
+│   │   └── logger.py          # 日志配置
 │   └── cli/                   # CLI 入口
 │       ├── mms.py
 │       └── exparser.py
@@ -305,13 +314,13 @@ python test_exparser.py
 
 1. 在 `providers/` 创建新文件
 2. 继承 `BaseLLMProvider`
-3. 实现 `complete_prompt()` 方法
+3. 实现 `complete_prompt()` 和 `complete_structured()` 方法
 4. 在 `providers/__init__.py` 导出
 
 示例：
 
 ```python
-from ..core.interfaces import BaseLLMProvider
+from ..core.interfaces import BaseLLMProvider, LLMError
 
 class MyProvider(BaseLLMProvider):
     def __init__(self, model: str, api_key: str, temperature: float | None = None):
@@ -319,7 +328,19 @@ class MyProvider(BaseLLMProvider):
         super().__init__(model=model, temperature=temperature)
 
     def complete_prompt(self, word: str, zh_def: str) -> dict:
+        """用于 MMS 术语处理"""
         # 实现你的逻辑
+        pass
+
+    def complete_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict,
+        schema_name: str = "Response"
+    ) -> dict:
+        """用于 ExParser Quiz 解析"""
+        # 实现结构化输出逻辑
         pass
 ```
 
@@ -390,6 +411,20 @@ class MyProvider(BaseLLMProvider):
 ---
 
 ## 📝 变更日志
+
+### v2.1.0 (2025-10-10)
+
+**架构增强与质量改进**
+
+- ✨ 新增：统一日志系统（`utils/logger.py`），替换 print 为 logging
+- ✨ 新增：Provider 抽象方法 `complete_structured()` 用于结构化输出
+- ✨ 新增：`.env.example` 环境变量模板文件
+- ✨ 新增：API_GUIDE.md 完整文档（40+ 示例）
+- ✅ 改进：QuizParser 添加结果校验，空题目列表会抛出错误
+- ✅ 改进：TermProcessor 添加告警日志（Example 与 EnDef 相同时）
+- ✅ 改进：TermProcessor 内存优化，避免强制转换迭代器为列表
+- 🔧 修复：QuizParser 破坏 Provider 抽象的问题，现使用统一接口
+- 📚 文档：更新 CLAUDE.md、ARCHITECTURE.md、README.md
 
 ### v2.0.0 (2025-10-07)
 

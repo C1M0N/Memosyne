@@ -19,7 +19,7 @@ class LLMProvider(Protocol):
     """
     LLM 提供商协议
 
-    任何实现了 complete_prompt 方法的类都满足此协议，
+    任何实现了 complete_prompt 和 complete_structured 方法的类都满足此协议，
     无需显式继承（结构化子类型，Structural Subtyping）
     """
 
@@ -33,6 +33,30 @@ class LLMProvider(Protocol):
 
         Returns:
             包含 IPA, POS, EnDef 等字段的字典
+
+        Raises:
+            LLMError: LLM 调用失败时抛出
+        """
+        ...
+
+    def complete_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict,
+        schema_name: str = "Response"
+    ) -> dict:
+        """
+        调用 LLM 生成结构化 JSON 响应
+
+        Args:
+            system_prompt: 系统提示词
+            user_prompt: 用户提示词
+            schema: JSON Schema 定义（OpenAPI 3.0 格式）
+            schema_name: Schema 名称（用于标识，默认 "Response"）
+
+        Returns:
+            解析后的 JSON 字典
 
         Raises:
             LLMError: LLM 调用失败时抛出
@@ -65,6 +89,17 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def complete_prompt(self, word: str, zh_def: str) -> dict:
         """调用 LLM 生成术语信息（子类必须实现）"""
+        pass
+
+    @abstractmethod
+    def complete_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict,
+        schema_name: str = "Response"
+    ) -> dict:
+        """调用 LLM 生成结构化 JSON 响应（子类必须实现）"""
         pass
 
     def _validate_config(self) -> None:
