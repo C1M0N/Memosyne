@@ -118,8 +118,8 @@ class QuizParser:
     使用 LLM 将 Markdown 格式的 Quiz 解析成结构化的 QuizItem 列表
 
     Example:
-        >>> from providers import OpenAIProvider
-        >>> from config import get_settings
+        >>> from memosyne.providers import OpenAIProvider
+        >>> from memosyne.config import get_settings
         >>>
         >>> settings = get_settings()
         >>> llm = OpenAIProvider.from_settings(settings)

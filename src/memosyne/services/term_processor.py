@@ -14,7 +14,6 @@ from tqdm import tqdm
 
 from ..core.interfaces import LLMProvider, LLMError
 from ..models.term import TermInput, LLMResponse, TermOutput
-from ..utils.batch import BatchIDGenerator
 from ..utils.logger import get_logger
 
 
@@ -29,8 +28,8 @@ class TermProcessor:
     4. 组装输出数据
 
     Example:
-        >>> from providers.openai import OpenAIProvider
-        >>> from config.settings import get_settings
+        >>> from memosyne.providers import OpenAIProvider
+        >>> from memosyne.config import get_settings
         >>>
         >>> settings = get_settings()
         >>> llm = OpenAIProvider.from_settings(settings)
@@ -99,7 +98,7 @@ class TermProcessor:
         # 尝试获取总数（避免强制转换为列表）
         if total is None and hasattr(terms, '__len__'):
             try:
-                total = len(terms)
+                total = len(terms)  # type: ignore[arg-type]
             except TypeError:
                 total = None
 
@@ -240,8 +239,8 @@ class TermProcessor:
 # 使用示例
 # ============================================================
 if __name__ == "__main__":
-    from ..providers.openai import OpenAIProvider
-    from ..config.settings import get_settings
+    from ..providers import OpenAIProvider
+    from ..config import get_settings
 
     # 1. 准备依赖
     settings = get_settings()
