@@ -5,6 +5,7 @@ Anthropic Provider - 重构版本
 改进：继承抽象基类、复用 OpenAI 的 Prompt
 """
 import json
+from typing import Any
 from anthropic import Anthropic, APIError
 
 from ..core.interfaces import BaseLLMProvider, LLMError
@@ -34,7 +35,7 @@ class AnthropicProvider(BaseLLMProvider):
             temperature=settings.default_temperature,
         )
 
-    def complete_prompt(self, word: str, zh_def: str) -> dict:
+    def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
         """调用 Anthropic API 生成术语信息"""
         user_message = USER_TEMPLATE.format(word=word, zh_def=zh_def)
 
@@ -44,7 +45,7 @@ class AnthropicProvider(BaseLLMProvider):
             "input_schema": TERM_RESULT_SCHEMA["schema"],
         }
 
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "model": self.model,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_message}],
@@ -97,9 +98,9 @@ class AnthropicProvider(BaseLLMProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        schema: dict,
+        schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> dict:
+    ) -> dict[str, Any]:
         """调用 Anthropic API 生成结构化 JSON 响应（使用 Tool Use）"""
         tool = {
             "name": schema_name,
@@ -107,7 +108,7 @@ class AnthropicProvider(BaseLLMProvider):
             "input_schema": schema,
         }
 
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "model": self.model,
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_prompt}],

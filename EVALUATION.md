@@ -3,16 +3,16 @@
 ## 1. 项目概览
 - **定位**：Memosyne 是一个基于大语言模型的术语扩展与测验解析工具包，提供 CLI 和编程 API 两种入口，支持 OpenAI、Anthropic 双提供商以及完整的数据流（CSV/Markdown -> 结构化结果）。【F:README.md†L1-L99】
 - **目标用户**：需要大规模整理术语记忆卡片与 Quiz 题目的教育内容工作流。
-- **核心模块**：配置管理、Pydantic 模型、LLM Provider 抽象、TermProcessor（术语流水线）、QuizParser + QuizFormatter（测验解析与格式化）、CSV/术语表仓储。【F:ARCHITECTURE.md†L22-L175】【F:src/memosyne/api.py†L33-L152】
+- **核心模块**：配置管理、Pydantic 模型、LLM Provider 抽象、Reanimater（术语流水线）、Lithoformer + QuizFormatter（测验解析与格式化）、CSV/术语表仓储。【F:ARCHITECTURE.md†L22-L175】【F:src/memosyne/api.py†L33-L152】
 
 ## 2. 架构与设计
 - **分层架构清晰**：Config → Core → Models → Providers → Services → CLI 的层次在代码和文档中保持一致，利于扩展和依赖注入。【F:ARCHITECTURE.md†L43-L108】【F:src/memosyne/config/settings.py†L35-L153】
 - **类型驱动的数据管道**：术语与 Quiz 数据使用 Pydantic 模型建模，字段约束和后置验证覆盖业务规则（如缩写不得带 IPA、Memo ID 正则等），降低了脏数据传入的风险。【F:src/memosyne/models/term.py†L18-L188】
 - **业务工具抽象到 utils 层**：批次 ID 生成、Quiz 输出格式化均拆出可复用类，封装时间/时区、文本清洗等细节，方便测试与重用。【F:src/memosyne/utils/batch.py†L14-L148】【F:src/memosyne/utils/quiz_formatter.py†L10-L171】
 - **改进空间**：
-  - `QuizParser` 直接访问 `llm.client.chat.completions`，假设 Provider 内部具有 OpenAI 客户端属性，破坏了 Protocol/ABC 的抽象边界，若引入新 Provider 会出现运行时错误。建议在接口层暴露统一的 `complete_structured` 方法或在 Provider 层适配响应结构。【F:src/memosyne/services/quiz_parser.py†L135-L190】
-  - `TermProcessor` 依赖一次性将迭代器转换成列表来驱动进度条，处理超大批量时会导致额外内存占用，可考虑改用 `tqdm` 对迭代器包装或提供可选的流式模式。【F:src/memosyne/services/term_processor.py†L85-L134】
-  - 目前业务错误处理主要通过 `print`，缺乏集中式日志记录，与 README 中宣称的“结构化日志”尚未对齐，可在服务层注入 logger 并与设置中的日志配置联动。【F:src/memosyne/services/term_processor.py†L135-L141】【F:README.md†L40-L63】
+  - `Lithoformer` 直接访问 `llm.client.chat.completions`，假设 Provider 内部具有 OpenAI 客户端属性，破坏了 Protocol/ABC 的抽象边界，若引入新 Provider 会出现运行时错误。建议在接口层暴露统一的 `complete_structured` 方法或在 Provider 层适配响应结构。【F:src/memosyne/services/lithoformer.py†L135-L190】
+  - `Reanimater` 依赖一次性将迭代器转换成列表来驱动进度条，处理超大批量时会导致额外内存占用，可考虑改用 `tqdm` 对迭代器包装或提供可选的流式模式。【F:src/memosyne/services/reanimater.py†L85-L134】
+  - 目前业务错误处理主要通过 `print`，缺乏集中式日志记录，与 README 中宣称的"结构化日志"尚未对齐，可在服务层注入 logger 并与设置中的日志配置联动。【F:src/memosyne/services/reanimater.py†L135-L141】【F:README.md†L40-L63】
 
 ## 3. 代码质量与可维护性
 - **优势**：
@@ -20,14 +20,14 @@
   - CSV/术语表仓储实现了列名规范化和容错解析，方便不同格式输入并且复用 Pydantic 验证。【F:src/memosyne/repositories/csv_repository.py†L18-L83】【F:src/memosyne/repositories/term_list_repository.py†L33-L90】
   - `BatchIDGenerator` 通过扫描输出目录避免批次冲突，并允许自定义时区和每日最大批次，满足运营侧需求。【F:src/memosyne/utils/batch.py†L14-L148】
 - **问题与风险**：
-  - `QuizParser` 返回 `QuizResponse` 之前缺少对 `items` 为空或不合规的显式校验，LLM 返回空数组时上层流程仍视为成功，建议补充最小数量或结构校验，或在 `parse_quiz` 中兜底。【F:src/memosyne/services/quiz_parser.py†L155-L190】
-  - `TermProcessor` 的业务规则中如果 LLM 给出的 Example 与 EnDef 相同会直接清空 Example，导致输出 CSV 中例句为空；建议记录告警或回退到人工审查列表，而不是 silent drop。【F:src/memosyne/services/term_processor.py†L166-L172】
+  - `Lithoformer` 返回 `QuizResponse` 之前缺少对 `items` 为空或不合规的显式校验，LLM 返回空数组时上层流程仍视为成功，建议补充最小数量或结构校验，或在 `lithoform` 中兜底。【F:src/memosyne/services/lithoformer.py†L155-L190】
+  - `Reanimater` 的业务规则中如果 LLM 给出的 Example 与 EnDef 相同会直接清空 Example，导致输出 CSV 中例句为空；建议记录告警或回退到人工审查列表，而不是 silent drop。【F:src/memosyne/services/reanimater.py†L166-L172】
   - 依赖注入虽到位，但 CLI/API 层没有展示如何在测试中注入 mock Provider，说明文档与真实可测试性存在差距。
 
 ## 4. 测试与质量保障
 - 仓库未包含任何自动化测试，`pytest` 运行结果显示 “collected 0 items”，且 `requirements.txt` 中的测试/静态检查依赖被注释掉，说明当前质量保障完全依赖手动验证。【F:requirements.txt†L1-L18】【ebecf8†L1-L7】
 - 建议动作：
-  - 为核心服务（TermProcessor、QuizParser、BatchIDGenerator、QuizFormatter）编写单元测试，使用 mock Provider 模拟 LLM 响应。
+  - 为核心服务（Reanimater、Lithoformer、BatchIDGenerator、QuizFormatter）编写单元测试，使用 mock Provider 模拟 LLM 响应。
   - 配置最小 CI 流水线（lint + pytest），确保类型和格式约束长期可用。
 
 ## 5. 文档与开发者体验
@@ -44,7 +44,7 @@
 
 ## 7. 优先级建议
 1. **测试基线**：补齐单元测试与 CI，确保关键路径稳定。
-2. **Provider 抽象完善**：让 QuizParser、TermProcessor 全程通过接口交互，避免直接访问具体实现。
+2. **Provider 抽象完善**：让 Lithoformer、Reanimater 全程通过接口交互，避免直接访问具体实现。
 3. **日志与监控**：统一使用 `logging`，并在 README 中同步说明配置方法。
 4. **文档补全**：提供示例 `.env`、演示数据和 CLI 操作示例；确认并补齐 API Guide/Git Guide 链接内容。
 5. **性能与鲁棒性**：为大批量输入提供流式处理或分批机制，并在 Provider 中加入可配置重试/限速策略。

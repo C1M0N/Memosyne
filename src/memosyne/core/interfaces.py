@@ -169,18 +169,36 @@ if __name__ == "__main__":
     class MockLLM:
         """Mock LLM - 不需要显式继承 LLMProvider"""
         def complete_prompt(self, word: str, zh_def: str) -> dict:
-            return {"IPA": "/test/", "POS": "n."}
+            return {"IPA": "/test/", "POS": "n.", "word": word, "zh_def": zh_def}
+
+        def complete_structured(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            schema: dict,
+            schema_name: str = "Response"
+        ) -> dict:
+            return {"result": "mock", "schema": schema_name}
 
     mock = MockLLM()
     assert isinstance(mock, LLMProvider)  # True!
 
     # 示例 2: 使用 ABC（显式继承）
-    class OpenAIProvider(BaseLLMProvider):
+    class ExampleProvider(BaseLLMProvider):
         def complete_prompt(self, word: str, zh_def: str) -> dict:
-            return {"model": self.model, "word": word}
+            return {"model": self.model, "word": word, "zh_def": zh_def}
 
-    provider = OpenAIProvider(model="gpt-4o-mini")
-    print(provider)  # OpenAIProvider(model='gpt-4o-mini')
+        def complete_structured(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            schema: dict,
+            schema_name: str = "Response"
+        ) -> dict:
+            return {"model": self.model, "schema": schema_name}
+
+    provider = ExampleProvider(model="gpt-4o-mini")
+    print(provider)  # ExampleProvider(model='gpt-4o-mini')
 
     # 示例 3: 类型检查
     def process_with_llm(llm: LLMProvider, word: str) -> dict:

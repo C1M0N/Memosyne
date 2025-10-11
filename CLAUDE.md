@@ -19,12 +19,12 @@ Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析
 
 ```bash
 # 方式 1: 交互式 CLI
-python src/memosyne/cli/reanimater.py    # Reanimater - 术语处理
-python src/memosyne/cli/lithoformer.py   # Lithoformer - Quiz 解析
+python src/memosyne/cli/reanimate.py    # Reanimate - 术语重生
+python src/memosyne/cli/lithoform.py   # Lithoform - Quiz 重塑
 
 # 方式 2: Python 模块
-python -m memosyne.cli.reanimater
-python -m memosyne.cli.lithoformer
+python -m memosyne.cli.reanimate
+python -m memosyne.cli.lithoform
 
 # 方式 3: 编程 API
 python -c "from memosyne import reanimate; help(reanimate)"
@@ -94,7 +94,7 @@ src/memosyne/
 
 ### Reanimater Pipeline 处理流程（术语重生器）
 
-**入口**: `src/memosyne/cli/reanimater.py`
+**入口**: `src/memosyne/cli/reanimate.py`
 
 1. **配置加载** (`config/settings.py`):
    - `Settings` - Pydantic Settings 自动验证 API Key
@@ -109,7 +109,7 @@ src/memosyne/
    - `TermListRepo.load()` - 加载术语表
    - `get_chinese_tag()` - 英文标签 → 中文映射
 
-4. **LLM 处理** (`services/term_processor.py`):
+4. **LLM 处理** (`services/reanimater.py`):
    - `Reanimater` - 依赖注入 LLM Provider
    - 调用 `process()` 批量处理术语
    - 使用 tqdm 显示进度条
@@ -127,10 +127,10 @@ src/memosyne/
 
 ### Lithoformer 架构（Quiz重塑器，v2.0）
 
-**入口**: `src/memosyne/cli/lithoformer.py`
+**入口**: `src/memosyne/cli/lithoform.py`
 
 处理流程：
-1. **Quiz 解析** (`services/quiz_parser.py`):
+1. **Quiz 解析** (`services/lithoformer.py`):
    - `Lithoformer` - 使用依赖注入的 LLM Provider
    - 支持 OpenAI 和 Anthropic
    - 使用 JSON Schema 确保结构化输出
@@ -292,10 +292,10 @@ logger.error("LLM 调用失败", exc_info=True)
 
 ## Lithoformer 详细说明（Quiz重塑器，v2.0 已重构）
 
-**入口**: `src/memosyne/cli/lithoformer.py`
+**入口**: `src/memosyne/cli/lithoform.py`
 
 处理流程：
-1. **Quiz 解析** (`services/quiz_parser.py`):
+1. **Quiz 解析** (`services/lithoformer.py`):
    - `Lithoformer` - 使用 LLM Provider 解析 Markdown
    - 支持 OpenAI 和 Anthropic
    - 返回 `QuizItem` Pydantic 模型列表

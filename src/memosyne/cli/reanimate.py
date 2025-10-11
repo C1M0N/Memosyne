@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Reanimater CLI - 重构版本
+Reanimate CLI - 术语重生工具
 
 基于原 src/mms_pipeline/main.py
 改进：依赖注入、模块化、使用新架构
 
 运行方式：
-    python -m memosyne.cli.reanimater
+    python -m memosyne.cli.reanimate
     或
-    python src/memosyne/cli/reanimater.py
+    python src/memosyne/cli/reanimate.py
 """
 import sys
 from pathlib import Path

@@ -27,7 +27,6 @@ from .providers import OpenAIProvider, AnthropicProvider
 from .repositories import CSVTermRepository, TermListRepo
 from .services import Reanimater, Lithoformer
 from .utils import BatchIDGenerator, QuizFormatter, unique_path
-from .models import TermOutput
 
 
 def reanimate(
@@ -67,14 +66,14 @@ def reanimate(
         LLMError: LLM 调用失败
 
     Example:
-        >>> results = reanimate(
+        >>> result = reanimate(
         ...     input_csv="data/input/reanimater/221.csv",
         ...     start_memo_index=221,
         ...     model="gpt-4o-mini",
         ...     batch_note="测试批次"
         ... )
-        >>> print(f"成功处理 {results['processed_count']} 个术语")
-        >>> print(f"输出文件: {results['output_path']}")
+        >>> print(f"成功处理 {result['processed_count']} 个术语")
+        >>> print(f"输出文件: {result['output_path']}")
     """
     settings = get_settings()
     settings.ensure_dirs()

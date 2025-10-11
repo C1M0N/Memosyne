@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """
-Lithoformer CLI - Quiz 解析工具（重构版 v2.0）
+Lithoform CLI - Quiz 重塑工具
 
 功能：将 Markdown 格式的 Quiz 解析并格式化为 ShouldBe.txt
 
-使用：
-    python src/memosyne/cli/lithoformer.py
+运行方式：
+    python -m memosyne.cli.lithoform
+    或
+    python src/memosyne/cli/lithoform.py
 
 重构改进：
 - ✅ 使用统一的 Settings 和 Provider
 - ✅ 依赖注入，无全局状态
 - ✅ 类型安全，使用 Pydantic 模型
-- ✅ 职责分离（Parser, Formatter, CLI）
+- ✅ 职责分离（Lithoformer, Formatter, CLI）
 """
 import sys
 from pathlib import Path
 
-# 支持直接执行（python src/memosyne/cli/exparser.py）
+# 支持直接执行（python src/memosyne/cli/lithoform.py）
 if __name__ == "__main__":
     src_path = Path(__file__).resolve().parents[2]
     if str(src_path) not in sys.path:
@@ -115,8 +117,8 @@ def main():
 
     # 2. 用户输入
     model_input = ask("引擎（4 = gpt-4o-mini，5 = gpt-5-mini，claude = Claude，或输入完整模型ID）：")
-    input_raw = ask("输入 Markdown 文件路径（默认 data/input/parser/...）：", required=False)
-    output_raw = ask("输出 TXT 文件路径（默认 data/output/parser/ShouldBe.txt）：", required=False)
+    input_raw = ask("输入 Markdown 文件路径（默认 data/input/lithoformer/...）：", required=False)
+    output_raw = ask("输出 TXT 文件路径（默认 data/output/lithoformer/ShouldBe.txt）：", required=False)
 
     # 3. 解析路径
     input_path = _resolve_input_md(input_raw, settings)

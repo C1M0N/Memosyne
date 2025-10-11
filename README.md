@@ -69,11 +69,11 @@ Memosyne 是一个基于大语言模型（LLM）的术语处理和 Quiz 解析�
 ### 方式 1：交互式 CLI
 
 ```bash
-# 术语处理 (Reanimater)
-python src/memosyne/cli/reanimater.py
+# 术语重生 (Reanimate)
+python src/memosyne/cli/reanimate.py
 
-# Quiz解析 (Lithoformer)
-python src/memosyne/cli/lithoformer.py
+# Quiz重塑 (Lithoform)
+python src/memosyne/cli/lithoform.py
 ```
 
 ### 方式 2：编程 API
@@ -197,8 +197,8 @@ Memosyne/
 │   │   ├── quiz_formatter.py  # Quiz格式化
 │   │   └── logger.py          # 日志配置
 │   └── cli/                   # CLI 入口
-│       ├── reanimater.py
-│       └── lithoformer.py
+│       ├── reanimate.py
+│       └── lithoform.py
 ├── data/                      # 数据文件
 │   ├── input/
 │   │   ├── reanimater/        # Reanimater 输入
@@ -300,7 +300,7 @@ def api_parse():
 python test_api.py
 
 # 测试组件
-python test_lithoformer.py
+python test_lithoform.py
 ```
 
 ### 代码风格

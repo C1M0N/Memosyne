@@ -219,13 +219,13 @@ if __name__ == "__main__":
     term_in = TermInput(word="neuroscience", zh_def="神经科学")
     print(term_in.model_dump())  # {'word': 'neuroscience', 'zh_def': '神经科学'}
 
-    # 2. 模拟 LLM 响应
+    # 2. 模拟 LLM 响应（使用字段名，因为 populate_by_name=True）
     llm_resp = LLMResponse(
-        ipa="/ˈnʊroʊˌsaɪəns/",
-        pos="n.",
-        en_def="The scientific study of the nervous system.",
-        example="Neuroscience has made great advances in recent years.",
-        tag_en="neuroscience"
+        IPA="/ˈnʊroʊˌsaɪəns/",
+        POS="n.",
+        EnDef="The scientific study of the nervous system.",
+        Example="Neuroscience has made great advances in recent years.",
+        TagEN="neuroscience"
     )
 
     # 3. 生成输出
