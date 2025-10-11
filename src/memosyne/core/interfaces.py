@@ -8,7 +8,7 @@
 - ✅ 类型安全：IDE 能检查方法签名
 """
 from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 # ============================================================
@@ -23,7 +23,7 @@ class LLMProvider(Protocol):
     无需显式继承（结构化子类型，Structural Subtyping）
     """
 
-    def complete_prompt(self, word: str, zh_def: str) -> dict:
+    def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
         """
         调用 LLM 生成术语信息
 
@@ -43,9 +43,9 @@ class LLMProvider(Protocol):
         self,
         system_prompt: str,
         user_prompt: str,
-        schema: dict,
+        schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         调用 LLM 生成结构化 JSON 响应
 
@@ -87,7 +87,7 @@ class BaseLLMProvider(ABC):
         self._validate_config()
 
     @abstractmethod
-    def complete_prompt(self, word: str, zh_def: str) -> dict:
+    def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
         """调用 LLM 生成术语信息（子类必须实现）"""
         pass
 
@@ -96,9 +96,9 @@ class BaseLLMProvider(ABC):
         self,
         system_prompt: str,
         user_prompt: str,
-        schema: dict,
+        schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> dict:
+    ) -> dict[str, Any]:
         """调用 LLM 生成结构化 JSON 响应（子类必须实现）"""
         pass
 
@@ -168,16 +168,16 @@ if __name__ == "__main__":
     # 示例 1: 使用 Protocol（鸭子类型）
     class MockLLM:
         """Mock LLM - 不需要显式继承 LLMProvider"""
-        def complete_prompt(self, word: str, zh_def: str) -> dict:
+        def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
             return {"IPA": "/test/", "POS": "n.", "word": word, "zh_def": zh_def}
 
         def complete_structured(
             self,
             system_prompt: str,
             user_prompt: str,
-            schema: dict,
+            schema: dict[str, Any],
             schema_name: str = "Response"
-        ) -> dict:
+        ) -> dict[str, Any]:
             return {"result": "mock", "schema": schema_name}
 
     mock = MockLLM()
@@ -185,23 +185,23 @@ if __name__ == "__main__":
 
     # 示例 2: 使用 ABC（显式继承）
     class ExampleProvider(BaseLLMProvider):
-        def complete_prompt(self, word: str, zh_def: str) -> dict:
+        def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
             return {"model": self.model, "word": word, "zh_def": zh_def}
 
         def complete_structured(
             self,
             system_prompt: str,
             user_prompt: str,
-            schema: dict,
+            schema: dict[str, Any],
             schema_name: str = "Response"
-        ) -> dict:
+        ) -> dict[str, Any]:
             return {"model": self.model, "schema": schema_name}
 
     provider = ExampleProvider(model="gpt-4o-mini")
     print(provider)  # ExampleProvider(model='gpt-4o-mini')
 
     # 示例 3: 类型检查
-    def process_with_llm(llm: LLMProvider, word: str) -> dict:
+    def process_with_llm(llm: LLMProvider, word: str) -> dict[str, Any]:
         """接受任何实现了 LLMProvider 协议的对象"""
         return llm.complete_prompt(word, "测试")
 

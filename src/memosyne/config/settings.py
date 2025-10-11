@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     # === 业务配置 ===
     batch_timezone: str = "America/New_York"
     max_batch_runs_per_day: int = Field(default=26, ge=1, le=26)
-    reanimater_term_list_version: str = "v1"
+    reanimator_term_list_version: str = "v1"
 
     # === 日志配置 ===
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     @property
     def term_list_path(self) -> Path:
         """术语表路径"""
-        return self.db_dir / f"term_list_{self.reanimater_term_list_version}.csv"
+        return self.db_dir / f"term_list_{self.reanimator_term_list_version}.csv"
 
     def ensure_dirs(self) -> None:
         """确保所有必需的目录存在"""

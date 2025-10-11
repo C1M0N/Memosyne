@@ -51,10 +51,10 @@ def resolve_model_choice(user_input: str) -> tuple[str, str, str]:
 
     # Claude 模型
     if "claude" in s:
-        return ("anthropic", user_input, "Claude")
+        return "anthropic", user_input, "Claude"
 
     # OpenAI 模型
-    return ("openai", user_input, user_input.replace("-", " ").title())
+    return "openai", user_input, user_input.replace("-", " ").title()
 
 
 def resolve_input_and_memo(

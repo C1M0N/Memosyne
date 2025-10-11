@@ -5,6 +5,7 @@ OpenAI Provider - 重构版本
 改进：继承抽象基类、结构化日志、可注入配置
 """
 import json
+from typing import Any
 from openai import OpenAI, BadRequestError
 
 from ..core.interfaces import BaseLLMProvider, LLMError
@@ -125,11 +126,11 @@ class OpenAIProvider(BaseLLMProvider):
             temperature=settings.default_temperature,
         )
 
-    def complete_prompt(self, word: str, zh_def: str) -> dict:
+    def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
         """调用 OpenAI API 生成术语信息"""
         user_message = USER_TEMPLATE.format(word=word, zh_def=zh_def)
 
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "developer", "content": SYSTEM_PROMPT},
@@ -166,11 +167,11 @@ class OpenAIProvider(BaseLLMProvider):
         self,
         system_prompt: str,
         user_prompt: str,
-        schema: dict,
+        schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> dict:
+    ) -> dict[str, Any]:
         """调用 OpenAI API 生成结构化 JSON 响应"""
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
