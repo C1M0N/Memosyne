@@ -20,8 +20,7 @@ if __name__ == "__main__":
         sys.path.insert(0, str(src_path))
 
 from memosyne.config import get_settings
-from memosyne.providers import OpenAIProvider, AnthropicProvider
-from memosyne.repositories import CSVTermRepository, TermListRepo
+from memosyne.repositories import CSVTermRepository
 from memosyne.services import Reanimater
 from memosyne.utils import BatchIDGenerator, resolve_input_path, unique_path
 from memosyne.cli.prompts import ask
@@ -134,28 +133,7 @@ def main():
     print(f"[Start   ] Memo = {start_memo}")
     print(f"[TermList] {settings.term_list_path}")
 
-    # 4. 创建 LLM Provider
-    try:
-        if provider_type == "anthropic":
-            if not settings.anthropic_api_key:
-                print("错误：ANTHROPIC_API_KEY 未设置")
-                return
-            llm_provider = AnthropicProvider(
-                model=model_id,
-                api_key=settings.anthropic_api_key,
-                temperature=settings.default_temperature
-            )
-        else:
-            llm_provider = OpenAIProvider(
-                model=model_id,
-                api_key=settings.openai_api_key,
-                temperature=settings.default_temperature
-            )
-    except Exception as e:
-        print(f"LLM Provider 初始化失败：{e}")
-        return
-
-    # 5. 读取输入
+    # 4. 读取输入
     try:
         csv_repo = CSVTermRepository()
         terms_input = csv_repo.read_input(input_path)
@@ -164,16 +142,7 @@ def main():
         print(f"读取输入失败：{e}")
         return
 
-    # 6. 加载术语表
-    try:
-        term_list_repo = TermListRepo()
-        term_list_repo.load(settings.term_list_path)
-        print(f"加载术语表：{len(term_list_repo)} 条")
-    except Exception as e:
-        print(f"读取术语表失败：{e}")
-        return
-
-    # 7. 生成 BatchID
+    # 5. 生成 BatchID
     try:
         batch_gen = BatchIDGenerator(
             output_dir=settings.reanimater_output_dir,
@@ -185,32 +154,38 @@ def main():
         print(f"BatchID 生成失败：{e}")
         return
 
-    # 8. 生成输出路径（防覆盖）
+    # 6. 生成输出路径（防覆盖）
     output_filename = f"{batch_id}.csv"
     output_path = unique_path(settings.reanimater_output_dir / output_filename)
     print(f"[Output  ] {output_path}")
 
-    # 9. 处理术语
+    # 7. 使用工厂方法创建处理器
     try:
-        processor = Reanimater(
-            llm_provider=llm_provider,
-            term_list_mapping=term_list_repo.mapping,
+        processor = Reanimater.from_settings(
+            settings=settings,
             start_memo_index=start_memo,
             batch_id=batch_id,
             batch_note=note_input,
+            provider_type=provider_type,
+            model=model_id,
         )
+    except Exception as e:
+        print(f"创建处理器失败：{e}")
+        return
 
-        results = processor.process(terms_input, show_progress=True)
-
+    # 8. 处理术语
+    try:
+        process_result = processor.process(terms_input, show_progress=True)
     except Exception as e:
         print(f"处理失败：{e}")
         return
 
-    # 10. 写出结果
+    # 9. 写出结果
     try:
-        csv_repo.write_output(output_path, results)
+        csv_repo.write_output(output_path, process_result.items)
         print(f"\n✅ 完成：{output_path}")
-        print(f"   共处理 {len(results)} 个词条")
+        print(f"   共处理 {process_result.success_count}/{process_result.total_count} 个词条")
+        print(f"   Token 使用：{process_result.token_usage}")
     except Exception as e:
         print(f"写出失败：{e}")
         return

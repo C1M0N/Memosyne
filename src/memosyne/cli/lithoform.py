@@ -25,7 +25,6 @@ if __name__ == "__main__":
         sys.path.insert(0, str(src_path))
 
 from memosyne.config import get_settings
-from memosyne.providers import OpenAIProvider, AnthropicProvider
 from memosyne.services import Lithoformer
 from memosyne.utils import QuizFormatter, unique_path
 from memosyne.cli.prompts import ask
@@ -139,66 +138,65 @@ def main():
         print(f"❌ 读取输入文件失败：{e}")
         return
 
-    # 7. 创建 LLM Provider
+    # 7. 确定 Provider 和 Model
     try:
         if model_input.lower() == "4":
-            llm = OpenAIProvider(
-                model="gpt-4o-mini",
-                api_key=settings.openai_api_key,
-                temperature=settings.default_temperature
-            )
+            provider_type = "openai"
+            model_id = "gpt-4o-mini"
             print("[Provider] openai")
             print("[Model   ] gpt-4o-mini")
         elif model_input.lower() == "5":
-            llm = OpenAIProvider(
-                model="gpt-5-mini",
-                api_key=settings.openai_api_key,
-                temperature=settings.default_temperature
-            )
+            provider_type = "openai"
+            model_id = "gpt-5-mini"
             print("[Provider] openai")
             print("[Model   ] gpt-5-mini")
         elif model_input.lower() == "claude":
             if not settings.anthropic_api_key:
                 print("❌ Anthropic API Key 未配置")
                 return
-            llm = AnthropicProvider(
-                model=settings.default_anthropic_model,
-                api_key=settings.anthropic_api_key,
-                temperature=settings.default_temperature
-            )
+            provider_type = "anthropic"
+            model_id = settings.default_anthropic_model
             print("[Provider] anthropic")
-            print(f"[Model   ] {settings.default_anthropic_model}")
+            print(f"[Model   ] {model_id}")
         else:
             # 完整模型ID（假设 OpenAI）
-            llm = OpenAIProvider(
-                model=model_input,
-                api_key=settings.openai_api_key,
-                temperature=settings.default_temperature
-            )
+            provider_type = "openai"
+            model_id = model_input
             print("[Provider] openai")
-            print(f"[Model   ] {model_input}")
+            print(f"[Model   ] {model_id}")
     except Exception as e:
-        print(f"❌ 创建 LLM Provider 失败：{e}")
+        print(f"❌ 解析模型配置失败：{e}")
         return
 
-    # 8. 解析 Markdown
+    # 8. 使用工厂方法创建解析器
     try:
-        parser = Lithoformer(llm_provider=llm)
-        items = parser.parse(md_text)
-        print(f"✅ 解析成功：{len(items)} 道题")
+        parser = Lithoformer.from_settings(
+            settings=settings,
+            provider_type=provider_type,
+            model=model_id,
+        )
+    except Exception as e:
+        print(f"❌ 创建解析器失败：{e}")
+        return
+
+    # 9. 解析 Markdown
+    try:
+        process_result = parser.process(md_text, show_progress=True)
+        print(f"✅ 解析成功：{process_result.success_count} 道题")
+        print(f"   Token 使用：{process_result.token_usage}")
     except Exception as e:
         print(f"❌ 解析失败：{e}")
         return
 
-    # 9. 格式化输出
+    # 10. 格式化输出
     try:
         formatter = QuizFormatter()
-        out_text = formatter.format(items, title_main, title_sub)
+        out_text = formatter.format(process_result.items, title_main, title_sub)
     except Exception as e:
         print(f"❌ 格式化失败：{e}")
         return
 
-    # 10. 写出文件
+    # 11. 写出文件
     try:
         output_path.write_text(out_text, encoding="utf-8")
         print(f"✅ 完成：{output_path}")

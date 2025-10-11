@@ -7,6 +7,8 @@
 - ✅ 使用 Pydantic 模型：类型安全的数据流
 - ✅ 业务逻辑集中：_post_fixups 移到 LLMResponse 验证器
 - ✅ 统一日志系统：使用 logging 而非 print
+- ✅ Token 统计：实时显示 token 使用量
+- ✅ 工厂方法：提供 from_settings() 便捷创建
 """
 import logging
 from typing import Iterable
@@ -14,6 +16,7 @@ from tqdm import tqdm
 
 from ..core.interfaces import LLMProvider, LLMError
 from ..models.term import TermInput, LLMResponse, TermOutput
+from ..models.result import ProcessResult, TokenUsage
 from ..utils.logger import get_logger
 
 
@@ -26,22 +29,22 @@ class Reanimater:
     2. 映射英文标签到中文
     3. 生成 Memo ID 和 BatchID
     4. 组装输出数据
+    5. Token 统计
 
     Example:
         >>> from memosyne.providers import OpenAIProvider
         >>> from memosyne.config import get_settings
         >>>
         >>> settings = get_settings()
-        >>> llm = OpenAIProvider.from_settings(settings)
-        >>> processor = Reanimater(
-        ...     llm_provider=llm,
-        ...     term_list_mapping={"psychology": "心理"},
+        >>> processor = Reanimater.from_settings(
+        ...     settings=settings,
         ...     start_memo_index=2700,
         ...     batch_id="251007A015",
         ...     batch_note="测试批次"
         ... )
         >>> terms = [TermInput(word="neuron", zh_def="神经元")]
-        >>> results = processor.process(terms)
+        >>> result = processor.process(terms)
+        >>> print(result.token_usage)
     """
 
     def __init__(
@@ -69,12 +72,68 @@ class Reanimater:
         self.batch_note = f"「{batch_note.strip()}」" if batch_note else ""
         self.logger = logger or get_logger("memosyne.reanimater")
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings,
+        start_memo_index: int,
+        batch_id: str,
+        batch_note: str = "",
+        provider_type: str = "openai",
+        model: str | None = None,
+        logger: logging.Logger | None = None,
+    ) -> "Reanimater":
+        """
+        从 Settings 创建 Reanimater 实例（工厂方法）
+
+        Args:
+            settings: Settings 对象
+            start_memo_index: 起始 Memo 编号
+            batch_id: 批次 ID
+            batch_note: 批次备注
+            provider_type: Provider 类型（"openai" 或 "anthropic"）
+            model: 模型名称（None 则使用 settings 默认值）
+            logger: 日志记录器
+
+        Returns:
+            Reanimater 实例
+        """
+        from ..providers import OpenAIProvider, AnthropicProvider
+        from ..repositories import TermListRepo
+
+        # 创建 LLM Provider
+        if provider_type == "anthropic":
+            llm = AnthropicProvider(
+                model=model or settings.default_anthropic_model,
+                api_key=settings.anthropic_api_key,
+                temperature=settings.default_temperature,
+            )
+        else:
+            llm = OpenAIProvider(
+                model=model or settings.default_openai_model,
+                api_key=settings.openai_api_key,
+                temperature=settings.default_temperature,
+            )
+
+        # 加载术语表
+        term_list_repo = TermListRepo()
+        term_list_repo.load(settings.term_list_path)
+
+        return cls(
+            llm_provider=llm,
+            term_list_mapping=term_list_repo.mapping,
+            start_memo_index=start_memo_index,
+            batch_id=batch_id,
+            batch_note=batch_note,
+            logger=logger,
+        )
+
     def process(
         self,
         terms: Iterable[TermInput],
         show_progress: bool = True,
         total: int | None = None
-    ) -> list[TermOutput]:
+    ) -> ProcessResult[TermOutput]:
         """
         批量处理术语
 
@@ -84,7 +143,7 @@ class Reanimater:
             total: 术语总数（如果未提供且 terms 有 __len__，会自动获取）
 
         Returns:
-            术语输出列表
+            ProcessResult[TermOutput] - 包含结果列表和 token 统计
 
         Raises:
             LLMError: LLM 调用失败
@@ -94,6 +153,8 @@ class Reanimater:
             如果需要显示进度百分比，请传入 total 参数，或确保 terms 有 __len__ 方法。
         """
         results: list[TermOutput] = []
+        total_tokens = TokenUsage()
+        success_count = 0
 
         # 尝试获取总数（避免强制转换为列表）
         if total is None and hasattr(terms, '__len__'):
@@ -105,25 +166,35 @@ class Reanimater:
         # 配置进度条
         if show_progress:
             pbar_kwargs = {
-                "desc": "LLM Processing",
-                "ncols": 80,
+                "desc": "Processing",
+                "ncols": 100,
                 "ascii": True,
-                "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
+                "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [Tokens: {postfix[tokens]:,}]"
             }
             if total is not None:
                 pbar_kwargs["total"] = total
-            iterator = enumerate(tqdm(terms, **pbar_kwargs))
+
+            pbar = tqdm(terms, **pbar_kwargs)
+            pbar.set_postfix(tokens=0)
+            iterator = enumerate(pbar)
         else:
             iterator = enumerate(terms)
 
         # 处理每个术语
         for index, term_input in iterator:
             try:
-                # 1. 调用 LLM
-                llm_dict = self.llm.complete_prompt(
+                # 1. 调用 LLM（返回结果和token）
+                llm_dict, tokens = self.llm.complete_prompt(
                     word=term_input.word,
                     zh_def=term_input.zh_def
                 )
+
+                # 累加 token
+                total_tokens = total_tokens + tokens
+
+                # 更新进度条显示
+                if show_progress:
+                    pbar.set_postfix(tokens=total_tokens.total_tokens)
 
                 # 2. 转换为 Pydantic 模型（自动验证）
                 llm_response = LLMResponse(**llm_dict)
@@ -148,6 +219,7 @@ class Reanimater:
                 )
 
                 results.append(output)
+                success_count += 1
 
             except LLMError as e:
                 self.logger.error(f"LLM 调用失败 [{term_input.word}]: {e}")
@@ -157,7 +229,12 @@ class Reanimater:
                 self.logger.error(f"处理失败 [{term_input.word}]: {e}", exc_info=True)
                 raise
 
-        return results
+        return ProcessResult(
+            items=results,
+            success_count=success_count,
+            total_count=len(results),
+            token_usage=total_tokens,
+        )
 
     def _apply_business_rules(
         self,
@@ -244,21 +321,14 @@ if __name__ == "__main__":
 
     # 1. 准备依赖
     settings = get_settings()
-    llm_provider = OpenAIProvider.from_settings(settings)
 
-    term_mapping = {
-        "psychology": "心理",
-        "neuroscience": "神经",
-        "biology": "生物",
-    }
-
-    # 2. 创建处理器
-    processor = Reanimater(
-        llm_provider=llm_provider,
-        term_list_mapping=term_mapping,
+    # 2. 使用工厂方法创建处理器
+    processor = Reanimater.from_settings(
+        settings=settings,
         start_memo_index=2700,
         batch_id="251007A003",
-        batch_note="示例批次"
+        batch_note="示例批次",
+        provider_type="openai",
     )
 
     # 3. 准备输入
@@ -269,11 +339,13 @@ if __name__ == "__main__":
     ]
 
     # 4. 处理
-    results = processor.process(terms)
+    result = processor.process(terms, show_progress=True)
 
     # 5. 输出
-    for result in results:
-        print(f"{result.memo_id}: {result.word} - {result.zh_def}")
-        print(f"  IPA: {result.ipa}, POS: {result.pos}")
-        print(f"  EnDef: {result.en_def}")
+    print(f"\n处理结果：{result}")
+    print(f"Token 使用：{result.token_usage}")
+    for item in result.items:
+        print(f"{item.memo_id}: {item.word} - {item.zh_def}")
+        print(f"  IPA: {item.ipa}, POS: {item.pos}")
+        print(f"  EnDef: {item.en_def}")
         print()
