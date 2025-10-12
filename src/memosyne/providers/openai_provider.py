@@ -1,12 +1,22 @@
-"""
-OpenAI Provider - 重构版本
+"""OpenAI Provider - 重构版本.
 
-基于原 src/mms_pipeline/openai_helper.py
-改进：继承抽象基类、结构化日志、可注入配置
+This provider previously relied solely on ``chat.completions``. The OpenAI
+Python SDK >=2.0, which ships with this project, promotes the ``responses`` API
+as the canonical way to request structured JSON via ``response_format``.  macOS
+users running the latest SDK reported ``OSError: [Errno 63] File name too
+long`` when invoking the CLI pipelines.  The error originated from deep within
+the SDK after it attempted to treat the raw Markdown prompt as a temporary file
+while formatting the request.  Falling back to ``responses.parse`` avoids that
+path and is the officially supported workflow going forward.  For
+compatibility, we still retain the old ``chat.completions`` based code path as a
+fallback should an older SDK be in use.
 """
+from __future__ import annotations
+
 import json
-from typing import Any
-from openai import OpenAI, BadRequestError
+from typing import Any, Iterable
+
+from openai import APIStatusError, BadRequestError, OpenAI
 
 from ..core.interfaces import BaseLLMProvider, LLMError
 
@@ -130,38 +140,11 @@ class OpenAIProvider(BaseLLMProvider):
         """调用 OpenAI API 生成术语信息"""
         user_message = USER_TEMPLATE.format(word=word, zh_def=zh_def)
 
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": [
-                {"role": "developer", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": TERM_RESULT_SCHEMA
-            },
-        }
-
-        if self.temperature is not None:
-            kwargs["temperature"] = self.temperature
-
-        try:
-            response = self.client.chat.completions.create(**kwargs)
-        except BadRequestError as e:
-            error_msg = str(e).lower()
-            if "temperature" in error_msg and "unsupported" in error_msg:
-                kwargs.pop("temperature", None)
-                response = self.client.chat.completions.create(**kwargs)
-            else:
-                raise LLMError(f"OpenAI API 错误：{e}") from e
-        except Exception as e:
-            raise LLMError(f"调用 OpenAI 时发生意外错误：{e}") from e
-
-        try:
-            content = response.choices[0].message.content
-            return json.loads(content)
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
-            raise LLMError(f"解析 LLM 响应失败：{e}") from e
+        return self._request_json_schema(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=user_message,
+            schema_payload=TERM_RESULT_SCHEMA,
+        )
 
     def complete_structured(
         self,
@@ -171,7 +154,64 @@ class OpenAIProvider(BaseLLMProvider):
         schema_name: str = "Response"
     ) -> dict[str, Any]:
         """调用 OpenAI API 生成结构化 JSON 响应"""
-        kwargs: dict[str, Any] = {
+        schema_payload = {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema,
+        }
+
+        return self._request_json_schema(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema_payload=schema_payload,
+        )
+
+    def _validate_config(self) -> None:
+        """验证配置"""
+        super()._validate_config()
+        if not self.client.api_key:
+            raise ValueError("OpenAI API Key 未设置")
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _request_json_schema(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        schema_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Request structured JSON via Responses API with chat fallback."""
+
+        last_error: Exception | None = None
+
+        if hasattr(self.client, "responses") and hasattr(self.client.responses, "parse"):
+            try:
+                kwargs: dict[str, Any] = {
+                    "model": self.model,
+                    "instructions": system_prompt,
+                    "input": user_prompt,
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": schema_payload,
+                    },
+                }
+                if self.temperature is not None:
+                    kwargs["temperature"] = self.temperature
+
+                response = self.client.responses.parse(**kwargs)
+                parsed = self._extract_responses_output(response)
+                if parsed is not None:
+                    return parsed
+                raise LLMError("OpenAI 未返回结构化结果")
+            except (APIStatusError, BadRequestError) as exc:
+                raise LLMError(f"OpenAI API 错误：{exc}") from exc
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+
+        # Fallback to legacy chat completions for backward compatibility.
+        kwargs = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -179,11 +219,7 @@ class OpenAIProvider(BaseLLMProvider):
             ],
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "strict": True,
-                    "schema": schema
-                }
+                "json_schema": schema_payload,
             },
         }
 
@@ -192,24 +228,98 @@ class OpenAIProvider(BaseLLMProvider):
 
         try:
             response = self.client.chat.completions.create(**kwargs)
-        except BadRequestError as e:
-            error_msg = str(e).lower()
+            return self._extract_chat_output(response)
+        except BadRequestError as exc:
+            error_msg = str(exc).lower()
             if "temperature" in error_msg and "unsupported" in error_msg:
                 kwargs.pop("temperature", None)
                 response = self.client.chat.completions.create(**kwargs)
-            else:
-                raise LLMError(f"OpenAI API 错误：{e}") from e
-        except Exception as e:
-            raise LLMError(f"调用 OpenAI 时发生意外错误：{e}") from e
+                return self._extract_chat_output(response)
+            raise LLMError(f"OpenAI API 错误：{exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            if last_error is not None:
+                raise LLMError(
+                    "调用 OpenAI 时发生意外错误："
+                    f"Responses.parse 失败（{last_error}）；"
+                    f"ChatCompletion 失败（{exc}）"
+                ) from exc
+            raise LLMError(f"调用 OpenAI 时发生意外错误：{exc}") from exc
+
+    @staticmethod
+    def _extract_responses_output(response: Any) -> dict[str, Any] | None:
+        """Safely extract parsed JSON from ``responses.parse`` output."""
+
+        parsed = getattr(response, "output_parsed", None)
+        if isinstance(parsed, dict):
+            return parsed
+
+        output_items: Iterable[Any] = getattr(response, "output", []) or []
+        text_chunks: list[str] = []
+
+        for item in output_items:
+            content_list = getattr(item, "content", []) or []
+            for content in content_list:
+                parsed_content = getattr(content, "parsed", None)
+                if isinstance(parsed_content, dict):
+                    return parsed_content
+                text = getattr(content, "text", None)
+                if isinstance(text, str):
+                    text_chunks.append(text)
+
+        if text_chunks:
+            joined = "".join(text_chunks).strip()
+            if joined:
+                try:
+                    return json.loads(joined)
+                except json.JSONDecodeError as exc:
+                    raise LLMError(f"解析 LLM 响应失败：{exc}") from exc
+
+        return None
+
+    @staticmethod
+    def _extract_chat_output(response: Any) -> dict[str, Any]:
+        """Extract structured JSON from ``chat.completions`` output."""
 
         try:
-            content = response.choices[0].message.content
-            return json.loads(content)
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
-            raise LLMError(f"解析 LLM 响应失败：{e}") from e
+            choice = response.choices[0]
+            content = choice.message.content
+        except (AttributeError, IndexError) as exc:  # noqa: BLE001
+            raise LLMError(f"解析 LLM 响应失败：{exc}") from exc
 
-    def _validate_config(self) -> None:
-        """验证配置"""
-        super()._validate_config()
-        if not self.client.api_key:
-            raise ValueError("OpenAI API Key 未设置")
+        if isinstance(content, dict):
+            parsed = content.get("parsed")
+            if isinstance(parsed, dict):
+                return parsed
+            text_value = content.get("text")
+            if isinstance(text_value, str):
+                return OpenAIProvider._loads_json(text_value)
+
+        if isinstance(content, list):
+            text_segments: list[str] = []
+            for part in content:
+                if isinstance(part, dict):
+                    parsed = part.get("parsed")
+                    if isinstance(parsed, dict):
+                        return parsed
+                    text_val = part.get("text") or part.get("value")
+                else:
+                    text_val = getattr(part, "text", None)
+                    parsed = getattr(part, "parsed", None)
+                    if isinstance(parsed, dict):
+                        return parsed
+                if isinstance(text_val, str):
+                    text_segments.append(text_val)
+            if text_segments:
+                return OpenAIProvider._loads_json("".join(text_segments))
+
+        if isinstance(content, str):
+            return OpenAIProvider._loads_json(content)
+
+        raise LLMError("OpenAI 响应格式未知，无法解析 JSON")
+
+    @staticmethod
+    def _loads_json(payload: str) -> dict[str, Any]:
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise LLMError(f"解析 LLM 响应失败：{exc}") from exc
