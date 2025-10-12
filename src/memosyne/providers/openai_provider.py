@@ -14,6 +14,7 @@ from typing import Any
 from openai import BadRequestError, OpenAI
 
 from ..core.interfaces import BaseLLMProvider, LLMError
+from ..models.result import TokenUsage
 
 
 # ============================================================
@@ -131,7 +132,7 @@ class OpenAIProvider(BaseLLMProvider):
             temperature=settings.default_temperature,
         )
 
-    def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
+    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], TokenUsage]:
         """调用 OpenAI API 生成术语信息"""
         user_message = USER_TEMPLATE.format(word=word, zh_def=zh_def)
 
@@ -148,7 +149,7 @@ class OpenAIProvider(BaseLLMProvider):
         user_prompt: str,
         schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], TokenUsage]:
         """调用 OpenAI API 生成结构化 JSON 响应"""
         schema_payload = {
             "name": schema_name,
@@ -178,7 +179,7 @@ class OpenAIProvider(BaseLLMProvider):
         user_prompt: str,
         schema_payload: dict[str, Any],
         system_role: str = "system",
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], TokenUsage]:
         """向 Chat Completions 请求结构化 JSON。"""
 
         kwargs: dict[str, Any] = {
@@ -198,13 +199,17 @@ class OpenAIProvider(BaseLLMProvider):
 
         try:
             response = self.client.chat.completions.create(**kwargs)
-            return self._extract_chat_output(response)
+            data = self._extract_chat_output(response)
+            tokens = self._extract_token_usage(response)
+            return data, tokens
         except BadRequestError as exc:
             error_msg = str(exc).lower()
             if "temperature" in error_msg and "unsupported" in error_msg:
                 kwargs.pop("temperature", None)
                 response = self.client.chat.completions.create(**kwargs)
-                return self._extract_chat_output(response)
+                data = self._extract_chat_output(response)
+                tokens = self._extract_token_usage(response)
+                return data, tokens
             raise LLMError(f"OpenAI API 错误：{exc}") from exc
         except Exception as exc:  # noqa: BLE001
             raise LLMError(f"调用 OpenAI 时发生意外错误：{exc}") from exc
@@ -256,3 +261,17 @@ class OpenAIProvider(BaseLLMProvider):
             return json.loads(payload)
         except json.JSONDecodeError as exc:
             raise LLMError(f"解析 LLM 响应失败：{exc}") from exc
+
+    @staticmethod
+    def _extract_token_usage(response: Any) -> TokenUsage:
+        """从响应中提取 Token 使用量"""
+        try:
+            usage = response.usage
+            return TokenUsage(
+                prompt_tokens=usage.prompt_tokens if usage else 0,
+                completion_tokens=usage.completion_tokens if usage else 0,
+                total_tokens=usage.total_tokens if usage else 0,
+            )
+        except (AttributeError, TypeError):
+            # 如果没有 usage 信息，返回全 0
+            return TokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)

@@ -30,6 +30,36 @@ from memosyne.utils import QuizFormatter, unique_path
 from memosyne.cli.prompts import ask
 
 
+def _resolve_model_choice(user_input: str, settings) -> tuple[str, str]:
+    """
+    解析模型选择
+
+    Args:
+        user_input: 用户输入（4/5/claude/完整模型名）
+        settings: Settings 对象（用于获取默认模型）
+
+    Returns:
+        (provider_type, model_id)
+    """
+    s = user_input.strip().lower()
+
+    # 快捷方式（从 settings 读取默认模型，集中配置）
+    if s == "4":
+        return "openai", settings.default_openai_model
+    elif s == "5":
+        return "openai", "gpt-5-mini"
+    elif s == "claude":
+        if not settings.anthropic_api_key:
+            raise ValueError("Anthropic API Key 未配置")
+        return "anthropic", settings.default_anthropic_model
+    elif "claude" in s:
+        # 完整 Claude 模型ID
+        return "anthropic", user_input
+    else:
+        # 完整 OpenAI 模型ID
+        return "openai", user_input
+
+
 def _infer_titles_from_filename(path: Path) -> tuple[str, str]:
     """
     从文件名推断标题
@@ -138,32 +168,11 @@ def main():
         print(f"❌ 读取输入文件失败：{e}")
         return
 
-    # 7. 确定 Provider 和 Model
+    # 7. 确定 Provider 和 Model（集中配置）
     try:
-        if model_input.lower() == "4":
-            provider_type = "openai"
-            model_id = "gpt-4o-mini"
-            print("[Provider] openai")
-            print("[Model   ] gpt-4o-mini")
-        elif model_input.lower() == "5":
-            provider_type = "openai"
-            model_id = "gpt-5-mini"
-            print("[Provider] openai")
-            print("[Model   ] gpt-5-mini")
-        elif model_input.lower() == "claude":
-            if not settings.anthropic_api_key:
-                print("❌ Anthropic API Key 未配置")
-                return
-            provider_type = "anthropic"
-            model_id = settings.default_anthropic_model
-            print("[Provider] anthropic")
-            print(f"[Model   ] {model_id}")
-        else:
-            # 完整模型ID（假设 OpenAI）
-            provider_type = "openai"
-            model_id = model_input
-            print("[Provider] openai")
-            print(f"[Model   ] {model_id}")
+        provider_type, model_id = _resolve_model_choice(model_input, settings)
+        print(f"[Provider] {provider_type}")
+        print(f"[Model   ] {model_id}")
     except Exception as e:
         print(f"❌ 解析模型配置失败：{e}")
         return
@@ -185,7 +194,9 @@ def main():
         print(f"✅ 解析成功：{process_result.success_count} 道题")
         print(f"   Token 使用：{process_result.token_usage}")
     except Exception as e:
+        import traceback
         print(f"❌ 解析失败：{e}")
+        traceback.print_exc()
         return
 
     # 10. 格式化输出

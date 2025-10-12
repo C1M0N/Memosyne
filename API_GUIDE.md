@@ -183,7 +183,7 @@ result = reanimate(
     input_csv="terms.csv",
     start_memo_index=2700,
     provider="anthropic",
-    model="claude-3-5-sonnet-20241022"
+    model="claude-sonnet-4-5"
 )
 ```
 
@@ -327,7 +327,7 @@ result = lithoform(
 result = lithoform(
     input_md="quiz.md",
     provider="anthropic",
-    model="claude-3-5-sonnet-20241022"
+    model="claude-sonnet-4-5"
 )
 ```
 
@@ -628,7 +628,7 @@ os.environ["OPENAI_API_KEY"] = "sk-..."  # 容易泄露
 result = reanimate(..., provider="openai", model="gpt-4o-mini")
 
 # 使用 Anthropic
-result = reanimate(..., provider="anthropic", model="claude-3-5-sonnet-20241022")
+result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 ```
 
 确保 `.env` 中配置了相应的 API 密钥。
@@ -683,9 +683,15 @@ result = reanimate(...)
 - `gpt-4o` （更强大，但成本更高）
 - `o1-mini` （如需深度推理）
 
-**Anthropic**：
-- `claude-3-5-sonnet-20241022` （推荐）
-- `claude-3-5-haiku-20241022` （更快，但能力稍弱）
+**Anthropic**（推荐使用官方别名，自动映射到最新版本）：
+- `claude-sonnet-4-5` （推荐，最强大的 Claude 3.5 Sonnet）
+- `claude-opus-4` （Claude 3 Opus）
+- `claude-haiku-4` （Claude 3.5 Haiku，更快，成本更低）
+
+也可使用完整版本号固定版本：
+- `claude-3-5-sonnet-20240620`
+- `claude-3-5-haiku-20241022`
+- `claude-3-opus-20240229`
 
 ### Q6: 如何在 Web 服务中使用 API？
 

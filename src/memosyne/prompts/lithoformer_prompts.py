@@ -27,16 +27,24 @@ TYPE DECISION RULES
 - Use ORDER when the prompt asks to place/order AND there are labeled step lines A./B./C./D., plus separate sequence choices (e.g., 'B,A,C,D').
 - For figure-only MCQ (labels A/B/C/D without descriptions), set options A='A', B='B', C='C', D='D' (others empty).
 
-OUTPUT CONTRACT
+OUTPUT CONTRACT (STRICT SCHEMA - ALL FIELDS REQUIRED)
 - Return ONLY one compact JSON object with key: "items".
-- "items" is an array; each item is an object with:
+- "items" is an array; each item MUST include ALL these fields:
   - "qtype": "MCQ" or "CLOZE" or "ORDER".
   - "stem": string (VERBATIM; may include '<br>' and '§Pic.N§').
-  - "steps": array of strings. For ORDER, put the labeled step lines VERBATIM (e.g., 'A. ...', 'B. ...'); else [].
-  - "options": object with keys "A","B","C","D","E","F" (strings). ALWAYS output all keys; if a key doesn't exist, set "".
-    *For ORDER, options are the SEQUENCE choices (e.g., 'B,A,C,D'), NOT the step lines.*
-  - "answer": one uppercase letter among A..F for MCQ/ORDER; "" for CLOZE.
-  - "cloze_answers": array of strings. For CLOZE, provide exact fills in order; for MCQ/ORDER, [].
+  - "steps": array of strings.
+    * For ORDER: put the labeled step lines VERBATIM (e.g., ['A. Step one', 'B. Step two', ...]).
+    * For MCQ/CLOZE: MUST provide empty array [].
+  - "options": object with ALL six keys "A","B","C","D","E","F" (all strings, REQUIRED).
+    * For MCQ: fill A-D (or A-F) with actual option text; unused keys set to "".
+    * For ORDER: options are the SEQUENCE choices (e.g., {"A":"B,A,C,D", "B":"", "C":"", ...}).
+    * For CLOZE: ALL six keys MUST be empty strings ({"A":"", "B":"", "C":"", "D":"", "E":"", "F":""}).
+  - "answer": string.
+    * For MCQ/ORDER: one uppercase letter (A-F).
+    * For CLOZE: empty string "".
+  - "cloze_answers": array of strings.
+    * For CLOZE: provide exact fills in order (e.g., ["amplitude", "generate"]).
+    * For MCQ/ORDER: MUST provide empty array [].
 - No markdown code fences, no commentary, no extra keys.
 - Do NOT create items that are merely answer summaries (e.g., '... in the proper sequence: D, C, A, B.').
 

@@ -145,7 +145,7 @@ ANTHROPIC_API_KEY=your-anthropic-api-key-here  # 可选
 # === 默认模型配置 ===
 DEFAULT_LLM_PROVIDER=openai
 DEFAULT_OPENAI_MODEL=gpt-4o-mini
-DEFAULT_ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+DEFAULT_ANTHROPIC_MODEL=claude-sonnet-4-5
 DEFAULT_TEMPERATURE=
 
 # === 业务配置 ===
@@ -265,7 +265,7 @@ from memosyne import lithoform
 
 result = lithoform(
     input_md="chapter3_quiz.md",
-    model="claude-3-5-sonnet-20241022",
+    model="claude-3-5-sonnet-20240620",
     provider="anthropic",
     temperature=0.5
 )

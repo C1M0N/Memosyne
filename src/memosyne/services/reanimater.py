@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from ..core.interfaces import LLMProvider, LLMError
 from ..models.term import TermInput, LLMResponse, TermOutput
+from ..models.result import ProcessResult, TokenUsage
 from ..utils.logger import get_logger
 
 
@@ -110,7 +111,7 @@ class Reanimater:
         terms: Iterable[TermInput],
         show_progress: bool = True,
         total: int | None = None
-    ) -> list[TermOutput]:
+    ) -> ProcessResult[TermOutput]:
         """
         批量处理术语
 
@@ -120,7 +121,7 @@ class Reanimater:
             total: 术语总数（如果未提供且 terms 有 __len__，会自动获取）
 
         Returns:
-            术语输出列表
+            ProcessResult[TermOutput] - 包含结果列表和 token 统计
 
         Raises:
             LLMError: LLM 调用失败
@@ -130,6 +131,7 @@ class Reanimater:
             如果需要显示进度百分比，请传入 total 参数，或确保 terms 有 __len__ 方法。
         """
         results: list[TermOutput] = []
+        total_tokens = TokenUsage()
 
         # 尝试获取总数（避免强制转换为列表）
         if total is None and hasattr(terms, '__len__'):
@@ -140,13 +142,12 @@ class Reanimater:
 
         progress = None
         try:
-            # 配置进度条
+            # 配置进度条（显示 Token 使用量）
             if show_progress:
                 pbar_kwargs = {
-                    "desc": "LLM Processing",
-                    "ncols": 80,
+                    "desc": "Processing [Tokens: 0]",
+                    "ncols": 100,
                     "ascii": True,
-                    "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
                 }
                 if total is not None:
                     pbar_kwargs["total"] = total
@@ -158,11 +159,18 @@ class Reanimater:
             # 处理每个术语
             for index, term_input in iterator:
                 try:
-                    # 1. 调用 LLM
-                    llm_dict = self.llm.complete_prompt(
+                    # 1. 调用 LLM（返回 tuple[dict, TokenUsage]）
+                    llm_dict, tokens = self.llm.complete_prompt(
                         word=term_input.word,
                         zh_def=term_input.zh_def
                     )
+
+                    # 累加 Token
+                    total_tokens = total_tokens + tokens
+
+                    # 更新进度条显示
+                    if show_progress:
+                        progress.set_description(f"Processing [Tokens: {total_tokens.total_tokens:,}]")
 
                     # 2. 转换为 Pydantic 模型（自动验证）
                     llm_response = LLMResponse(**llm_dict)
@@ -199,7 +207,12 @@ class Reanimater:
             if progress is not None:
                 progress.close()
 
-        return results
+        return ProcessResult(
+            items=results,
+            success_count=len(results),
+            total_count=len(results),
+            token_usage=total_tokens,
+        )
 
     def _apply_business_rules(
         self,

@@ -7,6 +7,26 @@
 *.env
 
 # allow example files
-!.env.example__pycache__/
+!.env.example
+
+# Python
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# macOS
 .DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 防止临时输出文件进入源代码目录
+src/memosyne/cli/lit/
+src/memosyne/cli/*.txt
+src/memosyne/cli/*.csv

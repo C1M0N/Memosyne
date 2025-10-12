@@ -56,7 +56,7 @@ cp .env.example .env
 OPENAI_API_KEY=your-key-here
 ANTHROPIC_API_KEY=your-key-here
 DEFAULT_OPENAI_MODEL=gpt-4o-mini
-DEFAULT_ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+DEFAULT_ANTHROPIC_MODEL=claude-sonnet-4-5
 LOG_LEVEL=INFO
 
 # 配置项（Settings）命名已更新：
@@ -68,6 +68,39 @@ LOG_LEVEL=INFO
 ```
 
 **注意**: `.env` 文件已在 `.gitignore` 中，绝不能提交到版本控制。
+
+**🔧 集中配置管理**（v0.7.1a 新增）：
+
+模型名称现已集中配置，**只需在一处修改**即可全局生效：
+
+1. **修改 `.env` 文件**（推荐）：
+   ```bash
+   # 在 .env 文件中修改，立即生效
+   DEFAULT_OPENAI_MODEL=gpt-4o-mini
+   DEFAULT_ANTHROPIC_MODEL=claude-sonnet-4-5
+   ```
+
+2. **或修改 `settings.py`**（作为代码默认值）：
+   ```python
+   # src/memosyne/config/settings.py
+   default_openai_model: str = "gpt-4o-mini"
+   default_anthropic_model: str = "claude-sonnet-4-5"
+   ```
+
+**CLI 快捷方式自动使用配置**：
+- 输入 `4` → 使用 `DEFAULT_OPENAI_MODEL`（通常是 gpt-4o-mini）
+- 输入 `claude` → 使用 `DEFAULT_ANTHROPIC_MODEL`（通常是 claude-sonnet-4-5）
+- 输入完整模型ID → 直接使用该模型
+
+**推荐的 Anthropic 模型别名**（官方推荐，自动使用最新版本）：
+- `claude-sonnet-4-5` ✅ (推荐，最强大的 Claude 3.5 Sonnet)
+- `claude-opus-4` ✅ (Claude 3 Opus)
+- `claude-haiku-4` ✅ (Claude 3.5 Haiku，更快，成本更低)
+
+**也可使用完整版本号**（固定版本）：
+- `claude-3-5-sonnet-20240620`
+- `claude-3-5-haiku-20241022`
+- `claude-3-opus-20240229`
 
 **配置项命名变更说明**（v2.0 重命名）：
 - `mms_input_dir` → `reanimater_input_dir`

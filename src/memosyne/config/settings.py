@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # === 默认模型配置 ===
     default_llm_provider: Literal["openai", "anthropic"] = "openai"
     default_openai_model: str = "gpt-4o-mini"
-    default_anthropic_model: str = "claude-3-5-sonnet-20241022"
+    default_anthropic_model: str = "claude-sonnet-4-5"
     default_temperature: float | None = None
 
     # === 路径配置 ===

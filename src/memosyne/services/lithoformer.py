@@ -114,9 +114,26 @@ class Lithoformer:
         self.logger.info("开始解析 Quiz...")
 
         # 1. 读取 Markdown 内容
-        if isinstance(markdown_source, (str, Path)) and Path(markdown_source).exists():
+        if isinstance(markdown_source, Path):
+            # 是 Path 对象，直接读取
             self.logger.info(f"从文件读取: {markdown_source}")
-            markdown_text = Path(markdown_source).read_text(encoding="utf-8")
+            markdown_text = markdown_source.read_text(encoding="utf-8")
+        elif isinstance(markdown_source, str):
+            # 是字符串，先判断是否为文件路径
+            try:
+                path_obj = Path(markdown_source)
+                if path_obj.exists() and path_obj.is_file():
+                    # 存在的文件路径
+                    self.logger.info(f"从文件读取: {markdown_source}")
+                    markdown_text = path_obj.read_text(encoding="utf-8")
+                else:
+                    # 不是文件路径，当作内容处理
+                    markdown_text = markdown_source
+                    self.logger.info(f"使用提供的文本，长度: {len(markdown_text)} 字符")
+            except (OSError, ValueError):
+                # Path() 构造失败（文件名太长等），当作内容处理
+                markdown_text = markdown_source
+                self.logger.info(f"使用提供的文本，长度: {len(markdown_text)} 字符")
         else:
             markdown_text = str(markdown_source)
             self.logger.info(f"使用提供的文本，长度: {len(markdown_text)} 字符")
@@ -128,12 +145,10 @@ class Lithoformer:
         if show_progress:
             pbar = tqdm(
                 total=1,
-                desc="Parsing Quiz",
+                desc="Parsing Quiz [Tokens: 0]",
                 ncols=100,
                 ascii=True,
-                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [Tokens: {postfix[tokens]:,}]"
             )
-            pbar.set_postfix(tokens=0)
 
         try:
             self.logger.info("调用 LLM 解析...")
@@ -147,8 +162,8 @@ class Lithoformer:
             )
 
             if show_progress:
+                pbar.set_description(f"Parsing Quiz [Tokens: {tokens.total_tokens:,}]")
                 pbar.update(1)
-                pbar.set_postfix(tokens=tokens.total_tokens)
                 pbar.close()
 
             self.logger.info(f"LLM 调用成功，Token 使用: {tokens}")

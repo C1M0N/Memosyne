@@ -22,11 +22,14 @@ class AnthropicProvider(BaseLLMProvider):
         model: str,
         api_key: str,
         temperature: float | None = None,
-        max_tokens: int = 1024
+        max_tokens: int | None = None  # None 则使用模型最大输出
     ):
         self.client = Anthropic(api_key=api_key)
         super().__init__(model=model, temperature=temperature)
-        self.max_tokens = max_tokens
+        # Anthropic API 要求必须提供 max_tokens（与 OpenAI 不同）
+        # 设置为足够大的值，让 API 自己决定实际能用多少
+        # Claude 3.5 Sonnet 最大输出约 8192 tokens，但设置更大值也安全
+        self.max_tokens = max_tokens if max_tokens is not None else 16384
 
     @classmethod
     def from_settings(cls, settings) -> "AnthropicProvider":

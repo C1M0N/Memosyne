@@ -26,33 +26,34 @@ from memosyne.utils import BatchIDGenerator, resolve_input_path, unique_path
 from memosyne.cli.prompts import ask
 
 
-def resolve_model_choice(user_input: str) -> tuple[str, str, str]:
+def resolve_model_choice(user_input: str, settings) -> tuple[str, str, str]:
     """
     解析模型选择
 
     Args:
         user_input: 用户输入（4/5/claude/完整模型名）
+        settings: Settings 对象（用于获取默认模型）
 
     Returns:
         (provider, model_id, model_display)
     """
     s = user_input.strip().lower()
 
-    # 快捷方式
+    # 快捷方式（从 settings 读取默认模型，集中配置）
     shortcuts = {
-        "4": ("openai", "gpt-4o-mini", "4oMini"),
+        "4": ("openai", settings.default_openai_model, "4oMini"),
         "5": ("openai", "gpt-5-mini", "5Mini"),
-        "claude": ("anthropic", "claude-3-5-sonnet-20241022", "Claude"),
+        "claude": ("anthropic", settings.default_anthropic_model, "Claude"),
     }
 
     if s in shortcuts:
         return shortcuts[s]
 
-    # Claude 模型
+    # Claude 模型（完整模型ID）
     if "claude" in s:
         return "anthropic", user_input, "Claude"
 
-    # OpenAI 模型
+    # OpenAI 模型（完整模型ID）
     return "openai", user_input, user_input.replace("-", " ").title()
 
 
@@ -121,7 +122,7 @@ def main():
 
     # 3. 解析选择
     try:
-        provider_type, model_id, model_display = resolve_model_choice(model_input)
+        provider_type, model_id, model_display = resolve_model_choice(model_input, settings)
         input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimater_input_dir)
     except Exception as e:
         print(f"解析失败：{e}")
@@ -159,28 +160,49 @@ def main():
     output_path = unique_path(settings.reanimater_output_dir / output_filename)
     print(f"[Output  ] {output_path}")
 
-    # 7. 使用工厂方法创建处理器
+    # 7. 创建 LLM Provider
+    try:
+        from memosyne.providers import OpenAIProvider, AnthropicProvider
+
+        if provider_type == "anthropic":
+            llm_provider = AnthropicProvider(
+                model=model_id,
+                api_key=settings.anthropic_api_key,
+                temperature=settings.default_temperature,
+            )
+        else:
+            llm_provider = OpenAIProvider(
+                model=model_id,
+                api_key=settings.openai_api_key,
+                temperature=settings.default_temperature,
+            )
+    except Exception as e:
+        print(f"创建 LLM Provider 失败：{e}")
+        return
+
+    # 8. 使用工厂方法创建处理器
     try:
         processor = Reanimater.from_settings(
             settings=settings,
+            llm_provider=llm_provider,
             start_memo_index=start_memo,
             batch_id=batch_id,
             batch_note=note_input,
-            provider_type=provider_type,
-            model=model_id,
         )
     except Exception as e:
         print(f"创建处理器失败：{e}")
         return
 
-    # 8. 处理术语
+    # 9. 处理术语
     try:
         process_result = processor.process(terms_input, show_progress=True)
     except Exception as e:
+        import traceback
         print(f"处理失败：{e}")
+        traceback.print_exc()
         return
 
-    # 9. 写出结果
+    # 10. 写出结果
     try:
         csv_repo.write_output(output_path, process_result.items)
         print(f"\n✅ 完成：{output_path}")
