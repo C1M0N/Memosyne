@@ -8,7 +8,10 @@
 - ✅ 业务逻辑集中：_post_fixups 移到 LLMResponse 验证器
 - ✅ 统一日志系统：使用 logging 而非 print
 """
+from __future__ import annotations
+
 import logging
+
 from typing import Iterable
 from tqdm import tqdm
 
@@ -69,6 +72,39 @@ class Reanimater:
         self.batch_note = f"「{batch_note.strip()}」" if batch_note else ""
         self.logger = logger or get_logger("memosyne.reanimater")
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings,
+        *,
+        llm_provider: LLMProvider,
+        start_memo_index: int,
+        batch_id: str,
+        batch_note: str = "",
+        term_list_mapping: dict[str, str] | None = None,
+    ) -> "Reanimater":
+        """使用 ``Settings`` 对象快速构建 ``Reanimater`` 实例。
+
+        兼容旧版调用方式：若未显式提供 ``term_list_mapping``，会根据
+        ``settings.term_list_path`` 自动加载术语表。
+        """
+
+        mapping = term_list_mapping
+        if mapping is None:
+            from ..repositories import TermListRepo  # 延迟导入避免循环依赖
+
+            repo = TermListRepo()
+            repo.load(settings.term_list_path)
+            mapping = repo.mapping
+
+        return cls(
+            llm_provider=llm_provider,
+            term_list_mapping=mapping,
+            start_memo_index=start_memo_index,
+            batch_id=batch_id,
+            batch_note=batch_note,
+        )
+
     def process(
         self,
         terms: Iterable[TermInput],
@@ -102,60 +138,66 @@ class Reanimater:
             except TypeError:
                 total = None
 
-        # 配置进度条
-        if show_progress:
-            pbar_kwargs = {
-                "desc": "LLM Processing",
-                "ncols": 80,
-                "ascii": True,
-                "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
-            }
-            if total is not None:
-                pbar_kwargs["total"] = total
-            iterator = enumerate(tqdm(terms, **pbar_kwargs))
-        else:
-            iterator = enumerate(terms)
+        progress = None
+        try:
+            # 配置进度条
+            if show_progress:
+                pbar_kwargs = {
+                    "desc": "LLM Processing",
+                    "ncols": 80,
+                    "ascii": True,
+                    "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+                }
+                if total is not None:
+                    pbar_kwargs["total"] = total
+                progress = tqdm(terms, **pbar_kwargs)
+                iterator = enumerate(progress)
+            else:
+                iterator = enumerate(terms)
 
-        # 处理每个术语
-        for index, term_input in iterator:
-            try:
-                # 1. 调用 LLM
-                llm_dict = self.llm.complete_prompt(
-                    word=term_input.word,
-                    zh_def=term_input.zh_def
-                )
+            # 处理每个术语
+            for index, term_input in iterator:
+                try:
+                    # 1. 调用 LLM
+                    llm_dict = self.llm.complete_prompt(
+                        word=term_input.word,
+                        zh_def=term_input.zh_def
+                    )
 
-                # 2. 转换为 Pydantic 模型（自动验证）
-                llm_response = LLMResponse(**llm_dict)
+                    # 2. 转换为 Pydantic 模型（自动验证）
+                    llm_response = LLMResponse(**llm_dict)
 
-                # 3. 后处理：词组强制标记为 P.
-                llm_response = self._apply_business_rules(term_input.word, llm_response)
+                    # 3. 后处理：词组强制标记为 P.
+                    llm_response = self._apply_business_rules(term_input.word, llm_response)
 
-                # 4. 映射英文标签到中文
-                tag_cn = self._get_chinese_tag(llm_response.tag_en)
+                    # 4. 映射英文标签到中文
+                    tag_cn = self._get_chinese_tag(llm_response.tag_en)
 
-                # 5. 生成 Memo ID
-                memo_id = self._generate_memo_id(index)
+                    # 5. 生成 Memo ID
+                    memo_id = self._generate_memo_id(index)
 
-                # 6. 组装输出
-                output = TermOutput.from_input_and_llm(
-                    term_input=term_input,
-                    llm_response=llm_response,
-                    memo_id=memo_id,
-                    tag_cn=tag_cn,
-                    batch_id=self.batch_id,
-                    batch_note=self.batch_note,
-                )
+                    # 6. 组装输出
+                    output = TermOutput.from_input_and_llm(
+                        term_input=term_input,
+                        llm_response=llm_response,
+                        memo_id=memo_id,
+                        tag_cn=tag_cn,
+                        batch_id=self.batch_id,
+                        batch_note=self.batch_note,
+                    )
 
-                results.append(output)
+                    results.append(output)
 
-            except LLMError as e:
-                self.logger.error(f"LLM 调用失败 [{term_input.word}]: {e}")
-                raise  # 重新抛出，让调用者决定如何处理
+                except LLMError as e:
+                    self.logger.error(f"LLM 调用失败 [{term_input.word}]: {e}")
+                    raise  # 重新抛出，让调用者决定如何处理
 
-            except Exception as e:
-                self.logger.error(f"处理失败 [{term_input.word}]: {e}", exc_info=True)
-                raise
+                except Exception as e:
+                    self.logger.error(f"处理失败 [{term_input.word}]: {e}", exc_info=True)
+                    raise
+        finally:
+            if progress is not None:
+                progress.close()
 
         return results
 
