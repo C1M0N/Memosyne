@@ -8,7 +8,10 @@
 - ✅ 类型安全：IDE 能检查方法签名
 """
 from abc import ABC, abstractmethod
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..models.result import TokenUsage
 
 
 # ============================================================
@@ -19,11 +22,11 @@ class LLMProvider(Protocol):
     """
     LLM 提供商协议
 
-    任何实现了 complete_prompt 方法的类都满足此协议，
+    任何实现了 complete_prompt 和 complete_structured 方法的类都满足此协议，
     无需显式继承（结构化子类型，Structural Subtyping）
     """
 
-    def complete_prompt(self, word: str, zh_def: str) -> dict:
+    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], "TokenUsage"]:
         """
         调用 LLM 生成术语信息
 
@@ -32,7 +35,31 @@ class LLMProvider(Protocol):
             zh_def: 中文释义
 
         Returns:
-            包含 IPA, POS, EnDef 等字段的字典
+            (结果字典, Token使用统计) 元组
+
+        Raises:
+            LLMError: LLM 调用失败时抛出
+        """
+        ...
+
+    def complete_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict[str, Any],
+        schema_name: str = "Response"
+    ) -> tuple[dict[str, Any], "TokenUsage"]:
+        """
+        调用 LLM 生成结构化 JSON 响应
+
+        Args:
+            system_prompt: 系统提示词
+            user_prompt: 用户提示词
+            schema: JSON Schema 定义（OpenAPI 3.0 格式）
+            schema_name: Schema 名称（用于标识，默认 "Response"）
+
+        Returns:
+            (结果字典, Token使用统计) 元组
 
         Raises:
             LLMError: LLM 调用失败时抛出
@@ -63,8 +90,19 @@ class BaseLLMProvider(ABC):
         self._validate_config()
 
     @abstractmethod
-    def complete_prompt(self, word: str, zh_def: str) -> dict:
+    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], "TokenUsage"]:
         """调用 LLM 生成术语信息（子类必须实现）"""
+        pass
+
+    @abstractmethod
+    def complete_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict[str, Any],
+        schema_name: str = "Response"
+    ) -> tuple[dict[str, Any], "TokenUsage"]:
+        """调用 LLM 生成结构化 JSON 响应（子类必须实现）"""
         pass
 
     def _validate_config(self) -> None:
@@ -131,27 +169,58 @@ class ValidationError(MemosymeError):
 # ============================================================
 if __name__ == "__main__":
     # 示例 1: 使用 Protocol（鸭子类型）
+    from ..models.result import TokenUsage
+
     class MockLLM:
         """Mock LLM - 不需要显式继承 LLMProvider"""
-        def complete_prompt(self, word: str, zh_def: str) -> dict:
-            return {"IPA": "/test/", "POS": "n."}
+        def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], TokenUsage]:
+            result = {"IPA": "/test/", "POS": "n.", "word": word, "zh_def": zh_def}
+            tokens = TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30)
+            return result, tokens
+
+        def complete_structured(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            schema: dict[str, Any],
+            schema_name: str = "Response"
+        ) -> tuple[dict[str, Any], TokenUsage]:
+            result = {"result": "mock", "schema": schema_name}
+            tokens = TokenUsage(prompt_tokens=15, completion_tokens=25, total_tokens=40)
+            return result, tokens
 
     mock = MockLLM()
     assert isinstance(mock, LLMProvider)  # True!
 
     # 示例 2: 使用 ABC（显式继承）
-    class OpenAIProvider(BaseLLMProvider):
-        def complete_prompt(self, word: str, zh_def: str) -> dict:
-            return {"model": self.model, "word": word}
+    class ExampleProvider(BaseLLMProvider):
+        def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], TokenUsage]:
+            result = {"model": self.model, "word": word, "zh_def": zh_def}
+            tokens = TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30)
+            return result, tokens
 
-    provider = OpenAIProvider(model="gpt-4o-mini")
-    print(provider)  # OpenAIProvider(model='gpt-4o-mini')
+        def complete_structured(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            schema: dict[str, Any],
+            schema_name: str = "Response"
+        ) -> tuple[dict[str, Any], TokenUsage]:
+            result = {"model": self.model, "schema": schema_name}
+            tokens = TokenUsage(prompt_tokens=15, completion_tokens=25, total_tokens=40)
+            return result, tokens
+
+    provider = ExampleProvider(model="gpt-4o-mini")
+    print(provider)  # ExampleProvider(model='gpt-4o-mini')
 
     # 示例 3: 类型检查
-    def process_with_llm(llm: LLMProvider, word: str) -> dict:
+    def process_with_llm(llm: LLMProvider, word: str) -> tuple[dict[str, Any], TokenUsage]:
         """接受任何实现了 LLMProvider 协议的对象"""
         return llm.complete_prompt(word, "测试")
 
     # 两种实现都可以传入
-    process_with_llm(mock, "test")
-    process_with_llm(provider, "test")
+    result1, tokens1 = process_with_llm(mock, "test")
+    print(f"Mock result: {result1}, {tokens1}")
+
+    result2, tokens2 = process_with_llm(provider, "test")
+    print(f"Provider result: {result2}, {tokens2}")

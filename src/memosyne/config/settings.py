@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     # === 业务配置 ===
     batch_timezone: str = "America/New_York"
     max_batch_runs_per_day: int = Field(default=26, ge=1, le=26)
-    term_list_version: str = "v1"
+    reanimator_term_list_version: str = "v1"
 
     # === 日志配置 ===
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -73,6 +73,14 @@ class Settings(BaseSettings):
         case_sensitive=False,  # 环境变量不区分大小写
         extra="ignore",  # 忽略额外的环境变量
     )
+
+    @field_validator("anthropic_api_key", mode="before")
+    @classmethod
+    def optional_api_key_empty_to_none(cls, v: str | None) -> str | None:
+        """将空字符串转换为 None（用于可选的 API Key）"""
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
     @field_validator("default_temperature", mode="before")
     @classmethod
@@ -92,37 +100,37 @@ class Settings(BaseSettings):
         return path
 
     @property
-    def mms_input_dir(self) -> Path:
-        """MMS 输入目录"""
-        return self.data_dir / "input" / "memo"
+    def reanimater_input_dir(self) -> Path:
+        """Reanimater 输入目录"""
+        return self.data_dir / "input" / "reanimater"
 
     @property
-    def mms_output_dir(self) -> Path:
-        """MMS 输出目录"""
-        return self.data_dir / "output" / "memo"
+    def reanimater_output_dir(self) -> Path:
+        """Reanimater 输出目录"""
+        return self.data_dir / "output" / "reanimater"
 
     @property
-    def parser_input_dir(self) -> Path:
-        """Parser 输入目录"""
-        return self.data_dir / "input" / "parser"
+    def lithoformer_input_dir(self) -> Path:
+        """Lithoformer 输入目录"""
+        return self.data_dir / "input" / "lithoformer"
 
     @property
-    def parser_output_dir(self) -> Path:
-        """Parser 输出目录"""
-        return self.data_dir / "output" / "parser"
+    def lithoformer_output_dir(self) -> Path:
+        """Lithoformer 输出目录"""
+        return self.data_dir / "output" / "lithoformer"
 
     @property
     def term_list_path(self) -> Path:
         """术语表路径"""
-        return self.db_dir / f"term_list_{self.term_list_version}.csv"
+        return self.db_dir / f"term_list_{self.reanimator_term_list_version}.csv"
 
     def ensure_dirs(self) -> None:
         """确保所有必需的目录存在"""
         for dir_path in [
-            self.mms_input_dir,
-            self.mms_output_dir,
-            self.parser_input_dir,
-            self.parser_output_dir,
+            self.reanimater_input_dir,
+            self.reanimater_output_dir,
+            self.lithoformer_input_dir,
+            self.lithoformer_output_dir,
             self.db_dir,
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)

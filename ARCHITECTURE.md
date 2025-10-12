@@ -1,7 +1,7 @@
 # Memosyne 架构文档
 
-**版本**: v2.0.0
-**日期**: 2025-10-07
+**版本**: v0.7.1
+**日期**: 2025-10-11
 
 本文档详细描述 Memosyne 项目的架构设计、设计决策和各种架构图表。
 
@@ -37,6 +37,8 @@ Memosyne 采用经典的**分层架构**（Layered Architecture）和 **SOLID �
 - ✅ **类型安全** - 使用 Pydantic 进行运行时验证
 - ✅ **可测试** - 每个组件都可以独立测试
 - ✅ **可扩展** - 轻松添加新的 LLM Provider
+- ✅ **模块化配置** - Prompts 和 Schemas 独立管理
+- ✅ **Token 追踪** - 完整的 Token 使用量统计
 
 ---
 
@@ -50,8 +52,8 @@ graph TB
     end
 
     subgraph "服务层 (Service Layer)"
-        TermProcessor[TermProcessor<br/>术语处理服务]
-        QuizParser[QuizParser<br/>Quiz 解析服务]
+        Reanimater[Reanimater<br/>术语处理服务]
+        Lithoformer[Lithoformer<br/>Quiz 解析服务]
     end
 
     subgraph "提供商层 (Provider Layer)"
@@ -65,43 +67,50 @@ graph TB
     end
 
     subgraph "核心层 (Core Layer)"
-        Models[Pydantic 模型<br/>TermInput/Output<br/>QuizItem]
+        Models[Pydantic 模型<br/>TermInput/Output<br/>QuizItem<br/>TokenUsage/ProcessResult]
         Interfaces[抽象接口<br/>LLMProvider<br/>Protocol/ABC]
+        Prompts[Prompts<br/>LLM 提示词]
+        Schemas[Schemas<br/>JSON Schema]
     end
 
     subgraph "配置层 (Config Layer)"
         Settings[Settings<br/>Pydantic Settings]
     end
 
-    CLI --> TermProcessor
-    CLI --> QuizParser
-    API --> TermProcessor
-    API --> QuizParser
+    CLI --> Reanimater
+    CLI --> Lithoformer
+    API --> Reanimater
+    API --> Lithoformer
 
-    TermProcessor --> OpenAI
-    TermProcessor --> Anthropic
-    TermProcessor --> CSVRepo
-    TermProcessor --> TermList
+    Reanimater --> OpenAI
+    Reanimater --> Anthropic
+    Reanimater --> CSVRepo
+    Reanimater --> TermList
 
-    QuizParser --> OpenAI
-    QuizParser --> Anthropic
+    Lithoformer --> OpenAI
+    Lithoformer --> Anthropic
 
     OpenAI -.implements.-> Interfaces
     Anthropic -.implements.-> Interfaces
 
-    TermProcessor --> Models
-    QuizParser --> Models
+    Reanimater --> Models
+    Lithoformer --> Models
     CSVRepo --> Models
 
-    TermProcessor --> Settings
-    QuizParser --> Settings
+    OpenAI --> Prompts
+    OpenAI --> Schemas
+    Anthropic --> Prompts
+    Anthropic --> Schemas
+
+    Reanimater --> Settings
+    Lithoformer --> Settings
     OpenAI --> Settings
     Anthropic --> Settings
 
     style CLI fill:#e1f5ff
     style API fill:#e1f5ff
-    style TermProcessor fill:#fff4e1
-    style QuizParser fill:#fff4e1
+    style Reanimater fill:#fff4e1
+    style Lithoformer fill:#fff4e1
     style OpenAI fill:#f0e1ff
     style Anthropic fill:#f0e1ff
     style Settings fill:#e1ffe1
@@ -111,20 +120,20 @@ graph TB
 
 ## 系统架构图
 
-### MMS Pipeline 架构
+### Reanimater Pipeline 架构
 
 ```mermaid
 flowchart LR
-    User[用户] --> CLI[MMS CLI]
-    User --> API[process_terms API]
+    User[用户] --> CLI[Reanimater CLI]
+    User --> API[reanimate API]
 
-    CLI --> TermProcessor
-    API --> TermProcessor
+    CLI --> Reanimater
+    API --> Reanimater
 
-    TermProcessor --> LLM[LLM Provider<br/>OpenAI/Anthropic]
-    TermProcessor --> CSVRepo[CSV Repository]
-    TermProcessor --> TermList[Term List Repo]
-    TermProcessor --> BatchGen[Batch ID Generator]
+    Reanimater --> LLM[LLM Provider<br/>OpenAI/Anthropic]
+    Reanimater --> CSVRepo[CSV Repository]
+    Reanimater --> TermList[Term List Repo]
+    Reanimater --> BatchGen[Batch ID Generator]
 
     CSVRepo --> InputCSV[(输入 CSV<br/>word, zh_def)]
     CSVRepo --> OutputCSV[(输出 CSV<br/>完整记忆卡片)]
@@ -139,25 +148,25 @@ flowchart LR
 
     TermOutput --> OutputCSV
 
-    style TermProcessor fill:#ffd700
+    style Reanimater fill:#ffd700
     style LLM fill:#87ceeb
     style Validation fill:#90ee90
 ```
 
-### ExParser Pipeline 架构
+### Lithoformer Pipeline 架构
 
 ```mermaid
 flowchart LR
-    User[用户] --> CLI[ExParser CLI]
-    User --> API[parse_quiz API]
+    User[用户] --> CLI[Lithoformer CLI]
+    User --> API[lithoform API]
 
-    CLI --> QuizParser
-    API --> QuizParser
+    CLI --> Lithoformer
+    API --> Lithoformer
 
-    QuizParser --> LLM[LLM Provider<br/>OpenAI/Anthropic]
-    QuizParser --> Formatter[Quiz Formatter]
+    Lithoformer --> LLM[LLM Provider<br/>OpenAI/Anthropic]
+    Lithoformer --> Formatter[Quiz Formatter]
 
-    InputMD[(Markdown<br/>Quiz 文档)] --> QuizParser
+    InputMD[(Markdown<br/>Quiz 文档)] --> Lithoformer
 
     LLM -.解析.-> QuizResp[Quiz Response<br/>MCQ/CLOZE/ORDER]
 
@@ -169,7 +178,7 @@ flowchart LR
     Sanitize --> Format[格式化<br/>ShouldBe 格式]
     Format --> OutputTXT[(输出 TXT<br/>ShouldBe.txt)]
 
-    style QuizParser fill:#ffd700
+    style Lithoformer fill:#ffd700
     style LLM fill:#87ceeb
     style Formatter fill:#ff6b6b
 ```
@@ -186,7 +195,8 @@ classDiagram
         <<Protocol>>
         +model: str
         +temperature: float | None
-        +complete_prompt(word: str, zh_def: str) dict
+        +complete_prompt(word, zh_def) tuple[dict, TokenUsage]
+        +complete_structured(sys, user, schema, name) tuple[dict, TokenUsage]
     }
 
     class BaseLLMProvider {
@@ -194,7 +204,8 @@ classDiagram
         #model: str
         #temperature: float | None
         +__init__(model, temperature)
-        +complete_prompt(word, zh_def)* dict
+        +complete_prompt(word, zh_def)* tuple[dict, TokenUsage]
+        +complete_structured(...)* tuple[dict, TokenUsage]
         #_validate_config()* void
     }
 
@@ -202,7 +213,8 @@ classDiagram
         -client: OpenAI
         +__init__(model, api_key, temperature, max_retries)
         +from_settings(settings)$ OpenAIProvider
-        +complete_prompt(word, zh_def) dict
+        +complete_prompt(word, zh_def) tuple[dict, TokenUsage]
+        +complete_structured(...) tuple[dict, TokenUsage]
         #_validate_config() void
     }
 
@@ -211,7 +223,8 @@ classDiagram
         -max_tokens: int
         +__init__(model, api_key, temperature, max_tokens)
         +from_settings(settings)$ AnthropicProvider
-        +complete_prompt(word, zh_def) dict
+        +complete_prompt(word, zh_def) tuple[dict, TokenUsage]
+        +complete_structured(...) tuple[dict, TokenUsage]
         #_validate_config() void
     }
 
@@ -281,44 +294,63 @@ classDiagram
         +F: str
     }
 
+    class TokenUsage {
+        +prompt_tokens: int
+        +completion_tokens: int
+        +total_tokens: int
+        +__add__(other) TokenUsage
+    }
+
+    class ProcessResult~T~ {
+        +items: list~T~
+        +success_count: int
+        +total_count: int
+        +token_usage: TokenUsage
+    }
+
     TermOutput ..> TermInput : uses
     TermOutput ..> LLMResponse : uses
     QuizItem *-- QuizOptions : contains
+    ProcessResult *-- TokenUsage : contains
 ```
 
 ### 服务层类图
 
 ```mermaid
 classDiagram
-    class TermProcessor {
+    class Reanimater {
         -llm: LLMProvider
         -term_mapping: dict
         -start_memo: int
         -batch_id: str
         -batch_note: str
-        +__init__(llm_provider, term_list_mapping, start_memo_index, batch_id, batch_note)
-        +process(terms, show_progress) list~TermOutput~
+        -logger: Logger
+        +__init__(llm_provider, term_list_mapping, start_memo_index, batch_id, batch_note, logger)
+        +from_settings(...)$ Reanimater
+        +process(terms, show_progress) ProcessResult~TermOutput~
         -_apply_business_rules(word, llm_response) LLMResponse
         -_get_chinese_tag(tag_en) str
         -_generate_memo_id(index) str
     }
 
-    class QuizParser {
+    class Lithoformer {
         -llm: LLMProvider
-        +__init__(llm_provider)
-        +parse(markdown_text) list~QuizItem~
+        -logger: Logger
+        +__init__(llm_provider, logger)
+        +from_settings(...)$ Lithoformer
+        +process(markdown_source, show_progress) ProcessResult~QuizItem~
     }
 
     class QuizFormatter {
         +format(items, title_main, title_sub) str
     }
 
-    TermProcessor ..> LLMProvider : uses
-    TermProcessor ..> TermInput : processes
-    TermProcessor ..> TermOutput : produces
+    Reanimater ..> LLMProvider : uses
+    Reanimater ..> TermInput : processes
+    Reanimater ..> TermOutput : produces
 
-    QuizParser ..> LLMProvider : uses
-    QuizParser ..> QuizItem : produces
+    Lithoformer ..> LLMProvider : uses
+    Lithoformer ..> QuizItem : produces
 
     QuizFormatter ..> QuizItem : formats
 ```
@@ -327,14 +359,14 @@ classDiagram
 
 ## 时序图
 
-### MMS 处理流程时序图
+### Reanimater 处理流程时序图
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant CLI as MMS CLI
-    participant API as process_terms()
-    participant TP as TermProcessor
+    participant CLI as Reanimater CLI
+    participant API as reanimate()
+    participant RA as Reanimater
     participant LLM as LLM Provider
     participant CSV as CSVRepository
     participant TL as TermListRepo
@@ -349,22 +381,23 @@ sequenceDiagram
     CLI->>TL: 加载术语表
     TL-->>CLI: term_mapping dict
 
-    CLI->>TP: 创建 TermProcessor
+    CLI->>RA: 创建 Reanimater
 
     loop 每个术语
-        TP->>LLM: complete_prompt(word, zh_def)
+        RA->>LLM: complete_prompt(word, zh_def)
         LLM->>LLM: 调用 API (OpenAI/Anthropic)
-        LLM-->>TP: dict (IPA, POS, EnDef...)
+        LLM-->>RA: tuple[dict, TokenUsage]
 
-        TP->>TP: 验证 (Pydantic)
-        TP->>TP: 应用业务规则
-        TP->>TP: 生成 Memo ID
-        TP->>TP: 映射中文标签
+        RA->>RA: 验证 (Pydantic)
+        RA->>RA: 应用业务规则
+        RA->>RA: 生成 Memo ID
+        RA->>RA: 映射中文标签
+        RA->>RA: 累加 Token
 
-        TP->>TP: 创建 TermOutput
+        RA->>RA: 创建 TermOutput
     end
 
-    TP-->>CLI: list[TermOutput]
+    RA-->>CLI: ProcessResult[TermOutput]
 
     CLI->>CSV: 写出结果 CSV
     CSV-->>CLI: 成功
@@ -372,13 +405,13 @@ sequenceDiagram
     CLI-->>User: 显示成功信息
 ```
 
-### ExParser 解析流程时序图
+### Lithoformer 解析流程时序图
 
 ```mermaid
 sequenceDiagram
     actor User
-    participant CLI as ExParser CLI
-    participant QP as QuizParser
+    participant CLI as Lithoformer CLI
+    participant LF as Lithoformer
     participant LLM as LLM Provider
     participant QF as QuizFormatter
     participant File as File System
@@ -390,16 +423,16 @@ sequenceDiagram
     CLI->>File: 读取 Markdown 文件
     File-->>CLI: markdown_text
 
-    CLI->>QP: 创建 QuizParser
-    CLI->>QP: parse(markdown_text)
+    CLI->>LF: 创建 Lithoformer
+    CLI->>LF: process(markdown_text, show_progress)
 
-    QP->>LLM: 发送 Markdown + Prompt
+    LF->>LLM: 发送 Markdown + Prompt (structured)
     LLM->>LLM: 调用 API (JSON Schema)
-    LLM-->>QP: JSON (items 列表)
+    LLM-->>LF: tuple[dict, TokenUsage]
 
-    QP->>QP: 验证 (Pydantic)
-    QP->>QP: 创建 QuizItem 列表
-    QP-->>CLI: list[QuizItem]
+    LF->>LF: 验证 (Pydantic)
+    LF->>LF: 创建 QuizItem 列表
+    LF-->>CLI: ProcessResult[QuizItem]
 
     CLI->>QF: 创建 QuizFormatter
     CLI->>QF: format(items, title_main, title_sub)
@@ -431,13 +464,13 @@ sequenceDiagram
     actor Developer
     participant App as 第三方应用
     participant API as memosyne.api
-    participant TP as TermProcessor
+    participant RA as Reanimater
     participant Settings as Settings
     participant LLM as LLMProvider
 
     Developer->>App: import memosyne.api
 
-    App->>API: process_terms(input_csv, start_index, model)
+    App->>API: reanimate(input_csv, start_index, model)
 
     API->>Settings: get_settings()
     Settings-->>API: settings instance
@@ -453,13 +486,13 @@ sequenceDiagram
         API->>LLM: 创建 AnthropicProvider
     end
 
-    API->>TP: 创建 TermProcessor
-    API->>TP: process(terms)
+    API->>RA: 创建 Reanimater
+    API->>RA: process(terms, show_progress)
 
-    TP->>LLM: complete_prompt() (多次)
-    LLM-->>TP: results
+    RA->>LLM: complete_prompt() (多次)
+    LLM-->>RA: tuple[dict, TokenUsage] (多次)
 
-    TP-->>API: list[TermOutput]
+    RA-->>API: ProcessResult[TermOutput]
 
     API->>API: 写出 CSV
 
@@ -472,7 +505,7 @@ sequenceDiagram
 
 ## 数据流图
 
-### MMS 数据流
+### Reanimater 数据流
 
 ```mermaid
 flowchart TD
@@ -515,7 +548,7 @@ flowchart TD
     style PydanticVal fill:#fff4e1
 ```
 
-### ExParser 数据流
+### Lithoformer 数据流
 
 ```mermaid
 flowchart TD
@@ -606,15 +639,15 @@ flowchart TD
 # ❌ 不好：全局状态
 llm = OpenAI()  # 全局变量
 
-def process(word):
+def reanimate(word):
     return llm.call(word)  # 隐式依赖
 
 # ✅ 好：依赖注入
-class Processor:
+class Reanimater:
     def __init__(self, llm: LLMProvider):
         self.llm = llm  # 显式依赖
 
-    def process(self, word):
+    def reanimate(self, word):
         return self.llm.call(word)
 ```
 
@@ -719,6 +752,6 @@ Memosyne v2.0 采用现代化的 Python 架构设计，遵循 SOLID 原则和最
 
 ---
 
-**文档版本**: 1.0
+**文档版本**: 1.1
 **作者**: Memosyne Team
-**最后更新**: 2025-10-07
+**最后更新**: 2025-10-11

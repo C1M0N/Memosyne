@@ -1,5 +1,5 @@
 """CLI interface"""
 
-from .mms import main as mms_main
+from .reanimate import main as reanimate_main
 
-__all__ = ["mms_main"]
+__all__ = ["reanimate_main"]

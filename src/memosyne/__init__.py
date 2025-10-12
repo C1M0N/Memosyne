@@ -1,36 +1,36 @@
 """
 Memosyne - LLM-based terminology and quiz processing toolkit
 
-Version: 2.0.0 (Refactored)
+Version: 0.7.1
 
 Quick Start:
-    >>> from memosyne import process_terms, parse_quiz
+    >>> from memosyne import reanimate, lithoform
     >>>
-    >>> # 处理术语
-    >>> result = process_terms(
+    >>> # 处理术语 (Reanimater)
+    >>> result = reanimate(
     ...     input_csv="221.csv",
     ...     start_memo_index=221,
     ...     model="gpt-4o-mini"
     ... )
+    >>> print(f"Token 使用: {result['token_usage']}")
     >>>
-    >>> # 解析 Quiz
-    >>> result = parse_quiz(
+    >>> # 解析 Quiz (Lithoformer)
+    >>> result = lithoform(
     ...     input_md="quiz.md",
     ...     model="gpt-4o-mini"
     ... )
+    >>> print(f"Token 使用: {result['token_usage']}")
 """
 
-__version__ = "2.0.0"
+__version__ = "0.7.1"
 __author__ = "Memosyne Team"
 
 # 导出主要 API
-from .api import process_terms, parse_quiz, mms, exparser
+from .api import reanimate, lithoform
 
 __all__ = [
-    "process_terms",
-    "parse_quiz",
-    "mms",
-    "exparser",
+    "reanimate",
+    "lithoform",
     "__version__",
     "__author__",
 ]

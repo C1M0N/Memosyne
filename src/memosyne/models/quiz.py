@@ -1,7 +1,7 @@
 """
 Quiz 数据模型
 
-用于 ExParser：解析 Quiz Markdown 文档
+用于 Lithoformer：解析 Quiz Markdown 文档
 """
 from typing import Literal
 from pydantic import BaseModel, Field

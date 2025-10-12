@@ -11,6 +11,10 @@ from .quiz import (
     QuizOptions,
     QuizResponse,
 )
+from .result import (
+    TokenUsage,
+    ProcessResult,
+)
 
 __all__ = [
     "TermInput",
@@ -20,4 +24,6 @@ __all__ = [
     "QuizItem",
     "QuizOptions",
     "QuizResponse",
+    "TokenUsage",
+    "ProcessResult",
 ]
