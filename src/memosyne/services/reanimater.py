@@ -102,60 +102,66 @@ class Reanimater:
             except TypeError:
                 total = None
 
-        # 配置进度条
-        if show_progress:
-            pbar_kwargs = {
-                "desc": "LLM Processing",
-                "ncols": 80,
-                "ascii": True,
-                "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
-            }
-            if total is not None:
-                pbar_kwargs["total"] = total
-            iterator = enumerate(tqdm(terms, **pbar_kwargs))
-        else:
-            iterator = enumerate(terms)
+        progress = None
+        try:
+            # 配置进度条
+            if show_progress:
+                pbar_kwargs = {
+                    "desc": "LLM Processing",
+                    "ncols": 80,
+                    "ascii": True,
+                    "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+                }
+                if total is not None:
+                    pbar_kwargs["total"] = total
+                progress = tqdm(terms, **pbar_kwargs)
+                iterator = enumerate(progress)
+            else:
+                iterator = enumerate(terms)
 
-        # 处理每个术语
-        for index, term_input in iterator:
-            try:
-                # 1. 调用 LLM
-                llm_dict = self.llm.complete_prompt(
-                    word=term_input.word,
-                    zh_def=term_input.zh_def
-                )
+            # 处理每个术语
+            for index, term_input in iterator:
+                try:
+                    # 1. 调用 LLM
+                    llm_dict = self.llm.complete_prompt(
+                        word=term_input.word,
+                        zh_def=term_input.zh_def
+                    )
 
-                # 2. 转换为 Pydantic 模型（自动验证）
-                llm_response = LLMResponse(**llm_dict)
+                    # 2. 转换为 Pydantic 模型（自动验证）
+                    llm_response = LLMResponse(**llm_dict)
 
-                # 3. 后处理：词组强制标记为 P.
-                llm_response = self._apply_business_rules(term_input.word, llm_response)
+                    # 3. 后处理：词组强制标记为 P.
+                    llm_response = self._apply_business_rules(term_input.word, llm_response)
 
-                # 4. 映射英文标签到中文
-                tag_cn = self._get_chinese_tag(llm_response.tag_en)
+                    # 4. 映射英文标签到中文
+                    tag_cn = self._get_chinese_tag(llm_response.tag_en)
 
-                # 5. 生成 Memo ID
-                memo_id = self._generate_memo_id(index)
+                    # 5. 生成 Memo ID
+                    memo_id = self._generate_memo_id(index)
 
-                # 6. 组装输出
-                output = TermOutput.from_input_and_llm(
-                    term_input=term_input,
-                    llm_response=llm_response,
-                    memo_id=memo_id,
-                    tag_cn=tag_cn,
-                    batch_id=self.batch_id,
-                    batch_note=self.batch_note,
-                )
+                    # 6. 组装输出
+                    output = TermOutput.from_input_and_llm(
+                        term_input=term_input,
+                        llm_response=llm_response,
+                        memo_id=memo_id,
+                        tag_cn=tag_cn,
+                        batch_id=self.batch_id,
+                        batch_note=self.batch_note,
+                    )
 
-                results.append(output)
+                    results.append(output)
 
-            except LLMError as e:
-                self.logger.error(f"LLM 调用失败 [{term_input.word}]: {e}")
-                raise  # 重新抛出，让调用者决定如何处理
+                except LLMError as e:
+                    self.logger.error(f"LLM 调用失败 [{term_input.word}]: {e}")
+                    raise  # 重新抛出，让调用者决定如何处理
 
-            except Exception as e:
-                self.logger.error(f"处理失败 [{term_input.word}]: {e}", exc_info=True)
-                raise
+                except Exception as e:
+                    self.logger.error(f"处理失败 [{term_input.word}]: {e}", exc_info=True)
+                    raise
+        finally:
+            if progress is not None:
+                progress.close()
 
         return results
 

@@ -1,12 +1,17 @@
-"""
-OpenAI Provider - 重构版本
+"""OpenAI Provider - 重构版本.
 
-基于原 src/mms_pipeline/openai_helper.py
-改进：继承抽象基类、结构化日志、可注入配置
+在上一版尝试切换到 ``client.responses.parse`` 之后，macOS 用户反馈
+``OSError: [Errno 63] File name too long``。排查发现 OpenAI SDK 会把
+``input`` 字段当作待上传文件路径，把整段 Markdown 题干错当成文件名。
+本次修复回退到稳定的 ``chat.completions`` 调用方式，并保留健壮的 JSON
+解析逻辑，以适配 SDK 行为差异。
 """
+from __future__ import annotations
+
 import json
 from typing import Any
-from openai import OpenAI, BadRequestError
+
+from openai import BadRequestError, OpenAI
 
 from ..core.interfaces import BaseLLMProvider, LLMError
 
@@ -130,38 +135,12 @@ class OpenAIProvider(BaseLLMProvider):
         """调用 OpenAI API 生成术语信息"""
         user_message = USER_TEMPLATE.format(word=word, zh_def=zh_def)
 
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": [
-                {"role": "developer", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": TERM_RESULT_SCHEMA
-            },
-        }
-
-        if self.temperature is not None:
-            kwargs["temperature"] = self.temperature
-
-        try:
-            response = self.client.chat.completions.create(**kwargs)
-        except BadRequestError as e:
-            error_msg = str(e).lower()
-            if "temperature" in error_msg and "unsupported" in error_msg:
-                kwargs.pop("temperature", None)
-                response = self.client.chat.completions.create(**kwargs)
-            else:
-                raise LLMError(f"OpenAI API 错误：{e}") from e
-        except Exception as e:
-            raise LLMError(f"调用 OpenAI 时发生意外错误：{e}") from e
-
-        try:
-            content = response.choices[0].message.content
-            return json.loads(content)
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
-            raise LLMError(f"解析 LLM 响应失败：{e}") from e
+        return self._request_via_chat(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=user_message,
+            schema_payload=TERM_RESULT_SCHEMA,
+            system_role="developer",
+        )
 
     def complete_structured(
         self,
@@ -171,19 +150,46 @@ class OpenAIProvider(BaseLLMProvider):
         schema_name: str = "Response"
     ) -> dict[str, Any]:
         """调用 OpenAI API 生成结构化 JSON 响应"""
+        schema_payload = {
+            "name": schema_name,
+            "strict": True,
+            "schema": schema,
+        }
+
+        return self._request_via_chat(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema_payload=schema_payload,
+        )
+
+    def _validate_config(self) -> None:
+        """验证配置"""
+        super()._validate_config()
+        if not self.client.api_key:
+            raise ValueError("OpenAI API Key 未设置")
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _request_via_chat(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        schema_payload: dict[str, Any],
+        system_role: str = "system",
+    ) -> dict[str, Any]:
+        """向 Chat Completions 请求结构化 JSON。"""
+
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": system_role, "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "strict": True,
-                    "schema": schema
-                }
+                "json_schema": schema_payload,
             },
         }
 
@@ -192,24 +198,61 @@ class OpenAIProvider(BaseLLMProvider):
 
         try:
             response = self.client.chat.completions.create(**kwargs)
-        except BadRequestError as e:
-            error_msg = str(e).lower()
+            return self._extract_chat_output(response)
+        except BadRequestError as exc:
+            error_msg = str(exc).lower()
             if "temperature" in error_msg and "unsupported" in error_msg:
                 kwargs.pop("temperature", None)
                 response = self.client.chat.completions.create(**kwargs)
-            else:
-                raise LLMError(f"OpenAI API 错误：{e}") from e
-        except Exception as e:
-            raise LLMError(f"调用 OpenAI 时发生意外错误：{e}") from e
+                return self._extract_chat_output(response)
+            raise LLMError(f"OpenAI API 错误：{exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise LLMError(f"调用 OpenAI 时发生意外错误：{exc}") from exc
+
+    @staticmethod
+    def _extract_chat_output(response: Any) -> dict[str, Any]:
+        """Extract structured JSON from ``chat.completions`` output."""
 
         try:
-            content = response.choices[0].message.content
-            return json.loads(content)
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
-            raise LLMError(f"解析 LLM 响应失败：{e}") from e
+            choice = response.choices[0]
+            content = choice.message.content
+        except (AttributeError, IndexError) as exc:  # noqa: BLE001
+            raise LLMError(f"解析 LLM 响应失败：{exc}") from exc
 
-    def _validate_config(self) -> None:
-        """验证配置"""
-        super()._validate_config()
-        if not self.client.api_key:
-            raise ValueError("OpenAI API Key 未设置")
+        if isinstance(content, dict):
+            parsed = content.get("parsed")
+            if isinstance(parsed, dict):
+                return parsed
+            text_value = content.get("text")
+            if isinstance(text_value, str):
+                return OpenAIProvider._loads_json(text_value)
+
+        if isinstance(content, list):
+            text_segments: list[str] = []
+            for part in content:
+                if isinstance(part, dict):
+                    parsed = part.get("parsed")
+                    if isinstance(parsed, dict):
+                        return parsed
+                    text_val = part.get("text") or part.get("value")
+                else:
+                    text_val = getattr(part, "text", None)
+                    parsed = getattr(part, "parsed", None)
+                    if isinstance(parsed, dict):
+                        return parsed
+                if isinstance(text_val, str):
+                    text_segments.append(text_val)
+            if text_segments:
+                return OpenAIProvider._loads_json("".join(text_segments))
+
+        if isinstance(content, str):
+            return OpenAIProvider._loads_json(content)
+
+        raise LLMError("OpenAI 响应格式未知，无法解析 JSON")
+
+    @staticmethod
+    def _loads_json(payload: str) -> dict[str, Any]:
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError as exc:
+            raise LLMError(f"解析 LLM 响应失败：{exc}") from exc
