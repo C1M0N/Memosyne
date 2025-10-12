@@ -1,114 +1,27 @@
 """
-Quiz 解析服务（Lithoformer）
+Quiz 解析服务（Lithoformer） - 重构版本
 
 负责使用 LLM 将 Markdown 格式的 Quiz 解析成结构化数据
+
+重构改进：
+- ✅ Logger 支持：统一日志记录
+- ✅ 工厂方法：提供 from_settings() 便捷创建
+- ✅ 进度条支持：显示token使用量
+- ✅ 文件路径支持：可接受文件路径或字符串
+- ✅ 统一返回：ProcessResult[QuizItem]
+- ✅ 方法名统一：process()（parse() 作为别名）
 """
-from ..core.interfaces import LLMError
+import logging
+from pathlib import Path
+from typing import Union
+from tqdm import tqdm
+
+from ..core.interfaces import LLMProvider, LLMError
 from ..models.quiz import QuizItem, QuizResponse
-
-
-# ============================================================
-# Prompt 和 Schema 定义
-# ============================================================
-SYSTEM_PROMPT = """You are an exam parser agent.
-
-VERBATIM MANDATE (CRITICAL)
-- DO NOT paraphrase or shorten any wording.
-- COPY stems, step lines (A./B./C./D.) and option texts VERBATIM.
-- Preserve punctuation, parentheses, acronyms, numbers (e.g., 'DSM-5-TR', '(positively charged ion)').
-- Allowed edits ONLY:
-  (a) remove leading numbering tokens at the very start of the stem (e.g., '1.', '(1)', 'Q1:');
-  (b) insert '<br>' for line breaks;
-  (c) replace figures/images with placeholders '§Pic.N§' in order of appearance.
-
-STRICT SEPARATION
-- NEVER put any answer choices (like 'a. ...', 'A. ...') inside the stem. All choices must go into 'options'.
-- Remove UI/grade artifacts from the source such as: 'Correct answer:', 'Incorrect answer:', ', Not Selected', 'Not Selected'.
-- Remove naked markers 'A.'/'B.'/'C.'/'D.' that appear WITHOUT text.
-
-TYPE DECISION RULES
-- If lettered choices (A./B./C./D.) exist in the source, the item is MCQ, even if the stem has blanks/underscores.
-- Use CLOZE ONLY when there are underscores '____' in the stem AND there are NO lettered choices.
-- Use ORDER when the prompt asks to place/order AND there are labeled step lines A./B./C./D., plus separate sequence choices (e.g., 'B,A,C,D').
-- For figure-only MCQ (labels A/B/C/D without descriptions), set options A='A', B='B', C='C', D='D' (others empty).
-
-OUTPUT CONTRACT
-- Return ONLY one compact JSON object with key: "items".
-- "items" is an array; each item is an object with:
-  - "qtype": "MCQ" or "CLOZE" or "ORDER".
-  - "stem": string (VERBATIM; may include '<br>' and '§Pic.N§').
-  - "steps": array of strings. For ORDER, put the labeled step lines VERBATIM (e.g., 'A. ...', 'B. ...'); else [].
-  - "options": object with keys "A","B","C","D","E","F" (strings). ALWAYS output all keys; if a key doesn't exist, set "".
-    *For ORDER, options are the SEQUENCE choices (e.g., 'B,A,C,D'), NOT the step lines.*
-  - "answer": one uppercase letter among A..F for MCQ/ORDER; "" for CLOZE.
-  - "cloze_answers": array of strings. For CLOZE, provide exact fills in order; for MCQ/ORDER, [].
-- No markdown code fences, no commentary, no extra keys.
-- Do NOT create items that are merely answer summaries (e.g., '... in the proper sequence: D, C, A, B.').
-
-STYLE
-- Stems: only remove leading numbering tokens; otherwise copy verbatim.
-- Keep parentheses and qualifiers.
-- For blanks '____', list fills in cloze_answers (renderer will place '{{...}}' or keep underscores as needed)."""
-
-USER_TEMPLATE = """Source markdown quiz:
-
----
-{md}
----
-
-TASK
-- Extract questions with choices and the correct answer letter if explicitly available in the markdown.
-- If answer not explicit, leave "answer" as empty string "".
-- Clean stems: remove numbering like "1.", "(1)", "Q1:", etc.
-- Ensure options text are concise.
-- Return JSON only, matching the schema strictly.
-"""
-
-QUIZ_SCHEMA = {
-    "name": "QuizItems",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "qtype": {"type": "string", "enum": ["MCQ", "CLOZE", "ORDER"]},
-                        "stem": {"type": "string", "minLength": 1},
-                        "steps": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "options": {
-                            "type": "object",
-                            "additionalProperties": False,
-                            "properties": {
-                                "A": {"type": "string"},
-                                "B": {"type": "string"},
-                                "C": {"type": "string"},
-                                "D": {"type": "string"},
-                                "E": {"type": "string"},
-                                "F": {"type": "string"}
-                            },
-                            "required": ["A", "B", "C", "D", "E", "F"]
-                        },
-                        "answer": {"type": "string", "pattern": "^[A-F]?$"},
-                        "cloze_answers": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    },
-                    "required": ["qtype", "stem", "steps", "options", "answer", "cloze_answers"]
-                }
-            }
-        },
-        "required": ["items"]
-    }
-}
+from ..models.result import ProcessResult, TokenUsage
+from ..prompts import LITHOFORMER_SYSTEM_PROMPT, LITHOFORMER_USER_TEMPLATE
+from ..schemas import QUIZ_SCHEMA
+from ..utils.logger import get_logger
 
 
 class Lithoformer:
@@ -118,47 +31,128 @@ class Lithoformer:
     使用 LLM 将 Markdown 格式的 Quiz 解析成结构化的 QuizItem 列表
 
     Example:
-        >>> from memosyne.providers import OpenAIProvider
         >>> from memosyne.config import get_settings
         >>>
         >>> settings = get_settings()
-        >>> llm = OpenAIProvider.from_settings(settings)
-        >>> parser = Lithoformer(llm_provider=llm)
+        >>> parser = Lithoformer.from_settings(settings)
         >>>
         >>> md_text = "1. What is...\\nA. Option A\\nB. Option B"
-        >>> items = parser.parse(md_text)
+        >>> result = parser.process(md_text, show_progress=True)
+        >>> print(result.token_usage)
     """
 
-    def __init__(self, llm_provider):
+    def __init__(
+        self,
+        llm_provider: LLMProvider,
+        logger: logging.Logger | None = None
+    ):
         """
         Args:
             llm_provider: LLM Provider（OpenAI 或 Anthropic）
+            logger: 日志记录器（None 则使用默认）
         """
         self.llm = llm_provider
+        self.logger = logger or get_logger("memosyne.lithoformer")
 
-    def parse(self, markdown_text: str) -> list[QuizItem]:
+    @classmethod
+    def from_settings(
+        cls,
+        settings,
+        provider_type: str = "openai",
+        model: str | None = None,
+        logger: logging.Logger | None = None,
+    ) -> "Lithoformer":
+        """
+        从 Settings 创建 Lithoformer 实例（工厂方法）
+
+        Args:
+            settings: Settings 对象
+            provider_type: Provider 类型（"openai" 或 "anthropic"）
+            model: 模型名称（None 则使用 settings 默认值）
+            logger: 日志记录器
+
+        Returns:
+            Lithoformer 实例
+        """
+        from ..providers import OpenAIProvider, AnthropicProvider
+
+        # 创建 LLM Provider
+        if provider_type == "anthropic":
+            llm = AnthropicProvider(
+                model=model or settings.default_anthropic_model,
+                api_key=settings.anthropic_api_key,
+                temperature=settings.default_temperature,
+            )
+        else:
+            llm = OpenAIProvider(
+                model=model or settings.default_openai_model,
+                api_key=settings.openai_api_key,
+                temperature=settings.default_temperature,
+            )
+
+        return cls(llm_provider=llm, logger=logger)
+
+    def process(
+        self,
+        markdown_source: Union[str, Path],
+        show_progress: bool = True,
+    ) -> ProcessResult[QuizItem]:
         """
         解析 Markdown 格式的 Quiz
 
         Args:
-            markdown_text: Markdown 格式的 Quiz 文本
+            markdown_source: Markdown 文本或文件路径
+            show_progress: 是否显示进度条
 
         Returns:
-            QuizItem 列表
+            ProcessResult[QuizItem] - 包含结果列表和 token 统计
 
         Raises:
             LLMError: LLM 调用失败
+            FileNotFoundError: 文件路径不存在
         """
-        user_message = USER_TEMPLATE.format(md=markdown_text)
+        self.logger.info("开始解析 Quiz...")
+
+        # 1. 读取 Markdown 内容
+        if isinstance(markdown_source, (str, Path)) and Path(markdown_source).exists():
+            self.logger.info(f"从文件读取: {markdown_source}")
+            markdown_text = Path(markdown_source).read_text(encoding="utf-8")
+        else:
+            markdown_text = str(markdown_source)
+            self.logger.info(f"使用提供的文本，长度: {len(markdown_text)} 字符")
+
+        # 2. 准备 LLM 请求
+        user_message = LITHOFORMER_USER_TEMPLATE.format(md=markdown_text)
+
+        # 3. 显示进度条（虽然只有一次调用，但保持一致性）
+        if show_progress:
+            pbar = tqdm(
+                total=1,
+                desc="Parsing Quiz",
+                ncols=100,
+                ascii=True,
+                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [Tokens: {postfix[tokens]:,}]"
+            )
+            pbar.set_postfix(tokens=0)
 
         try:
+            self.logger.info("调用 LLM 解析...")
+
             # 使用统一的 Provider 接口
-            data = self.llm.complete_structured(
-                system_prompt=SYSTEM_PROMPT,
+            data, tokens = self.llm.complete_structured(
+                system_prompt=LITHOFORMER_SYSTEM_PROMPT,
                 user_prompt=user_message,
                 schema=QUIZ_SCHEMA["schema"],
                 schema_name="QuizItems"
             )
+
+            if show_progress:
+                pbar.update(1)
+                pbar.set_postfix(tokens=tokens.total_tokens)
+                pbar.close()
+
+            self.logger.info(f"LLM 调用成功，Token 使用: {tokens}")
+
             response = QuizResponse(**data)
 
             # 校验：确保至少有一个题目
@@ -171,10 +165,23 @@ class Lithoformer:
                     "请检查输入文件格式。"
                 )
 
-            return response.items
+            self.logger.info(f"解析成功：{len(response.items)} 道题")
+
+            return ProcessResult(
+                items=response.items,
+                success_count=len(response.items),
+                total_count=len(response.items),
+                token_usage=tokens,
+            )
+
         except LLMError:
+            if show_progress:
+                pbar.close()
             raise
         except Exception as e:
+            if show_progress:
+                pbar.close()
+            self.logger.error(f"解析 Quiz 失败：{e}", exc_info=True)
             raise LLMError(f"解析 Quiz 失败：{e}") from e
 
 
@@ -182,15 +189,16 @@ class Lithoformer:
 # 使用示例
 # ============================================================
 if __name__ == "__main__":
-    from ..providers import OpenAIProvider
     from ..config import get_settings
 
     # 1. 准备依赖
     settings = get_settings()
-    llm_provider = OpenAIProvider.from_settings(settings)
 
-    # 2. 创建解析器
-    parser = Lithoformer(llm_provider=llm_provider)
+    # 2. 使用工厂方法创建解析器
+    parser = Lithoformer.from_settings(
+        settings=settings,
+        provider_type="openai",
+    )
 
     # 3. 示例 Markdown
     sample_md = """
@@ -203,11 +211,13 @@ if __name__ == "__main__":
 Correct answer: B
 """
 
-    # 4. 解析
-    items = parser.parse(sample_md)
+    # 4. 解析（新接口）
+    result = parser.process(sample_md, show_progress=True)
 
     # 5. 输出
-    for item in items:
+    print(f"\n处理结果：{result}")
+    print(f"Token 使用：{result.token_usage}")
+    for item in result.items:
         print(f"Type: {item.qtype}")
         print(f"Stem: {item.stem}")
         print(f"Answer: {item.answer}")

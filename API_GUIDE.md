@@ -6,14 +6,13 @@
 
 - [快速开始](#快速开始)
 - [API 函数详解](#api-函数详解)
-  - [reanimate() (原 process_terms)](#reanimate-原-process_terms)
-  - [lithoform() (原 parse_quiz)](#lithoform-原-parse_quiz)
+  - [reanimate()](#reanimate)
+  - [lithoform()](#lithoform)
 - [返回值说明](#返回值说明)
 - [错误处理](#错误处理)
 - [高级用法](#高级用法)
 - [最佳实践](#最佳实践)
 - [常见问题](#常见问题)
-- [向后兼容性](#向后兼容性)
 
 ---
 
@@ -35,8 +34,6 @@
 3. **导入 API**：
    ```python
    from memosyne.api import reanimate, lithoform
-   # 向后兼容：旧名称仍可用
-   from memosyne.api import process_terms, parse_quiz
    ```
 
 ### 示例 1：重生术语列表 (Reanimater)
@@ -76,9 +73,9 @@ print(f"✓ 输出文件: {result['output_path']}")
 
 ## API 函数详解
 
-### reanimate() (原 process_terms)
+### reanimate()
 
-处理术语列表，生成结构化术语卡片（Reanimater Pipeline，原 MMS Pipeline）。
+处理术语列表，生成结构化术语卡片（Reanimater Pipeline）。
 
 #### 函数签名
 
@@ -94,8 +91,6 @@ def reanimate(
     show_progress: bool = True,
 ) -> dict:
 ```
-
-**向后兼容别名**: `process_terms()` - 功能完全相同，已弃用但保留支持
 
 #### 参数说明
 
@@ -119,8 +114,14 @@ def reanimate(
     "success": True,                  # 是否成功
     "output_path": "data/output/reanimater/251010A015.csv",  # 输出文件路径
     "batch_id": "251010A015",         # 批次 ID（格式：YYMMDD + 批次字母 + 词条数）
-    "processed_count": 15,            # 处理的术语数量
-    "results": [TermOutput(...), ...]  # 处理结果列表（Pydantic 模型）
+    "processed_count": 15,            # 成功处理的术语数量
+    "total_count": 15,                # 总术语数量
+    "results": [TermOutput(...), ...],  # 处理结果列表（Pydantic 模型）
+    "token_usage": {                  # Token 使用统计
+        "prompt_tokens": 1234,
+        "completion_tokens": 5678,
+        "total_tokens": 6912
+    }
 }
 ```
 
@@ -197,7 +198,7 @@ result = reanimate(
 )
 ```
 
-**示例 4：调整 LLM 参数**
+**示例 4：调整 LLM 参数并查看 Token 使用**
 
 ```python
 result = reanimate(
@@ -205,26 +206,20 @@ result = reanimate(
     start_memo_index=2700,
     model="gpt-4o",             # 使用更强大的模型
     temperature=0.3,             # 降低随机性
-    show_progress=False          # 不显示进度条
+    show_progress=True           # 进度条会显示实时 Token 使用量
 )
-```
 
-**示例 5：使用旧名称（向后兼容）**
-
-```python
-from memosyne.api import process_terms  # 已弃用但保留
-
-result = process_terms(  # 功能与 reanimate() 完全相同
-    input_csv="terms.csv",
-    start_memo_index=2700
-)
+# 查看 Token 使用统计
+print(f"Prompt Tokens: {result['token_usage']['prompt_tokens']}")
+print(f"Completion Tokens: {result['token_usage']['completion_tokens']}")
+print(f"Total Tokens: {result['token_usage']['total_tokens']}")
 ```
 
 ---
 
-### lithoform() (原 parse_quiz)
+### lithoform()
 
-解析 Markdown 格式的测验文档，转换为标准化格式（Lithoformer，原 ExParser）。
+解析 Markdown 格式的测验文档，转换为标准化格式（Lithoformer）。
 
 #### 函数签名
 
@@ -237,10 +232,9 @@ def lithoform(
     title_main: str | None = None,
     title_sub: str | None = None,
     temperature: float | None = None,
+    show_progress: bool = True,
 ) -> dict:
 ```
-
-**向后兼容别名**: `parse_quiz()` - 功能完全相同，已弃用但保留支持
 
 #### 参数说明
 
@@ -253,6 +247,7 @@ def lithoform(
 | `title_main` | str \| None | ✗ | 主标题（`None` 自动从文件名推断） |
 | `title_sub` | str \| None | ✗ | 副标题（`None` 自动从文件名推断） |
 | `temperature` | float \| None | ✗ | LLM 温度参数（0.0-2.0），`None` 使用模型默认值 |
+| `show_progress` | bool | ✗ | 是否显示进度条（含 Token 使用量），默认 `True` |
 
 #### 返回值
 
@@ -262,9 +257,15 @@ def lithoform(
 {
     "success": True,                  # 是否成功
     "output_path": "data/output/lithoformer/ShouldBe.txt",  # 输出文件路径
-    "item_count": 25,                 # 解析的题目数量
+    "item_count": 25,                 # 成功解析的题目数量
+    "total_count": 25,                # 总题目数量
     "title_main": "Chapter 3 Quiz",   # 主标题
-    "title_sub": "Assessment and Classification"  # 副标题
+    "title_sub": "Assessment and Classification",  # 副标题
+    "token_usage": {                  # Token 使用统计
+        "prompt_tokens": 2345,
+        "completion_tokens": 3456,
+        "total_tokens": 5801
+    }
 }
 ```
 
@@ -330,25 +331,18 @@ result = lithoform(
 )
 ```
 
-**示例 4：自定义输出路径**
+**示例 4：自定义输出路径并查看 Token 使用**
 
 ```python
 result = lithoform(
     input_md="quiz.md",
     output_txt="chapter3_output.txt",  # 保存到 data/output/lithoformer/chapter3_output.txt
-    title_main="Chapter 3 Quiz"
+    title_main="Chapter 3 Quiz",
+    show_progress=True  # 进度条会显示实时 Token 使用量
 )
-```
 
-**示例 5：使用旧名称（向后兼容）**
-
-```python
-from memosyne.api import parse_quiz  # 已弃用但保留
-
-result = parse_quiz(  # 功能与 lithoform() 完全相同
-    input_md="quiz.md",
-    title_main="Chapter 3 Quiz"
-)
+# 查看 Token 使用统计
+print(f"Total Tokens: {result['token_usage']['total_tokens']}")
 ```
 
 ---
@@ -743,53 +737,6 @@ result = reanimate(input_csv="input_utf8.csv", ...)
 
 ---
 
-## 向后兼容性
-
-为了确保现有代码能够继续工作，Memosyne 保留了旧名称作为别名：
-
-### 函数别名映射
-
-| 新名称 | 旧名称 (已弃用) | 状态 |
-|--------|----------------|------|
-| `reanimate()` | `process_terms()` | ✓ 完全兼容，功能相同 |
-| `lithoform()` | `parse_quiz()` | ✓ 完全兼容，功能相同 |
-
-### 使用建议
-
-1. **新项目**: 使用新名称 `reanimate()` 和 `lithoform()`
-2. **现有项目**: 可以继续使用 `process_terms()` 和 `parse_quiz()`，但建议逐步迁移
-3. **迁移策略**:
-   ```python
-   # 方式 1: 直接替换函数名
-   from memosyne.api import reanimate, lithoform
-
-   # 方式 2: 使用别名保持兼容
-   from memosyne.api import process_terms as reanimate
-   from memosyne.api import parse_quiz as lithoform
-
-   # 方式 3: 同时导入（过渡期）
-   from memosyne.api import reanimate, process_terms  # 两者完全相同
-   ```
-
-### 路径变更
-
-旧路径和新路径均有效，系统会自动处理：
-
-| 组件 | 新路径 | 旧路径 (兼容) |
-|------|--------|--------------|
-| 术语输入 | `data/input/reanimater/` | `data/input/memo/` |
-| 术语输出 | `data/output/reanimater/` | `data/output/memo/` |
-| 测验输入 | `data/input/lithoformer/` | `data/input/parser/` |
-| 测验输出 | `data/output/lithoformer/` | `data/output/parser/` |
-
-### 弃用时间表
-
-- **当前 (v2.0)**: 新旧名称并存，旧名称不会产生警告
-- **未来 (v3.0)**: 旧名称将产生 `DeprecationWarning`
-- **远期 (v4.0)**: 旧名称可能被移除
-
----
-
 ## 相关文档
 
 - [README.md](README.md) - 项目概览
@@ -799,5 +746,5 @@ result = reanimate(input_csv="input_utf8.csv", ...)
 
 ---
 
-**版本**: v2.0
-**最后更新**: 2025-10-10
+**版本**: v0.7.1
+**最后更新**: 2025-10-11

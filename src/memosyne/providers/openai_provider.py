@@ -139,6 +139,7 @@ class OpenAIProvider(BaseLLMProvider):
             system_prompt=SYSTEM_PROMPT,
             user_prompt=user_message,
             schema_payload=TERM_RESULT_SCHEMA,
+            system_role="developer",
         )
 
     def complete_structured(
@@ -198,14 +199,6 @@ class OpenAIProvider(BaseLLMProvider):
         try:
             response = self.client.chat.completions.create(**kwargs)
             return self._extract_chat_output(response)
-        except OSError as exc:
-            if self._is_macos_path_error(exc):
-                return self._fallback_without_schema(
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    schema_payload=schema_payload,
-                )
-            raise LLMError(f"调用 OpenAI 时发生意外错误：{exc}") from exc
         except BadRequestError as exc:
             error_msg = str(exc).lower()
             if "temperature" in error_msg and "unsupported" in error_msg:
@@ -263,55 +256,3 @@ class OpenAIProvider(BaseLLMProvider):
             return json.loads(payload)
         except json.JSONDecodeError as exc:
             raise LLMError(f"解析 LLM 响应失败：{exc}") from exc
-
-    @staticmethod
-    def _is_macos_path_error(exc: OSError) -> bool:
-        message = str(exc).lower()
-        return getattr(exc, "errno", None) == 63 or "file name too long" in message
-
-    def _fallback_without_schema(
-        self,
-        *,
-        system_prompt: str,
-        user_prompt: str,
-        schema_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Retry without JSON schema when macOS path handling breaks."""
-
-        hint = self._build_schema_hint(schema_payload)
-        fallback_messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"{user_prompt}{hint}"},
-        ]
-
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": fallback_messages,
-            "response_format": {"type": "json_object"},
-        }
-
-        if self.temperature is not None:
-            kwargs["temperature"] = self.temperature
-
-        try:
-            response = self.client.chat.completions.create(**kwargs)
-            return self._extract_chat_output(response)
-        except Exception as exc:  # noqa: BLE001
-            raise LLMError(
-                "OpenAI JSON schema fallback 失败：{0}".format(exc)
-            ) from exc
-
-    @staticmethod
-    def _build_schema_hint(schema_payload: dict[str, Any]) -> str:
-        schema = schema_payload.get("schema", {})
-        props = schema.get("properties", {})
-        required = schema.get("required") or list(props.keys())
-        if isinstance(required, list) and required:
-            keys = ", ".join(required)
-        else:
-            keys = ", ".join(props.keys())
-        return (
-            "\n\nReturn ONLY a valid JSON object."
-            f" Include all keys: {keys}."
-            " No extra commentary."
-        )

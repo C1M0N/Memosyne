@@ -2,14 +2,16 @@
 Anthropic Provider - 重构版本
 
 基于原 src/mms_pipeline/anthropic_helper.py
-改进：继承抽象基类、复用 OpenAI 的 Prompt
+改进：继承抽象基类、复用 Reanimater 的 Prompt
 """
 import json
 from typing import Any
 from anthropic import Anthropic, APIError
 
 from ..core.interfaces import BaseLLMProvider, LLMError
-from .openai_provider import SYSTEM_PROMPT, USER_TEMPLATE, TERM_RESULT_SCHEMA
+from ..models.result import TokenUsage
+from ..prompts import REANIMATER_SYSTEM_PROMPT, REANIMATER_USER_TEMPLATE
+from ..schemas import TERM_RESULT_SCHEMA
 
 
 class AnthropicProvider(BaseLLMProvider):
@@ -35,9 +37,9 @@ class AnthropicProvider(BaseLLMProvider):
             temperature=settings.default_temperature,
         )
 
-    def complete_prompt(self, word: str, zh_def: str) -> dict[str, Any]:
+    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], TokenUsage]:
         """调用 Anthropic API 生成术语信息"""
-        user_message = USER_TEMPLATE.format(word=word, zh_def=zh_def)
+        user_message = REANIMATER_USER_TEMPLATE.format(word=word, zh_def=zh_def)
 
         tool = {
             "name": "TermResult",
@@ -47,7 +49,7 @@ class AnthropicProvider(BaseLLMProvider):
 
         kwargs: dict[str, Any] = {
             "model": self.model,
-            "system": SYSTEM_PROMPT,
+            "system": REANIMATER_SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": user_message}],
             "max_tokens": self.max_tokens,
             "tools": [tool],
@@ -68,6 +70,14 @@ class AnthropicProvider(BaseLLMProvider):
         except Exception as e:
             raise LLMError(f"调用 Anthropic 时发生意外错误：{e}") from e
 
+        # 提取 token 使用信息
+        usage = resp.usage
+        tokens = TokenUsage(
+            prompt_tokens=usage.input_tokens if usage else 0,
+            completion_tokens=usage.output_tokens if usage else 0,
+            total_tokens=(usage.input_tokens + usage.output_tokens) if usage else 0,
+        )
+
         # 解析 tool_use 区块
         for block in (resp.content or []):
             btype = getattr(block, "type", None) if hasattr(block, "type") else block.get("type")
@@ -75,7 +85,7 @@ class AnthropicProvider(BaseLLMProvider):
             if btype == "tool_use" and bname == "TermResult":
                 binput = getattr(block, "input", None) if hasattr(block, "input") else block.get("input")
                 if isinstance(binput, dict):
-                    return binput
+                    return binput, tokens
 
         # 容错：尝试从文本提取 JSON
         text_parts = []
@@ -87,11 +97,11 @@ class AnthropicProvider(BaseLLMProvider):
         text = "".join(text_parts).strip()
 
         try:
-            return json.loads(text)
+            return json.loads(text), tokens
         except json.JSONDecodeError:
             s, e = text.find("{"), text.rfind("}")
             if s != -1 and e != -1 and e > s:
-                return json.loads(text[s:e+1])
+                return json.loads(text[s:e+1]), tokens
             raise LLMError("Claude 未返回可解析的结构化结果")
 
     def complete_structured(
@@ -100,7 +110,7 @@ class AnthropicProvider(BaseLLMProvider):
         user_prompt: str,
         schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], TokenUsage]:
         """调用 Anthropic API 生成结构化 JSON 响应（使用 Tool Use）"""
         tool = {
             "name": schema_name,
@@ -131,6 +141,14 @@ class AnthropicProvider(BaseLLMProvider):
         except Exception as e:
             raise LLMError(f"调用 Anthropic 时发生意外错误：{e}") from e
 
+        # 提取 token 使用信息
+        usage = resp.usage
+        tokens = TokenUsage(
+            prompt_tokens=usage.input_tokens if usage else 0,
+            completion_tokens=usage.output_tokens if usage else 0,
+            total_tokens=(usage.input_tokens + usage.output_tokens) if usage else 0,
+        )
+
         # 解析 tool_use 区块
         for block in (resp.content or []):
             btype = getattr(block, "type", None) if hasattr(block, "type") else block.get("type")
@@ -138,7 +156,7 @@ class AnthropicProvider(BaseLLMProvider):
             if btype == "tool_use" and bname == schema_name:
                 binput = getattr(block, "input", None) if hasattr(block, "input") else block.get("input")
                 if isinstance(binput, dict):
-                    return binput
+                    return binput, tokens
 
         # 容错：尝试从文本提取 JSON
         text_parts = []
@@ -150,11 +168,11 @@ class AnthropicProvider(BaseLLMProvider):
         text = "".join(text_parts).strip()
 
         try:
-            return json.loads(text)
+            return json.loads(text), tokens
         except json.JSONDecodeError:
             s, e = text.find("{"), text.rfind("}")
             if s != -1 and e != -1 and e > s:
-                return json.loads(text[s:e+1])
+                return json.loads(text[s:e+1]), tokens
             raise LLMError("Claude 未返回可解析的结构化结果")
 
     def _validate_config(self) -> None:
