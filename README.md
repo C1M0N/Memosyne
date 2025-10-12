@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.6.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.7.1-orange.svg)]()
 
 *专业、类型安全、易于扩展的 LLM 工作流工具*
 
@@ -41,10 +41,11 @@ Memosyne 是一个基于大语言模型（LLM）的术语处理和 Quiz 解析�
 
 ### 🏗️ **专业架构**
 - ✅ **SOLID 原则**：单一职责、开放封闭、依赖倒置
-- ✅ **分层架构**：Config → Core → Models → Providers → Services → CLI
+- ✅ **分层架构**：Config → Core → Models → Prompts/Schemas → Providers → Services → CLI
 - ✅ **依赖注入**：无全局状态，完全可测试
 - ✅ **类型安全**：使用 Pydantic 2.x 进行运行时验证
 - ✅ **统一日志系统**：使用 logging 模块，支持多种输出格式
+- ✅ **Token 追踪**：完整的 Token 使用量统计和实时显示
 
 ### 🔌 **灵活扩展**
 - ✅ 支持 **OpenAI** 和 **Anthropic** 双 Provider
@@ -81,7 +82,7 @@ python src/memosyne/cli/lithoform.py
 ```python
 from memosyne import reanimate, lithoform
 
-# 处理术语 (新名称: reanimate, 旧名称 process_terms 仍兼容)
+# 处理术语
 result = reanimate(
     input_csv="221.csv",
     start_memo_index=221,
@@ -90,7 +91,7 @@ result = reanimate(
 print(f"✅ 处理了 {result['processed_count']} 个术语")
 print(f"📁 输出: {result['output_path']}")
 
-# 解析 Quiz (新名称: lithoform, 旧名称 parse_quiz 仍兼容)
+# 解析 Quiz
 result = lithoform(
     input_md="quiz.md",
     model="gpt-4o-mini"
@@ -181,7 +182,14 @@ Memosyne/
 │   │   └── interfaces.py      # Protocol/ABC 定义
 │   ├── models/                # 数据模型
 │   │   ├── term.py            # 术语相关模型
-│   │   └── quiz.py            # Quiz 相关模型
+│   │   ├── quiz.py            # Quiz 相关模型
+│   │   └── result.py          # TokenUsage & ProcessResult
+│   ├── prompts/               # LLM 提示词
+│   │   ├── reanimater_prompts.py
+│   │   └── lithoformer_prompts.py
+│   ├── schemas/               # JSON Schema
+│   │   ├── term_schema.py
+│   │   └── quiz_schema.py
 │   ├── providers/             # LLM 提供商
 │   │   ├── openai_provider.py
 │   │   └── anthropic_provider.py
@@ -327,10 +335,12 @@ class MyProvider(BaseLLMProvider):
         self.client = MyClient(api_key=api_key)
         super().__init__(model=model, temperature=temperature)
 
-    def complete_prompt(self, word: str, zh_def: str) -> dict:
+    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict, TokenUsage]:
         """用于 Reanimater 术语处理"""
         # 实现你的逻辑
-        pass
+        result = {...}
+        tokens = TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30)
+        return result, tokens
 
     def complete_structured(
         self,
@@ -338,10 +348,12 @@ class MyProvider(BaseLLMProvider):
         user_prompt: str,
         schema: dict,
         schema_name: str = "Response"
-    ) -> dict:
+    ) -> tuple[dict, TokenUsage]:
         """用于 Lithoformer Quiz 解析"""
         # 实现结构化输出逻辑
-        pass
+        result = {...}
+        tokens = TokenUsage(prompt_tokens=15, completion_tokens=25, total_tokens=40)
+        return result, tokens
 ```
 
 ---
@@ -412,7 +424,31 @@ class MyProvider(BaseLLMProvider):
 
 ## 📝 变更日志
 
-### v2.1.0 (2025-10-10)
+### v0.7.1 (2025-10-11)
+
+**深度重构：服务层统一与架构增强**
+
+- ✨ **新增模块**：
+  - `prompts/` - 集中管理 LLM 提示词（reanimater_prompts, lithoformer_prompts）
+  - `schemas/` - 集中管理 JSON Schema（term_schema, quiz_schema）
+  - `models/result.py` - TokenUsage 和 ProcessResult[T] 统一结果模型
+- ✨ **服务层统一**：
+  - Reanimater 和 Lithoformer 都添加 `from_settings()` 工厂方法
+  - 统一方法名为 `process()`，返回 `ProcessResult[T]`
+  - 进度条实时显示 Token 使用量（prompt/completion/total）
+  - Lithoformer 支持文件路径输入（自动检测 Path vs 字符串）
+  - 两个服务都支持 Logger 依赖注入
+- ⚠️ **Breaking Changes**：
+  - Provider 接口返回值改为 `tuple[dict, TokenUsage]`
+  - OpenAIProvider 和 AnthropicProvider 都提取 token 使用量
+  - 从新模块导入 prompts 和 schemas
+  - 删除所有向后兼容别名（process_terms, parse_quiz）
+- 📚 **文档更新**：
+  - API_GUIDE.md - 删除向后兼容性章节，更新示例代码
+  - ARCHITECTURE.md - 更新架构图、UML 类图、时序图
+  - README.md - 更新项目结构和特性列表
+
+### v0.6.2 (2025-10-10)
 
 **架构增强与质量改进**
 

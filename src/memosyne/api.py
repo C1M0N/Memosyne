@@ -128,8 +128,8 @@ def reanimate(
         batch_note=batch_note
     )
 
-    # 7. 处理术语
-    results = processor.process(term_inputs, show_progress=show_progress)
+    # 7. 处理术语（新接口返回 ProcessResult）
+    process_result = processor.process(term_inputs, show_progress=show_progress)
 
     # 8. 确定输出路径
     if output_csv is None:
@@ -140,14 +140,20 @@ def reanimate(
             output_path = settings.reanimater_output_dir / output_path
 
     # 9. 写出结果
-    CSVTermRepository.write_output(output_path, results)
+    CSVTermRepository.write_output(output_path, process_result.items)
 
     return {
         "success": True,
         "output_path": str(output_path),
         "batch_id": batch_id,
-        "processed_count": len(results),
-        "results": results,
+        "processed_count": process_result.success_count,
+        "total_count": process_result.total_count,
+        "results": process_result.items,
+        "token_usage": {
+            "prompt_tokens": process_result.token_usage.prompt_tokens,
+            "completion_tokens": process_result.token_usage.completion_tokens,
+            "total_tokens": process_result.token_usage.total_tokens,
+        },
     }
 
 
@@ -159,6 +165,7 @@ def lithoform(
     title_main: str | None = None,
     title_sub: str | None = None,
     temperature: float | None = None,
+    show_progress: bool = True,
 ) -> dict:
     """
     解析 Quiz Markdown 文档（Lithoformer - Quiz 解析）
@@ -171,6 +178,7 @@ def lithoform(
         title_main: 主标题（None 则自动从文件名推断）
         title_sub: 副标题（None 则自动从文件名推断）
         temperature: 温度参数（None 使用模型默认值）
+        show_progress: 是否显示进度条
 
     Returns:
         字典，包含：
@@ -179,6 +187,7 @@ def lithoform(
         - item_count: int - 解析的题目数量
         - title_main: str - 主标题
         - title_sub: str - 副标题
+        - token_usage: dict - Token 使用统计
 
     Raises:
         FileNotFoundError: 输入文件不存在
@@ -230,13 +239,13 @@ def lithoform(
     else:
         raise ValueError(f"不支持的 provider: {provider}")
 
-    # 5. 解析 Quiz
+    # 5. 解析 Quiz（新接口返回 ProcessResult）
     parser = Lithoformer(llm_provider=llm)
-    items = parser.parse(md_text)
+    process_result = parser.process(md_text, show_progress=show_progress)
 
     # 6. 格式化输出
     formatter = QuizFormatter()
-    out_text = formatter.format(items, title_main, title_sub)
+    out_text = formatter.format(process_result.items, title_main, title_sub)
 
     # 7. 确定输出路径
     if output_txt is None:
@@ -254,9 +263,15 @@ def lithoform(
     return {
         "success": True,
         "output_path": str(output_path),
-        "item_count": len(items),
+        "item_count": process_result.success_count,
+        "total_count": process_result.total_count,
         "title_main": title_main,
         "title_sub": title_sub,
+        "token_usage": {
+            "prompt_tokens": process_result.token_usage.prompt_tokens,
+            "completion_tokens": process_result.token_usage.completion_tokens,
+            "total_tokens": process_result.token_usage.total_tokens,
+        },
     }
 
 
@@ -286,19 +301,7 @@ def _infer_titles_from_filename(path: Path) -> tuple[str, str]:
     return name.strip(), ""
 
 
-# ============================================================
-# 便捷别名（保留旧名兼容）
-# ============================================================
-process_terms = reanimate  # 旧名
-parse_quiz = lithoform     # 旧名
-mms = reanimate           # 旧别名
-exparser = lithoform      # 旧别名
-
 __all__ = [
     "reanimate",
     "lithoform",
-    "process_terms",  # 保留旧名兼容
-    "parse_quiz",     # 保留旧名兼容
-    "mms",           # 保留旧别名
-    "exparser",      # 保留旧别名
 ]
