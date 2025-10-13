@@ -203,6 +203,9 @@ def main():
     # 7. Create LLM Provider
     try:
         if provider_type == "anthropic":
+            if not settings.anthropic_api_key:
+                print("Anthropic provider selected，但未配置 ANTHROPIC_API_KEY。请在 .env 中填写后重试。")
+                return
             llm_provider = AnthropicProvider(
                 model=model_id,
                 api_key=settings.anthropic_api_key,

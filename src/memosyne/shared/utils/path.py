@@ -147,15 +147,26 @@ def resolve_input_path(
             raise ValueError("未提供输入路径且没有默认文件名")
         path = default_dir / default_filename
     else:
-        path = Path(s)
+        path = Path(s).expanduser()
 
-        # 2. 相对路径 -> 拼接到默认目录
         if not path.is_absolute():
-            # 如果包含路径分隔符，保持相对结构；否则视为文件名
-            if any(sep in s for sep in ["/", "\\"]):
+            # 推断项目根目录（寻找包含 data/ 或 src/ 的祖先）
+            project_root = default_dir
+            for candidate in [default_dir] + list(default_dir.parents):
+                if (candidate / "data").is_dir() or (candidate / "src").is_dir():
+                    project_root = candidate
+                    break
+
+            parts = path.parts
+
+            if len(parts) == 1:
                 path = default_dir / path
+            elif parts and parts[0] in (".", ""):
+                path = default_dir / Path(*parts[1:])
+            elif parts and parts[0] == "..":
+                path = (default_dir / path).resolve()
             else:
-                path = default_dir / s
+                path = project_root / path
 
     # 3. 验证（如需要）
     if validator and not validator(path):

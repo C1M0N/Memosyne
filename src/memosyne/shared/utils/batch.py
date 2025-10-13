@@ -54,10 +54,19 @@ class BatchIDGenerator:
 
         Raises:
             RuntimeError: 当日批次已达上限
+            ValueError: 词条数量超出可表示范围
         """
         # 1. 获取当前日期（按指定时区）
         now = datetime.now(self.timezone)
         yymmdd = now.strftime("%y%m%d")
+
+        if term_count < 0:
+            raise ValueError("词条数量不能为负数")
+        if term_count > 999:
+            raise ValueError(
+                f"词条数量 {term_count} 超出可表示范围（最多 999），"
+                "请拆分批次后重试"
+            )
 
         # 2. 查找下一个可用字母
         run_letter = self._find_next_run_letter(yymmdd)

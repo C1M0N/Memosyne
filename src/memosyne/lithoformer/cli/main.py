@@ -86,6 +86,9 @@ def main():
 
     # Create LLM Provider
     if provider_type == "anthropic":
+        if not settings.anthropic_api_key:
+            print("Anthropic provider selected，但未配置 ANTHROPIC_API_KEY。请在 .env 中填写后重试。")
+            return
         llm_provider = AnthropicProvider(model=model_id, api_key=settings.anthropic_api_key, temperature=settings.default_temperature)
     else:
         llm_provider = OpenAIProvider(model=model_id, api_key=settings.openai_api_key, temperature=settings.default_temperature)
