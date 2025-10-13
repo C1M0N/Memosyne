@@ -23,7 +23,10 @@ from ...shared.utils import (
 from ...shared.cli.prompts import ask
 from ..application import ParseQuizUseCase
 from ..infrastructure import LithoformerLLMAdapter, FileAdapter, FormatterAdapter
-from ..domain.services import infer_titles_from_filename
+from ..domain.services import (
+    infer_titles_from_filename,
+    infer_titles_from_markdown,
+)
 
 
 def main():
@@ -72,8 +75,13 @@ def main():
         print(f"Failed to read input: {e}")
         return
 
-    # Infer titles
-    title_main, title_sub = infer_titles_from_filename(input_path)
+    # Infer titles from markdown content first, fall back to filename
+    title_main, title_sub = infer_titles_from_markdown(markdown)
+    if not title_main:
+        title_main, title_sub = infer_titles_from_filename(input_path)
+    elif not title_sub:
+        _, fallback_sub = infer_titles_from_filename(input_path)
+        title_sub = fallback_sub
     print(f"[Title   ] {title_main} | {title_sub}")
 
     # Create LLM Provider

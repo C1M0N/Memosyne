@@ -51,6 +51,70 @@ def filter_valid_items(items: list[QuizItem]) -> list[QuizItem]:
     return [item for item in items if item.is_valid()]
 
 
+def infer_titles_from_markdown(markdown: str) -> tuple[str, str]:
+    """
+    Infer titles from Markdown content
+
+    Args:
+        markdown: Markdown text
+
+    Returns:
+        (title_main, title_sub)
+
+    Example:
+        >>> md = "# Concept Clip:\\nAnxiety"
+        >>> infer_titles_from_markdown(md)
+        ('Concept Clip', 'Anxiety')
+    """
+    lines = [line.strip() for line in markdown.splitlines()]
+    main = ""
+    sub = ""
+
+    for idx, line in enumerate(lines):
+        if not line:
+            continue
+        if not line.startswith("#"):
+            continue
+
+        # Only handle level-1 headings (# ...)
+        if not line.startswith("# "):
+            continue
+
+        content = line.lstrip("#").strip()
+        if not content:
+            continue
+
+        # Normalise colon variants
+        normalized = content.replace("：", ":")
+        if ":" in normalized:
+            left, right = normalized.split(":", 1)
+            left = left.strip()
+            right = right.strip()
+            if left:
+                main = left
+            else:
+                main = normalized.rstrip(":").strip()
+            if right:
+                sub = right
+        else:
+            main = normalized.rstrip(":").strip()
+
+        if not sub:
+            # Look ahead for the next non-empty line that isn't a heading
+            for follow_line in lines[idx + 1:]:
+                if not follow_line:
+                    continue
+                if follow_line.startswith("#"):
+                    break
+                sub = follow_line.strip()
+                break
+
+        if main:
+            return main, sub
+
+    return "", ""
+
+
 def infer_titles_from_filename(path: Path) -> tuple[str, str]:
     """
     Infer titles from filename

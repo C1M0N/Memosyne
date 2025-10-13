@@ -8,6 +8,7 @@ from .services import (
     is_quiz_item_valid,
     filter_valid_items,
     infer_titles_from_filename,
+    infer_titles_from_markdown,
     detect_quiz_type,
     count_questions_by_type,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "is_quiz_item_valid",
     "filter_valid_items",
     "infer_titles_from_filename",
+    "infer_titles_from_markdown",
     "detect_quiz_type",
     "count_questions_by_type",
     # Exceptions

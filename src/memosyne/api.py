@@ -45,6 +45,7 @@ from .lithoformer.infrastructure import (
     FileAdapter,
     FormatterAdapter,
 )
+from .lithoformer.domain.services import infer_titles_from_markdown
 
 
 def reanimate(
@@ -250,9 +251,16 @@ def lithoform(
 
     # 3. 推断标题（如果未提供）
     if title_main is None or title_sub is None:
-        inferred_main, inferred_sub = _infer_titles_from_filename(input_path)
-        title_main = title_main or inferred_main
-        title_sub = title_sub or inferred_sub
+        md_main, md_sub = infer_titles_from_markdown(md_text)
+        if md_main and title_main is None:
+            title_main = md_main
+        if md_sub and title_sub is None:
+            title_sub = md_sub
+
+        if title_main is None or title_sub is None:
+            inferred_main, inferred_sub = _infer_titles_from_filename(input_path)
+            title_main = title_main or inferred_main
+            title_sub = title_sub or inferred_sub
 
     # 4. 创建 LLM Provider
     if provider == "openai":
