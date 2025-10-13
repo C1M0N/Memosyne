@@ -4,8 +4,8 @@ Lithoformer Application Use Cases
 from tqdm import tqdm
 
 from ..domain.models import QuizResponse, QuizItem
-from ..domain.services import filter_valid_items
-from .ports import LLMPort, FormatterPort
+from ..domain.services import is_quiz_item_valid
+from .ports import LLMPort
 
 # 导入核心模型
 from ...core.models import ProcessResult, TokenUsage
@@ -47,20 +47,43 @@ class ParseQuizUseCase:
         Raises:
             LLMError: LLM call failed
         """
-        if show_progress:
-            print("Parsing quiz...")
-
         # Call LLM (through port)
         llm_dict, token_dict = self.llm.parse_quiz(markdown)
 
         # Convert to domain model
         response = QuizResponse(**llm_dict)
 
-        # Filter valid items (domain service)
-        valid_items = filter_valid_items(response.items)
-
         # Convert token dict to TokenUsage
         tokens = TokenUsage(**token_dict)
+
+        items = response.items or []
+        total = len(items)
+        valid_items: list[QuizItem] = []
+
+        progress = None
+        if show_progress and total > 0:
+            progress = tqdm(
+                items,
+                total=total,
+                desc="Validating quiz items",
+                ncols=100,
+                ascii=True,
+            )
+            iterator = progress
+        else:
+            iterator = items
+
+        try:
+            for item in iterator:
+                if is_quiz_item_valid(item):
+                    valid_items.append(item)
+                if show_progress and progress:
+                    progress.set_description(
+                        f"Validating quiz items [Tokens: {tokens.total_tokens:,}]"
+                    )
+        finally:
+            if progress is not None:
+                progress.close()
 
         return ProcessResult(
             items=valid_items,
