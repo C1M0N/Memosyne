@@ -24,11 +24,23 @@ from typing import Literal
 
 from .config import get_settings
 from .providers import OpenAIProvider, AnthropicProvider
-from .repositories import CSVTermRepository, TermListRepo
-from .services import Reanimator, Lithoformer
+
+# 导入新架构组件
+from .reanimator.application import ProcessTermsUseCase
+from .reanimator.infrastructure import (
+    ReanimatorLLMAdapter,
+    CSVTermAdapter,
+    TermListAdapter,
+)
+from .lithoformer.application import ParseQuizUseCase
+from .lithoformer.infrastructure import (
+    LithoformerLLMAdapter,
+    FileAdapter,
+    FormatterAdapter,
+)
+
 from .utils import (
     BatchIDGenerator,
-    QuizFormatter,
     unique_path,
     get_code_from_model,
     generate_output_filename,
@@ -91,25 +103,22 @@ def reanimate(
     if not input_path.exists():
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
 
-    # 2. 读取输入术语
-    term_inputs = CSVTermRepository.read_input(input_path)
+    # 2. 读取输入术语（使用新的 Infrastructure Adapter）
+    csv_adapter = CSVTermAdapter.create()
+    term_inputs = csv_adapter.read_input(input_path)
     if not term_inputs:
         raise ValueError(f"输入文件为空或格式错误: {input_path}")
 
-    # 3. 加载术语表
-    term_list_repo = TermListRepo()
-    term_list_repo.load(settings.term_list_path)
-
-    # 4. 生成批次 ID
+    # 3. 生成批次 ID
     batch_gen = BatchIDGenerator(
         output_dir=settings.reanimator_output_dir,
         timezone=settings.batch_timezone
     )
     batch_id = batch_gen.generate(term_count=len(term_inputs))
 
-    # 5. 创建 LLM Provider
+    # 4. 创建 LLM Provider
     if provider == "openai":
-        llm = OpenAIProvider(
+        llm_provider = OpenAIProvider(
             model=model,
             api_key=settings.openai_api_key,
             temperature=temperature if temperature is not None else settings.default_temperature
@@ -117,7 +126,7 @@ def reanimate(
     elif provider == "anthropic":
         if not settings.anthropic_api_key:
             raise ValueError("Anthropic API Key 未配置")
-        llm = AnthropicProvider(
+        llm_provider = AnthropicProvider(
             model=model,
             api_key=settings.anthropic_api_key,
             temperature=temperature if temperature is not None else settings.default_temperature
@@ -125,17 +134,21 @@ def reanimate(
     else:
         raise ValueError(f"不支持的 provider: {provider}")
 
-    # 6. 创建处理器
-    processor = Reanimator(
-        llm_provider=llm,
-        term_list_mapping=term_list_repo.mapping,
+    # 5. 创建 Infrastructure Adapters（依赖注入）
+    llm_adapter = ReanimatorLLMAdapter.from_provider(llm_provider)
+    term_list_adapter = TermListAdapter.from_settings(settings)
+
+    # 6. 创建 Use Case（Application 层）
+    use_case = ProcessTermsUseCase(
+        llm=llm_adapter,
+        term_list=term_list_adapter,
         start_memo_index=start_memo_index,
         batch_id=batch_id,
-        batch_note=batch_note
+        batch_note=batch_note,
     )
 
-    # 7. 处理术语（新接口返回 ProcessResult）
-    process_result = processor.process(term_inputs, show_progress=show_progress)
+    # 7. 执行 Use Case
+    process_result = use_case.execute(term_inputs, show_progress=show_progress)
 
     # 8. 确定输出路径（使用智能命名）
     if output_csv is None:
@@ -158,8 +171,8 @@ def reanimate(
         if not output_path.is_absolute():
             output_path = settings.reanimator_output_dir / output_path
 
-    # 9. 写出结果
-    CSVTermRepository.write_output(output_path, process_result.items)
+    # 9. 写出结果（使用 Infrastructure Adapter）
+    csv_adapter.write_output(output_path, process_result.items)
 
     return {
         "success": True,
@@ -231,8 +244,9 @@ def lithoform(
     if not input_path.exists():
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
 
-    # 2. 读取 Markdown
-    md_text = input_path.read_text(encoding="utf-8")
+    # 2. 读取 Markdown（使用新的 Infrastructure Adapter）
+    file_adapter = FileAdapter.create()
+    md_text = file_adapter.read_markdown(input_path)
 
     # 3. 推断标题（如果未提供）
     if title_main is None or title_sub is None:
@@ -242,7 +256,7 @@ def lithoform(
 
     # 4. 创建 LLM Provider
     if provider == "openai":
-        llm = OpenAIProvider(
+        llm_provider = OpenAIProvider(
             model=model,
             api_key=settings.openai_api_key,
             temperature=temperature if temperature is not None else settings.default_temperature
@@ -250,7 +264,7 @@ def lithoform(
     elif provider == "anthropic":
         if not settings.anthropic_api_key:
             raise ValueError("Anthropic API Key 未配置")
-        llm = AnthropicProvider(
+        llm_provider = AnthropicProvider(
             model=model,
             api_key=settings.anthropic_api_key,
             temperature=temperature if temperature is not None else settings.default_temperature
@@ -258,22 +272,27 @@ def lithoform(
     else:
         raise ValueError(f"不支持的 provider: {provider}")
 
-    # 5. 解析 Quiz（新接口返回 ProcessResult）
-    parser = Lithoformer(llm_provider=llm)
-    process_result = parser.process(md_text, show_progress=show_progress)
+    # 5. 创建 Infrastructure Adapters（依赖注入）
+    llm_adapter = LithoformerLLMAdapter.from_provider(llm_provider)
 
-    # 6. 生成 BatchID（基于题目数量）
+    # 6. 创建 Use Case（Application 层）
+    use_case = ParseQuizUseCase(llm=llm_adapter)
+
+    # 7. 执行 Use Case
+    process_result = use_case.execute(md_text, show_progress=show_progress)
+
+    # 8. 生成 BatchID（基于题目数量）
     batch_gen = BatchIDGenerator(
         output_dir=settings.lithoformer_output_dir,
         timezone=settings.batch_timezone
     )
     batch_id = batch_gen.generate(term_count=process_result.success_count)
 
-    # 7. 格式化输出
-    formatter = QuizFormatter()
-    out_text = formatter.format(process_result.items, title_main, title_sub)
+    # 9. 格式化输出（使用 Infrastructure Adapter）
+    formatter_adapter = FormatterAdapter.create()
+    out_text = formatter_adapter.format(process_result.items, title_main, title_sub)
 
-    # 8. 确定输出路径（使用智能命名）
+    # 10. 确定输出路径（使用智能命名）
     if output_txt is None:
         # 获取模型代码
         try:
@@ -294,9 +313,8 @@ def lithoform(
         if not output_path.is_absolute():
             output_path = settings.lithoformer_output_dir / output_path
 
-    # 9. 写出结果
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(out_text, encoding="utf-8")
+    # 11. 写出结果（使用 Infrastructure Adapter）
+    file_adapter.write_text(output_path, out_text)
 
     return {
         "success": True,

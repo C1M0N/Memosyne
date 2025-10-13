@@ -1,55 +1,67 @@
 #!/usr/bin/env python3
 """
-Reanimate CLI - 术语重生工具
+Reanimator CLI - Term Processing Tool (Refactored)
 
-基于原 src/mms_pipeline/main.py
-改进：依赖注入、模块化、使用新架构
+A thin adapter that orchestrates dependency injection.
 
-运行方式：
-    python -m memosyne.cli.reanimate
-    或
-    python src/memosyne/cli/reanimate.py
+Usage:
+    python -m memosyne.reanimator.cli.main
+    or
+    python src/memosyne/reanimator/cli/main.py
+
+Architecture:
+- CLI layer: User interaction and dependency injection
+- Application layer: Business orchestration (ProcessTermsUseCase)
+- Domain layer: Pure business logic
+- Infrastructure layer: Technical implementations (adapters)
 """
 import sys
 from pathlib import Path
 
-# 支持直接运行：将 src/ 加入 Python 路径
+# Support direct execution
 if __name__ == "__main__":
-    src_path = Path(__file__).resolve().parents[2]
+    src_path = Path(__file__).resolve().parents[3]
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
 
-from memosyne.config import get_settings
-from memosyne.repositories import CSVTermRepository
-from memosyne.services import Reanimator
-from memosyne.utils import (
+from ...config import get_settings
+from ...providers import OpenAIProvider, AnthropicProvider
+from ...utils import (
     BatchIDGenerator,
-    resolve_input_path,
-    unique_path,
     resolve_model_input,
     get_provider_from_model,
     generate_output_filename,
+    unique_path,
 )
-from memosyne.cli.prompts import ask
+from ...cli.prompts import ask
+
+# Import from Reanimator subdomain
+from ..application import ProcessTermsUseCase
+from ..infrastructure import (
+    ReanimatorLLMAdapter,
+    CSVTermAdapter,
+    TermListAdapter,
+)
 
 
 def resolve_model_choice(user_input: str, settings) -> tuple[str, str, str, str]:
     """
-    解析模型选择（支持 4 位简写、快捷方式、完整模型名）
+    Parse model selection (supports 4-digit codes, shortcuts, full model names)
 
     Args:
-        user_input: 用户输入（4/5/claude/4位简写/完整模型名）
-        settings: Settings 对象（用于获取默认模型）
+        user_input: User input (4/5/claude/4-digit code/full model name)
+        settings: Settings object
 
     Returns:
         (provider, model_id, model_code, model_display)
     """
+    from ...utils import get_code_from_model
+
     s = user_input.strip().lower()
 
-    # 旧的快捷方式（兼容性）
+    # Legacy shortcuts (compatibility)
     if s == "4":
         model = settings.default_openai_model
-        from memosyne.utils import get_code_from_model
         code = get_code_from_model(model)
         return "openai", model, code, "4oMini"
     elif s == "5":
@@ -58,31 +70,28 @@ def resolve_model_choice(user_input: str, settings) -> tuple[str, str, str, str]
         return "openai", model, code, "5Mini"
     elif s == "claude":
         model = settings.default_anthropic_model
-        from memosyne.utils import get_code_from_model
         code = get_code_from_model(model)
         return "anthropic", model, code, "Claude"
 
-    # 尝试统一解析（支持 4 位代码或完整模型名）
+    # Try unified parsing (supports 4-digit code or full model name)
     try:
         model, code = resolve_model_input(s)
         provider = get_provider_from_model(model)
-        display = code.upper()  # 使用大写代码作为显示名
+        display = code.upper()
         return provider, model, code, display
     except ValueError:
-        # 解析失败，仍然尝试作为完整模型名（兼容性）
+        # Fallback: try as full model name
         if "claude" in s:
-            from memosyne.utils import get_code_from_model
             try:
                 code = get_code_from_model(s)
             except ValueError:
-                code = "????"  # 未知模型
+                code = "????"
             return "anthropic", user_input, code, "Claude"
         else:
-            from memosyne.utils import get_code_from_model
             try:
                 code = get_code_from_model(s)
             except ValueError:
-                code = "????"  # 未知模型
+                code = "????"
             return "openai", user_input, code, user_input.replace("-", " ").title()
 
 
@@ -91,70 +100,72 @@ def resolve_input_and_memo(
     default_dir: Path
 ) -> tuple[Path, int]:
     """
-    解析输入路径和起始 Memo
+    Parse input path and starting Memo
 
     Args:
-        user_path: 用户输入
-        default_dir: 默认输入目录
+        user_path: User input
+        default_dir: Default input directory
 
     Returns:
         (input_path, start_memo_index)
     """
+    from ...utils import resolve_input_path
+
     s = user_path.strip()
 
-    # 纯数字：data/input/{num}.csv，起始 Memo = num
+    # Pure number: data/input/{num}.csv, start Memo = num
     if s.isdigit():
         memo = int(s)
         path = default_dir / f"{s}.csv"
         return path, memo
 
-    # 包含 .csv 或路径分隔符：询问起始 Memo
+    # Contains .csv or path separator: ask for start Memo
     if ".csv" in s or any(ch in s for ch in ("/", "\\")):
         path = resolve_input_path(s, default_dir)
-        memo_str = ask("起始Memo编号（整数，例：2700 表示从 M002701 开始）：")
+        memo_str = ask("Starting Memo number (integer, e.g., 2700 for M002701):")
         try:
             memo = int(memo_str)
         except ValueError:
-            raise ValueError("起始Memo编号必须为整数")
+            raise ValueError("Starting Memo number must be an integer")
         return path, memo
 
-    # 留空：使用 short.csv 并询问起始 Memo
+    # Empty: use short.csv and ask for start Memo
     path = default_dir / "short.csv"
-    memo_str = ask("起始Memo编号（整数，例：2700 表示从 M002701 开始）：")
+    memo_str = ask("Starting Memo number (integer, e.g., 2700 for M002701):")
     try:
         memo = int(memo_str)
     except ValueError:
-        raise ValueError("起始Memo编号必须为整数")
+        raise ValueError("Starting Memo number must be an integer")
     return path, memo
 
 
 def main():
-    """Reanimator 主流程"""
-    print("=== Reanimator | 术语处理工具（重构版 v2.0）===")
+    """CLI main function (thin orchestration layer)"""
+    print("=== Reanimator | Term Processing Tool (Refactored v3.0) ===")
 
-    # 1. 加载配置
+    # 1. Load configuration
     try:
         settings = get_settings()
-        settings.ensure_dirs()  # 确保目录存在
+        settings.ensure_dirs()
     except Exception as e:
-        print(f"配置加载失败：{e}")
-        print("请检查 .env 文件是否存在且 API Key 已正确配置")
+        print(f"Configuration loading failed: {e}")
+        print("Please check .env file and API keys")
         return
 
-    # 2. 交互输入
-    model_input = ask("引擎（4位简写如 o4oo/cs45，或快捷键 4/5/claude，或完整模型名）：")
+    # 2. User input
+    model_input = ask("Engine (4-digit code like o4oo/cs45, or shortcut 4/5/claude, or full model name):")
     path_input = ask(
-        "输入CSV路径（纯数字=按 {num}.csv；含 .csv/路径=直接使用；留空=使用 short.csv）：",
+        "Input CSV path (number={num}.csv; .csv/path=direct; empty=short.csv):",
         required=False
     )
-    note_input = ask("批注（BatchNote，可空）：", required=False)
+    note_input = ask("Batch note (optional):", required=False)
 
-    # 3. 解析选择
+    # 3. Parse inputs
     try:
         provider_type, model_id, model_code, model_display = resolve_model_choice(model_input, settings)
         input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimator_input_dir)
     except Exception as e:
-        print(f"解析失败：{e}")
+        print(f"Parsing failed: {e}")
         return
 
     print(f"[Provider] {provider_type}")
@@ -164,16 +175,16 @@ def main():
     print(f"[Start   ] Memo = {start_memo}")
     print(f"[TermList] {settings.term_list_path}")
 
-    # 4. 读取输入
+    # 4. Read input terms (using Infrastructure adapter)
     try:
-        csv_repo = CSVTermRepository()
-        terms_input = csv_repo.read_input(input_path)
-        print(f"读取到 {len(terms_input)} 个词条")
+        csv_adapter = CSVTermAdapter.create()
+        terms_input = csv_adapter.read_input(input_path)
+        print(f"Read {len(terms_input)} terms")
     except Exception as e:
-        print(f"读取输入失败：{e}")
+        print(f"Failed to read input: {e}")
         return
 
-    # 5. 生成 BatchID
+    # 5. Generate BatchID
     try:
         batch_gen = BatchIDGenerator(
             output_dir=settings.reanimator_output_dir,
@@ -182,10 +193,10 @@ def main():
         batch_id = batch_gen.generate(term_count=len(terms_input))
         print(f"[BatchID ] {batch_id}")
     except Exception as e:
-        print(f"BatchID 生成失败：{e}")
+        print(f"BatchID generation failed: {e}")
         return
 
-    # 6. 生成输出路径（使用智能命名：BatchID-FileName-ModelCode.csv）
+    # 6. Generate output path (smart naming: BatchID-FileName-ModelCode.csv)
     output_filename = generate_output_filename(
         batch_id=batch_id,
         model_code=model_code,
@@ -195,10 +206,8 @@ def main():
     output_path = unique_path(settings.reanimator_output_dir / output_filename)
     print(f"[Output  ] {output_path}")
 
-    # 7. 创建 LLM Provider
+    # 7. Create LLM Provider
     try:
-        from memosyne.providers import OpenAIProvider, AnthropicProvider
-
         if provider_type == "anthropic":
             llm_provider = AnthropicProvider(
                 model=model_id,
@@ -212,39 +221,47 @@ def main():
                 temperature=settings.default_temperature,
             )
     except Exception as e:
-        print(f"创建 LLM Provider 失败：{e}")
+        print(f"Failed to create LLM Provider: {e}")
         return
 
-    # 8. 使用工厂方法创建处理器
+    # 8. Create Infrastructure adapters (Dependency Injection)
     try:
-        processor = Reanimator.from_settings(
-            settings=settings,
-            llm_provider=llm_provider,
+        llm_adapter = ReanimatorLLMAdapter.from_provider(llm_provider)
+        term_list_adapter = TermListAdapter.from_settings(settings)
+    except Exception as e:
+        print(f"Failed to create adapters: {e}")
+        return
+
+    # 9. Create Use Case (Application layer)
+    try:
+        use_case = ProcessTermsUseCase(
+            llm=llm_adapter,
+            term_list=term_list_adapter,
             start_memo_index=start_memo,
             batch_id=batch_id,
             batch_note=note_input,
         )
     except Exception as e:
-        print(f"创建处理器失败：{e}")
+        print(f"Failed to create use case: {e}")
         return
 
-    # 9. 处理术语
+    # 10. Execute Use Case
     try:
-        process_result = processor.process(terms_input, show_progress=True)
+        process_result = use_case.execute(terms_input, show_progress=True)
     except Exception as e:
         import traceback
-        print(f"处理失败：{e}")
+        print(f"Processing failed: {e}")
         traceback.print_exc()
         return
 
-    # 10. 写出结果
+    # 11. Write output (using Infrastructure adapter)
     try:
-        csv_repo.write_output(output_path, process_result.items)
-        print(f"\n✅ 完成：{output_path}")
-        print(f"   共处理 {process_result.success_count}/{process_result.total_count} 个词条")
-        print(f"   Token 使用：{process_result.token_usage}")
+        csv_adapter.write_output(output_path, process_result.items)
+        print(f"\n✅ Complete: {output_path}")
+        print(f"   Processed {process_result.success_count}/{process_result.total_count} terms")
+        print(f"   Token usage: {process_result.token_usage}")
     except Exception as e:
-        print(f"写出失败：{e}")
+        print(f"Failed to write output: {e}")
         return
 
 

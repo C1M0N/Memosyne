@@ -1,13 +1,17 @@
 """
-数据模型 - 使用 Pydantic 实现验证和序列化
+Reanimator Domain Models - 领域模型（纯业务实体）
 
-重构收益：
+依赖原则：
+- ✅ 零外部依赖（仅依赖 Python 标准库和 Pydantic）
+- ✅ 无基础设施逻辑（不涉及数据库、文件、API）
+- ✅ 纯业务概念（术语、Memo ID、词性等）
+
+重构改进：
 - ✅ 运行时验证：自动检查字段类型和约束
 - ✅ 序列化：JSON/dict 互转零成本
 - ✅ 文档生成：字段描述自动生成 JSON Schema
 - ✅ IDE 支持：完整的类型提示和自动补全
 """
-from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -16,7 +20,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # 输入模型
 # ============================================================
 class TermInput(BaseModel):
-    """术语输入（从 CSV 读取）"""
+    """术语输入（从外部数据源读取）"""
 
     word: str = Field(
         ...,
@@ -111,19 +115,12 @@ class LLMResponse(BaseModel):
             self.ipa = ""
         return self
 
-    @model_validator(mode="after")
-    def validate_phrase_pos(self):
-        """短语（含空格）应标记为 P."""
-        # 注意：这里需要原始 word，但 LLMResponse 不包含 word
-        # 应该在外层验证，这里仅作示例
-        return self
-
 
 # ============================================================
 # 输出模型
 # ============================================================
 class TermOutput(BaseModel):
-    """术语输出（写入 CSV）"""
+    """术语输出（待写入外部存储）"""
 
     wm_pair: str = Field(..., description="词义对")
     memo_id: str = Field(..., pattern=r"^M\d{6}$", description="Memo ID")
@@ -150,7 +147,7 @@ class TermOutput(BaseModel):
         batch_id: str,
         batch_note: str = ""
     ) -> "TermOutput":
-        """从输入和 LLM 响应构造输出"""
+        """从输入和 LLM 响应构造输出（工厂方法）"""
         return cls(
             wm_pair=f"{term_input.word} - {term_input.zh_def}",
             memo_id=memo_id,
@@ -189,26 +186,51 @@ class TermOutput(BaseModel):
 
 
 # ============================================================
-# 批次元数据
+# MemoID 值对象
 # ============================================================
-class BatchMetadata(BaseModel):
-    """批次元数据"""
+class MemoID:
+    """Memo ID 值对象（格式：M + 6位数字）"""
 
-    batch_id: str = Field(..., pattern=r"^\d{6}[A-Z]\d{3}$")
-    created_at: datetime = Field(default_factory=datetime.now)
-    model_name: str = Field(...)
-    term_count: int = Field(..., ge=0)
-    note: str = Field(default="")
+    def __init__(self, index: int):
+        """
+        从索引创建 Memo ID
 
-    @property
-    def date_str(self) -> str:
-        """提取日期字符串（YYMMDD）"""
-        return self.batch_id[:6]
+        Args:
+            index: Memo 编号（如 2700 表示 M002701）
 
-    @property
-    def run_letter(self) -> str:
-        """提取批次字母（A-Z）"""
-        return self.batch_id[6]
+        Example:
+            >>> mid = MemoID(2700)
+            >>> str(mid)
+            'M002701'
+        """
+        if index < 0 or index > 999999:
+            raise ValueError(f"Memo 索引必须在 0-999999 范围内：{index}")
+        self.index = index
+
+    def __str__(self) -> str:
+        """返回格式化的 Memo ID"""
+        return f"M{self.index + 1:06d}"
+
+    def __repr__(self) -> str:
+        return f"MemoID({self.index})"
+
+    @classmethod
+    def from_string(cls, memo_id: str) -> "MemoID":
+        """
+        从字符串解析 Memo ID
+
+        Example:
+            >>> mid = MemoID.from_string("M002701")
+            >>> mid.index
+            2700
+        """
+        if not memo_id.startswith("M") or len(memo_id) != 7:
+            raise ValueError(f"无效的 Memo ID 格式：{memo_id}")
+        try:
+            number = int(memo_id[1:])
+            return cls(number - 1)
+        except ValueError as e:
+            raise ValueError(f"无效的 Memo ID 格式：{memo_id}") from e
 
 
 # ============================================================
@@ -217,9 +239,9 @@ class BatchMetadata(BaseModel):
 if __name__ == "__main__":
     # 1. 创建输入
     term_in = TermInput(word="neuroscience", zh_def="神经科学")
-    print(term_in.model_dump())  # {'word': 'neuroscience', 'zh_def': '神经科学'}
+    print(term_in.model_dump())
 
-    # 2. 模拟 LLM 响应（使用字段名，因为 populate_by_name=True）
+    # 2. 模拟 LLM 响应
     llm_resp = LLMResponse(
         IPA="/ˈnʊroʊˌsaɪəns/",
         POS="n.",
@@ -229,20 +251,16 @@ if __name__ == "__main__":
     )
 
     # 3. 生成输出
+    memo_id = MemoID(2700)
     output = TermOutput.from_input_and_llm(
         term_input=term_in,
         llm_response=llm_resp,
-        memo_id="M002701",
+        memo_id=str(memo_id),
         tag_cn="神经",
         batch_id="251007A001",
         batch_note="测试批次"
     )
 
-    # 4. 序列化
-    print(output.model_dump_json(indent=2))
-
-    # 5. 验证失败示例
-    try:
-        TermInput(word="  ", zh_def="测试")  # 会抛出 ValidationError
-    except Exception as e:
-        print(f"验证失败：{e}")
+    print(f"✅ 创建术语输出：{output.wm_pair}")
+    print(f"   Memo ID: {output.memo_id}")
+    print(f"   词性: {output.pos}")

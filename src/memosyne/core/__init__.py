@@ -10,6 +10,7 @@ from .interfaces import (
     ConfigError,
     ValidationError,
 )
+from .models import TokenUsage, ProcessResult
 
 __all__ = [
     "LLMProvider",
@@ -20,4 +21,6 @@ __all__ = [
     "LLMError",
     "ConfigError",
     "ValidationError",
+    "TokenUsage",
+    "ProcessResult",
 ]

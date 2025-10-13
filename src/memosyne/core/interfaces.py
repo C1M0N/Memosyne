@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..models.result import TokenUsage
+    from .models import TokenUsage
 
 
 # ============================================================
@@ -169,7 +169,7 @@ class ValidationError(MemosymeError):
 # ============================================================
 if __name__ == "__main__":
     # 示例 1: 使用 Protocol（鸭子类型）
-    from ..models.result import TokenUsage
+    from .models import TokenUsage
 
     class MockLLM:
         """Mock LLM - 不需要显式继承 LLMProvider"""

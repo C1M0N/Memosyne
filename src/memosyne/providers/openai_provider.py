@@ -14,7 +14,7 @@ from typing import Any
 from openai import BadRequestError, OpenAI
 
 from ..core.interfaces import BaseLLMProvider, LLMError
-from ..models.result import TokenUsage
+from ..core.models import TokenUsage
 
 
 # ============================================================

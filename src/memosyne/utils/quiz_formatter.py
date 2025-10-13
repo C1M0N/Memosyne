@@ -4,7 +4,7 @@ Quiz 格式化工具
 将解析后的 QuizItem 列表格式化为 ShouldBe.txt 格式
 """
 import re
-from ..models.quiz import QuizItem
+from ..lithoformer.domain.models import QuizItem
 
 
 # ============================================================
@@ -291,7 +291,7 @@ class QuizFormatter:
 # 使用示例
 # ============================================================
 if __name__ == "__main__":
-    from ..models.quiz import QuizItem, QuizOptions
+    from ..lithoformer.domain.models import QuizItem, QuizOptions
 
     # 示例数据
     item1 = QuizItem(

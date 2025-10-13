@@ -9,7 +9,7 @@ from typing import Any
 from anthropic import Anthropic, APIError
 
 from ..core.interfaces import BaseLLMProvider, LLMError
-from ..models.result import TokenUsage
+from ..core.models import TokenUsage
 from ..prompts import REANIMATER_SYSTEM_PROMPT, REANIMATER_USER_TEMPLATE
 from ..schemas import TERM_RESULT_SCHEMA
 
