@@ -63,24 +63,22 @@ class ParseQuizUseCase:
         progress = None
         if show_progress and total > 0:
             progress = tqdm(
-                items,
                 total=total,
-                desc="Validating quiz items",
+                desc=f"Validating quiz items [Tokens: {tokens.total_tokens:,}]",
                 ncols=100,
                 ascii=True,
+                mininterval=0.0,
+                smoothing=0.0,
+                unit="item",
             )
-            iterator = progress
-        else:
-            iterator = items
+            progress.update(0)
 
         try:
-            for item in iterator:
+            for item in items:
                 if is_quiz_item_valid(item):
                     valid_items.append(item)
-                if show_progress and progress:
-                    progress.set_description(
-                        f"Validating quiz items [Tokens: {tokens.total_tokens:,}]"
-                    )
+                if progress is not None:
+                    progress.update(1)
         finally:
             if progress is not None:
                 progress.close()
