@@ -15,7 +15,6 @@ Reanimator Application Use Cases - 应用用例（业务协调）
 - 不依赖具体实现（Adapter）
 """
 from typing import Iterable
-from tqdm import tqdm
 
 from ..domain.models import TermInput, LLMResponse, TermOutput
 from ..domain.services import (
@@ -27,6 +26,7 @@ from .ports import LLMPort, TermListPort
 
 # 导入核心模型
 from ...core.models import ProcessResult, TokenUsage
+from ...shared.utils import Progress
 
 
 class ProcessTermsUseCase:
@@ -109,23 +109,14 @@ class ProcessTermsUseCase:
         total = len(terms) if hasattr(terms, '__len__') else None
 
         # 配置进度条
-        if show_progress:
-            pbar_kwargs = {
-                "desc": "Processing [Tokens: 0]",
-                "ncols": 100,
-                "ascii": True,
-            }
-            if total is not None:
-                pbar_kwargs["total"] = total
-            progress = tqdm(terms, **pbar_kwargs)
-            iterator = enumerate(progress)
-        else:
-            iterator = enumerate(terms)
-            progress = None
-
-        try:
+        with Progress(
+            total=total,
+            desc="Processing [Tokens: 0]",
+            unit="term",
+            enabled=show_progress,
+        ) as progress:
             # 处理每个术语
-            for index, term_input in iterator:
+            for index, term_input in enumerate(terms):
                 # 1. 调用 LLM（通过端口）
                 llm_dict, token_dict = self.llm.process_term(
                     word=term_input.word,
@@ -137,10 +128,9 @@ class ProcessTermsUseCase:
                 total_tokens = total_tokens + tokens
 
                 # 3. 更新进度条
-                if show_progress and progress:
-                    progress.set_description(
-                        f"Processing [Tokens: {total_tokens.total_tokens:,}]"
-                    )
+                progress.advance(
+                    desc=f"Processing [Tokens: {total_tokens.total_tokens:,}]"
+                )
 
                 # 4. 转换为领域模型（自动验证）
                 llm_response = LLMResponse(**llm_dict)
@@ -165,10 +155,6 @@ class ProcessTermsUseCase:
                 )
 
                 results.append(output)
-
-        finally:
-            if progress is not None:
-                progress.close()
 
         # 返回处理结果
         return ProcessResult(

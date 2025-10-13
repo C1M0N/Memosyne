@@ -1,7 +1,6 @@
 """
 Lithoformer Application Use Cases
 """
-from tqdm import tqdm
 
 from ..domain.models import QuizResponse, QuizItem
 from ..domain.services import is_quiz_item_valid
@@ -9,6 +8,7 @@ from .ports import LLMPort
 
 # 导入核心模型
 from ...core.models import ProcessResult, TokenUsage
+from ...shared.utils import Progress, indeterminate_progress
 
 
 class ParseQuizUseCase:
@@ -47,8 +47,8 @@ class ParseQuizUseCase:
         Raises:
             LLMError: LLM call failed
         """
-        # Call LLM (through port)
-        llm_dict, token_dict = self.llm.parse_quiz(markdown)
+        with indeterminate_progress("Calling LLM...", enabled=show_progress):
+            llm_dict, token_dict = self.llm.parse_quiz(markdown)
 
         # Convert to domain model
         response = QuizResponse(**llm_dict)
@@ -60,28 +60,19 @@ class ParseQuizUseCase:
         total = len(items)
         valid_items: list[QuizItem] = []
 
-        progress = None
-        if show_progress and total > 0:
-            progress = tqdm(
-                total=total,
-                desc=f"Validating quiz items [Tokens: {tokens.total_tokens:,}]",
-                ncols=100,
-                ascii=True,
-                mininterval=0.0,
-                smoothing=0.0,
-                unit="item",
-            )
-            progress.update(0)
-
-        try:
-            for item in items:
+        with Progress(
+            total=total if total else None,
+            desc="Validating quiz items [Tokens: 0]",
+            unit="item",
+            enabled=show_progress,
+        ) as progress:
+            for index, item in enumerate(items, start=1):
                 if is_quiz_item_valid(item):
                     valid_items.append(item)
-                if progress is not None:
-                    progress.update(1)
-        finally:
-            if progress is not None:
-                progress.close()
+                total_display = total if total else index
+                progress.advance(
+                    desc=f"Validating quiz items [{index}/{total_display}] [Tokens: {tokens.total_tokens:,}]"
+                )
 
         return ProcessResult(
             items=valid_items,
