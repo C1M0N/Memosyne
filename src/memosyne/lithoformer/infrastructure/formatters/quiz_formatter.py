@@ -233,7 +233,7 @@ class QuizFormatter:
                 # 正常 CLOZE：按答案覆盖
                 stem_render = _replace_cloze(stem, cloz)
                 body = _collapse_br(stem_render)
-                block = f"{head}\n{body}"
+                block = f"{head}<br><br>{body}"
                 blocks.append(block)
                 continue
 
@@ -260,7 +260,7 @@ class QuizFormatter:
                         lines.append(f"{letter}. {_normalize_sequence(text)}")
                 lines.append(f"]::({ans})")
                 body = _collapse_br("<br>".join(lines))
-                blocks.append(f"{head}\n{body}")
+                blocks.append(f"{head}<br><br>{body}")
                 continue
 
             # MCQ：图题若选项全空 → 回填 A..D = "A/B/C/D"
@@ -284,7 +284,7 @@ class QuizFormatter:
                     lines.append(f"{letter}. {text}")
             lines.append(f"]::({ans})")
             body = _collapse_br("<br>".join(lines))
-            blocks.append(f"{head}\n{body}")
+            blocks.append(f"{head}<br><br>{body}")
 
         # 每题之间物理换行
         return "\n".join(blocks)
