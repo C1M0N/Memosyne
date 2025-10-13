@@ -232,8 +232,9 @@ class QuizFormatter:
             if qtype == "CLOZE":
                 # 正常 CLOZE：按答案覆盖
                 stem_render = _replace_cloze(stem, cloz)
-                block = f"{head}<br>{stem_render}"
-                blocks.append(_collapse_br(block))
+                body = _collapse_br(stem_render)
+                block = f"{head}\n{body}"
+                blocks.append(block)
                 continue
 
             if qtype == "ORDER":
@@ -247,7 +248,7 @@ class QuizFormatter:
                 # 从 stem 剔除 steps（避免重复）
                 stem = _strip_steps_from_stem(stem, steps)
                 # 渲染
-                lines = [head, f"[{stem}"]
+                lines = [f"[{stem}"]
                 for s in steps:
                     s = _NOT_SELECTED.sub("", s).rstrip()
                     if s and not _NAKED_LETTER.match(s):
@@ -258,7 +259,8 @@ class QuizFormatter:
                     if text:
                         lines.append(f"{letter}. {_normalize_sequence(text)}")
                 lines.append(f"]::({ans})")
-                blocks.append(_collapse_br("<br>".join(lines)))
+                body = _collapse_br("<br>".join(lines))
+                blocks.append(f"{head}\n{body}")
                 continue
 
             # MCQ：图题若选项全空 → 回填 A..D = "A/B/C/D"
@@ -275,13 +277,14 @@ class QuizFormatter:
             stem = _remove_option_texts_from_stem(stem, opts)
 
             # MCQ 渲染
-            lines = [head, f"[{stem}"]
+            lines = [f"[{stem}"]
             for letter in ["A", "B", "C", "D", "E", "F"]:
                 text = (opts.get(letter) or "").strip()
                 if text:
                     lines.append(f"{letter}. {text}")
             lines.append(f"]::({ans})")
-            blocks.append(_collapse_br("<br>".join(lines)))
+            body = _collapse_br("<br>".join(lines))
+            blocks.append(f"{head}\n{body}")
 
         # 每题之间物理换行
         return "\n".join(blocks)
