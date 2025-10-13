@@ -21,40 +21,69 @@ if __name__ == "__main__":
 
 from memosyne.config import get_settings
 from memosyne.repositories import CSVTermRepository
-from memosyne.services import Reanimater
-from memosyne.utils import BatchIDGenerator, resolve_input_path, unique_path
+from memosyne.services import Reanimator
+from memosyne.utils import (
+    BatchIDGenerator,
+    resolve_input_path,
+    unique_path,
+    resolve_model_input,
+    get_provider_from_model,
+    generate_output_filename,
+)
 from memosyne.cli.prompts import ask
 
 
-def resolve_model_choice(user_input: str, settings) -> tuple[str, str, str]:
+def resolve_model_choice(user_input: str, settings) -> tuple[str, str, str, str]:
     """
-    解析模型选择
+    解析模型选择（支持 4 位简写、快捷方式、完整模型名）
 
     Args:
-        user_input: 用户输入（4/5/claude/完整模型名）
+        user_input: 用户输入（4/5/claude/4位简写/完整模型名）
         settings: Settings 对象（用于获取默认模型）
 
     Returns:
-        (provider, model_id, model_display)
+        (provider, model_id, model_code, model_display)
     """
     s = user_input.strip().lower()
 
-    # 快捷方式（从 settings 读取默认模型，集中配置）
-    shortcuts = {
-        "4": ("openai", settings.default_openai_model, "4oMini"),
-        "5": ("openai", "gpt-5-mini", "5Mini"),
-        "claude": ("anthropic", settings.default_anthropic_model, "Claude"),
-    }
+    # 旧的快捷方式（兼容性）
+    if s == "4":
+        model = settings.default_openai_model
+        from memosyne.utils import get_code_from_model
+        code = get_code_from_model(model)
+        return "openai", model, code, "4oMini"
+    elif s == "5":
+        model = "gpt-5-mini"
+        code = "o50m"
+        return "openai", model, code, "5Mini"
+    elif s == "claude":
+        model = settings.default_anthropic_model
+        from memosyne.utils import get_code_from_model
+        code = get_code_from_model(model)
+        return "anthropic", model, code, "Claude"
 
-    if s in shortcuts:
-        return shortcuts[s]
-
-    # Claude 模型（完整模型ID）
-    if "claude" in s:
-        return "anthropic", user_input, "Claude"
-
-    # OpenAI 模型（完整模型ID）
-    return "openai", user_input, user_input.replace("-", " ").title()
+    # 尝试统一解析（支持 4 位代码或完整模型名）
+    try:
+        model, code = resolve_model_input(s)
+        provider = get_provider_from_model(model)
+        display = code.upper()  # 使用大写代码作为显示名
+        return provider, model, code, display
+    except ValueError:
+        # 解析失败，仍然尝试作为完整模型名（兼容性）
+        if "claude" in s:
+            from memosyne.utils import get_code_from_model
+            try:
+                code = get_code_from_model(s)
+            except ValueError:
+                code = "????"  # 未知模型
+            return "anthropic", user_input, code, "Claude"
+        else:
+            from memosyne.utils import get_code_from_model
+            try:
+                code = get_code_from_model(s)
+            except ValueError:
+                code = "????"  # 未知模型
+            return "openai", user_input, code, user_input.replace("-", " ").title()
 
 
 def resolve_input_and_memo(
@@ -100,8 +129,8 @@ def resolve_input_and_memo(
 
 
 def main():
-    """Reanimater 主流程"""
-    print("=== Reanimater | 术语处理工具（重构版 v2.0）===")
+    """Reanimator 主流程"""
+    print("=== Reanimator | 术语处理工具（重构版 v2.0）===")
 
     # 1. 加载配置
     try:
@@ -113,7 +142,7 @@ def main():
         return
 
     # 2. 交互输入
-    model_input = ask("引擎（4 = gpt-4o-mini，5 = gpt-5-mini，claude = Claude，或输入完整模型ID）：")
+    model_input = ask("引擎（4位简写如 o4oo/cs45，或快捷键 4/5/claude，或完整模型名）：")
     path_input = ask(
         "输入CSV路径（纯数字=按 {num}.csv；含 .csv/路径=直接使用；留空=使用 short.csv）：",
         required=False
@@ -122,14 +151,15 @@ def main():
 
     # 3. 解析选择
     try:
-        provider_type, model_id, model_display = resolve_model_choice(model_input, settings)
-        input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimater_input_dir)
+        provider_type, model_id, model_code, model_display = resolve_model_choice(model_input, settings)
+        input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimator_input_dir)
     except Exception as e:
         print(f"解析失败：{e}")
         return
 
     print(f"[Provider] {provider_type}")
     print(f"[Model   ] {model_id} ({model_display})")
+    print(f"[Code    ] {model_code}")
     print(f"[Input   ] {input_path}")
     print(f"[Start   ] Memo = {start_memo}")
     print(f"[TermList] {settings.term_list_path}")
@@ -146,7 +176,7 @@ def main():
     # 5. 生成 BatchID
     try:
         batch_gen = BatchIDGenerator(
-            output_dir=settings.reanimater_output_dir,
+            output_dir=settings.reanimator_output_dir,
             timezone=settings.batch_timezone
         )
         batch_id = batch_gen.generate(term_count=len(terms_input))
@@ -155,9 +185,14 @@ def main():
         print(f"BatchID 生成失败：{e}")
         return
 
-    # 6. 生成输出路径（防覆盖）
-    output_filename = f"{batch_id}.csv"
-    output_path = unique_path(settings.reanimater_output_dir / output_filename)
+    # 6. 生成输出路径（使用智能命名：BatchID-FileName-ModelCode.csv）
+    output_filename = generate_output_filename(
+        batch_id=batch_id,
+        model_code=model_code,
+        input_filename=str(input_path),
+        ext="csv"
+    )
+    output_path = unique_path(settings.reanimator_output_dir / output_filename)
     print(f"[Output  ] {output_path}")
 
     # 7. 创建 LLM Provider
@@ -182,7 +217,7 @@ def main():
 
     # 8. 使用工厂方法创建处理器
     try:
-        processor = Reanimater.from_settings(
+        processor = Reanimator.from_settings(
             settings=settings,
             llm_provider=llm_provider,
             start_memo_index=start_memo,

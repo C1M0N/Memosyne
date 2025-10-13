@@ -100,14 +100,14 @@ class Settings(BaseSettings):
         return path
 
     @property
-    def reanimater_input_dir(self) -> Path:
-        """Reanimater 输入目录"""
-        return self.data_dir / "input" / "reanimater"
+    def reanimator_input_dir(self) -> Path:
+        """Reanimator 输入目录"""
+        return self.data_dir / "input" / "reanimator"
 
     @property
-    def reanimater_output_dir(self) -> Path:
-        """Reanimater 输出目录"""
-        return self.data_dir / "output" / "reanimater"
+    def reanimator_output_dir(self) -> Path:
+        """Reanimator 输出目录"""
+        return self.data_dir / "output" / "reanimator"
 
     @property
     def lithoformer_input_dir(self) -> Path:
@@ -127,8 +127,8 @@ class Settings(BaseSettings):
     def ensure_dirs(self) -> None:
         """确保所有必需的目录存在"""
         for dir_path in [
-            self.reanimater_input_dir,
-            self.reanimater_output_dir,
+            self.reanimator_input_dir,
+            self.reanimator_output_dir,
             self.lithoformer_input_dir,
             self.lithoformer_output_dir,
             self.db_dir,

@@ -6,7 +6,7 @@ Version: 0.7.1
 Quick Start:
     >>> from memosyne import reanimate, lithoform
     >>>
-    >>> # 处理术语 (Reanimater)
+    >>> # 处理术语 (Reanimator)
     >>> result = reanimate(
     ...     input_csv="221.csv",
     ...     start_memo_index=221,

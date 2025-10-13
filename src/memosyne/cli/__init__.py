@@ -1,5 +1,6 @@
 """CLI interface"""
 
-from .reanimate import main as reanimate_main
+from .reanimator_cli import main as reanimator_main
+from .lithoformer_cli import main as lithoformer_main
 
-__all__ = ["reanimate_main"]
+__all__ = ["reanimator_main", "lithoformer_main"]

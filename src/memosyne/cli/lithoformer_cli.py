@@ -26,38 +26,66 @@ if __name__ == "__main__":
 
 from memosyne.config import get_settings
 from memosyne.services import Lithoformer
-from memosyne.utils import QuizFormatter, unique_path
+from memosyne.utils import (
+    QuizFormatter,
+    unique_path,
+    resolve_model_input,
+    get_provider_from_model,
+    get_code_from_model,
+    BatchIDGenerator,
+    generate_output_filename,
+)
 from memosyne.cli.prompts import ask
 
 
-def _resolve_model_choice(user_input: str, settings) -> tuple[str, str]:
+def _resolve_model_choice(user_input: str, settings) -> tuple[str, str, str]:
     """
-    解析模型选择
+    解析模型选择（支持 4 位简写、快捷方式、完整模型名）
 
     Args:
-        user_input: 用户输入（4/5/claude/完整模型名）
+        user_input: 用户输入（4/5/claude/4位简写/完整模型名）
         settings: Settings 对象（用于获取默认模型）
 
     Returns:
-        (provider_type, model_id)
+        (provider_type, model_id, model_code)
     """
     s = user_input.strip().lower()
 
-    # 快捷方式（从 settings 读取默认模型，集中配置）
+    # 旧的快捷方式（兼容性）
     if s == "4":
-        return "openai", settings.default_openai_model
+        model = settings.default_openai_model
+        code = get_code_from_model(model)
+        return "openai", model, code
     elif s == "5":
-        return "openai", "gpt-5-mini"
+        model = "gpt-5-mini"
+        code = "o50m"
+        return "openai", model, code
     elif s == "claude":
         if not settings.anthropic_api_key:
             raise ValueError("Anthropic API Key 未配置")
-        return "anthropic", settings.default_anthropic_model
-    elif "claude" in s:
-        # 完整 Claude 模型ID
-        return "anthropic", user_input
-    else:
-        # 完整 OpenAI 模型ID
-        return "openai", user_input
+        model = settings.default_anthropic_model
+        code = get_code_from_model(model)
+        return "anthropic", model, code
+
+    # 尝试统一解析（支持 4 位代码或完整模型名）
+    try:
+        model, code = resolve_model_input(s)
+        provider = get_provider_from_model(model)
+        return provider, model, code
+    except ValueError:
+        # 解析失败，仍然尝试作为完整模型名（兼容性）
+        if "claude" in s:
+            try:
+                code = get_code_from_model(s)
+            except ValueError:
+                code = "????"  # 未知模型
+            return "anthropic", user_input, code
+        else:
+            try:
+                code = get_code_from_model(s)
+            except ValueError:
+                code = "????"  # 未知模型
+            return "openai", user_input, code
 
 
 def _infer_titles_from_filename(path: Path) -> tuple[str, str]:
@@ -109,33 +137,6 @@ def _resolve_input_md(user_input: str, settings) -> Path:
     return settings.lithoformer_input_dir / s
 
 
-def _resolve_output_path(user_input: str, settings) -> Path:
-    """
-    解析输出路径
-
-    - 留空：默认 ShouldBe.txt（自动防重名）
-    - 目录：在目录下生成 ShouldBe.txt（防重名）
-    - 文件：使用指定文件名（防重名）
-    """
-    s = (user_input or "").strip()
-    default_dir = settings.lithoformer_output_dir
-    default_name = "ShouldBe.txt"
-
-    if not s:
-        default_dir.mkdir(parents=True, exist_ok=True)
-        return unique_path(default_dir / default_name)
-
-    p = Path(s)
-    if p.suffix.lower() != ".txt":
-        # 当作目录处理
-        p.mkdir(parents=True, exist_ok=True)
-        return unique_path(p / default_name)
-
-    # 当作文件处理
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return unique_path(p)
-
-
 def main():
     """CLI 主函数"""
     print("=== Lithoformer | Quiz 解析工具（重构版 v2.0）===")
@@ -145,39 +146,36 @@ def main():
     settings.ensure_dirs()
 
     # 2. 用户输入
-    model_input = ask("引擎（4 = gpt-4o-mini，5 = gpt-5-mini，claude = Claude，或输入完整模型ID）：")
+    model_input = ask("引擎（4位简写如 o4oo/cs45，或快捷键 4/5/claude，或完整模型名）：")
     input_raw = ask("输入 Markdown 文件路径（默认 data/input/lithoformer/...）：", required=False)
-    output_raw = ask("输出 TXT 文件路径（默认 data/output/lithoformer/ShouldBe.txt）：", required=False)
 
-    # 3. 解析路径
+    # 3. 解析输入路径
     input_path = _resolve_input_md(input_raw, settings)
-    output_path = _resolve_output_path(output_raw, settings)
 
     # 4. 推断标题
     title_main, title_sub = _infer_titles_from_filename(input_path)
 
-    # 5. 展示配置
-    print(f"[Input  ] {input_path}")
-    print(f"[Output ] {output_path}")
-    print(f"[Title  ] {title_main} | {title_sub}")
-
-    # 6. 读取 Markdown
+    # 5. 读取 Markdown
     try:
         md_text = input_path.read_text(encoding="utf-8")
     except Exception as e:
         print(f"❌ 读取输入文件失败：{e}")
         return
 
-    # 7. 确定 Provider 和 Model（集中配置）
+    # 6. 确定 Provider 和 Model（集中配置）
     try:
-        provider_type, model_id = _resolve_model_choice(model_input, settings)
+        provider_type, model_id, model_code = _resolve_model_choice(model_input, settings)
         print(f"[Provider] {provider_type}")
         print(f"[Model   ] {model_id}")
+        print(f"[Code    ] {model_code}")
     except Exception as e:
         print(f"❌ 解析模型配置失败：{e}")
         return
 
-    # 8. 使用工厂方法创建解析器
+    print(f"[Input   ] {input_path}")
+    print(f"[Title   ] {title_main} | {title_sub}")
+
+    # 7. 使用工厂方法创建解析器
     try:
         parser = Lithoformer.from_settings(
             settings=settings,
@@ -188,7 +186,7 @@ def main():
         print(f"❌ 创建解析器失败：{e}")
         return
 
-    # 9. 解析 Markdown
+    # 8. 解析 Markdown
     try:
         process_result = parser.process(md_text, show_progress=True)
         print(f"✅ 解析成功：{process_result.success_count} 道题")
@@ -199,7 +197,29 @@ def main():
         traceback.print_exc()
         return
 
-    # 10. 格式化输出
+    # 9. 生成 BatchID（基于题目数量）
+    try:
+        batch_gen = BatchIDGenerator(
+            output_dir=settings.lithoformer_output_dir,
+            timezone=settings.batch_timezone
+        )
+        batch_id = batch_gen.generate(term_count=process_result.success_count)
+        print(f"[BatchID ] {batch_id}")
+    except Exception as e:
+        print(f"❌ BatchID 生成失败：{e}")
+        return
+
+    # 10. 生成输出路径（使用智能命名：BatchID-FileName-ModelCode.txt）
+    output_filename = generate_output_filename(
+        batch_id=batch_id,
+        model_code=model_code,
+        input_filename=str(input_path),
+        ext="txt"
+    )
+    output_path = unique_path(settings.lithoformer_output_dir / output_filename)
+    print(f"[Output  ] {output_path}")
+
+    # 11. 格式化输出
     try:
         formatter = QuizFormatter()
         out_text = formatter.format(process_result.items, title_main, title_sub)
@@ -207,7 +227,7 @@ def main():
         print(f"❌ 格式化失败：{e}")
         return
 
-    # 11. 写出文件
+    # 12. 写出文件
     try:
         output_path.write_text(out_text, encoding="utf-8")
         print(f"✅ 完成：{output_path}")

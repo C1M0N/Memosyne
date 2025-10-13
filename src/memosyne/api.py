@@ -1,14 +1,14 @@
 """
 Memosyne API - 编程接口
 
-提供简单的函数调用接口，用于在其他程序中使用 Reanimater 和 Lithoformer 功能
+提供简单的函数调用接口，用于在其他程序中使用 Reanimator 和 Lithoformer 功能
 
 Example:
     >>> from memosyne.api import reanimate, lithoform
     >>>
-    >>> # 处理术语 (Reanimater)
+    >>> # 处理术语 (Reanimator)
     >>> results = reanimate(
-    ...     input_csv="data/input/reanimater/221.csv",
+    ...     input_csv="data/input/reanimator/221.csv",
     ...     start_memo_index=221,
     ...     model="gpt-4o-mini"
     ... )
@@ -25,8 +25,14 @@ from typing import Literal
 from .config import get_settings
 from .providers import OpenAIProvider, AnthropicProvider
 from .repositories import CSVTermRepository, TermListRepo
-from .services import Reanimater, Lithoformer
-from .utils import BatchIDGenerator, QuizFormatter, unique_path
+from .services import Reanimator, Lithoformer
+from .utils import (
+    BatchIDGenerator,
+    QuizFormatter,
+    unique_path,
+    get_code_from_model,
+    generate_output_filename,
+)
 
 
 def reanimate(
@@ -40,12 +46,12 @@ def reanimate(
     show_progress: bool = True,
 ) -> dict:
     """
-    处理术语列表（Reanimater Pipeline - 术语处理）
+    处理术语列表（Reanimator Pipeline - 术语处理）
 
     Args:
         input_csv: 输入 CSV 文件路径（包含 word, zh_def 列）
         start_memo_index: 起始 Memo 编号（如 221 表示从 M000222 开始）
-        output_csv: 输出 CSV 文件路径（默认自动生成到 data/output/reanimater/）
+        output_csv: 输出 CSV 文件路径（默认自动生成到 data/output/reanimator/）
         model: 模型 ID（默认 gpt-4o-mini）
         provider: LLM 提供商（openai 或 anthropic）
         batch_note: 批次备注
@@ -67,7 +73,7 @@ def reanimate(
 
     Example:
         >>> result = reanimate(
-        ...     input_csv="data/input/reanimater/221.csv",
+        ...     input_csv="data/input/reanimator/221.csv",
         ...     start_memo_index=221,
         ...     model="gpt-4o-mini",
         ...     batch_note="测试批次"
@@ -81,7 +87,7 @@ def reanimate(
     # 1. 解析输入路径
     input_path = Path(input_csv)
     if not input_path.is_absolute():
-        input_path = settings.reanimater_input_dir / input_path
+        input_path = settings.reanimator_input_dir / input_path
     if not input_path.exists():
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
 
@@ -96,7 +102,7 @@ def reanimate(
 
     # 4. 生成批次 ID
     batch_gen = BatchIDGenerator(
-        output_dir=settings.reanimater_output_dir,
+        output_dir=settings.reanimator_output_dir,
         timezone=settings.batch_timezone
     )
     batch_id = batch_gen.generate(term_count=len(term_inputs))
@@ -120,7 +126,7 @@ def reanimate(
         raise ValueError(f"不支持的 provider: {provider}")
 
     # 6. 创建处理器
-    processor = Reanimater(
+    processor = Reanimator(
         llm_provider=llm,
         term_list_mapping=term_list_repo.mapping,
         start_memo_index=start_memo_index,
@@ -131,13 +137,26 @@ def reanimate(
     # 7. 处理术语（新接口返回 ProcessResult）
     process_result = processor.process(term_inputs, show_progress=show_progress)
 
-    # 8. 确定输出路径
+    # 8. 确定输出路径（使用智能命名）
     if output_csv is None:
-        output_path = settings.reanimater_output_dir / f"{batch_id}.csv"
+        # 获取模型代码
+        try:
+            model_code = get_code_from_model(model)
+        except ValueError:
+            model_code = "????"  # 未知模型
+
+        # 生成输出文件名：{BatchID}-{FileName}-{ModelCode}.csv
+        output_filename = generate_output_filename(
+            batch_id=batch_id,
+            model_code=model_code,
+            input_filename=str(input_path),
+            ext="csv"
+        )
+        output_path = unique_path(settings.reanimator_output_dir / output_filename)
     else:
         output_path = Path(output_csv)
         if not output_path.is_absolute():
-            output_path = settings.reanimater_output_dir / output_path
+            output_path = settings.reanimator_output_dir / output_path
 
     # 9. 写出结果
     CSVTermRepository.write_output(output_path, process_result.items)
@@ -243,26 +262,46 @@ def lithoform(
     parser = Lithoformer(llm_provider=llm)
     process_result = parser.process(md_text, show_progress=show_progress)
 
-    # 6. 格式化输出
+    # 6. 生成 BatchID（基于题目数量）
+    batch_gen = BatchIDGenerator(
+        output_dir=settings.lithoformer_output_dir,
+        timezone=settings.batch_timezone
+    )
+    batch_id = batch_gen.generate(term_count=process_result.success_count)
+
+    # 7. 格式化输出
     formatter = QuizFormatter()
     out_text = formatter.format(process_result.items, title_main, title_sub)
 
-    # 7. 确定输出路径
+    # 8. 确定输出路径（使用智能命名）
     if output_txt is None:
-        output_path = settings.lithoformer_output_dir / "ShouldBe.txt"
-        output_path = unique_path(output_path)
+        # 获取模型代码
+        try:
+            model_code = get_code_from_model(model)
+        except ValueError:
+            model_code = "????"  # 未知模型
+
+        # 生成输出文件名：{BatchID}-{FileName}-{ModelCode}.txt
+        output_filename = generate_output_filename(
+            batch_id=batch_id,
+            model_code=model_code,
+            input_filename=str(input_path),
+            ext="txt"
+        )
+        output_path = unique_path(settings.lithoformer_output_dir / output_filename)
     else:
         output_path = Path(output_txt)
         if not output_path.is_absolute():
             output_path = settings.lithoformer_output_dir / output_path
 
-    # 8. 写出结果
+    # 9. 写出结果
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(out_text, encoding="utf-8")
 
     return {
         "success": True,
         "output_path": str(output_path),
+        "batch_id": batch_id,
         "item_count": process_result.success_count,
         "total_count": process_result.total_count,
         "title_main": title_main,

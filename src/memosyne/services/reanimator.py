@@ -1,5 +1,5 @@
 """
-术语处理服务（Reanimater） - 重构版本
+术语处理服务（Reanimator） - 重构版本
 
 重构改进：
 - ✅ 依赖注入：LLM Provider 和配置通过构造函数传入
@@ -21,9 +21,9 @@ from ..models.result import ProcessResult, TokenUsage
 from ..utils.logger import get_logger
 
 
-class Reanimater:
+class Reanimator:
     """
-    Reanimater - 术语处理服务（重生器）
+    Reanimator - 术语处理服务（重生器）
 
     负责：
     1. 调用 LLM 生成术语信息
@@ -37,7 +37,7 @@ class Reanimater:
         >>>
         >>> settings = get_settings()
         >>> llm = OpenAIProvider.from_settings(settings)
-        >>> processor = Reanimater(
+        >>> processor = Reanimator(
         ...     llm_provider=llm,
         ...     term_list_mapping={"psychology": "心理"},
         ...     start_memo_index=2700,
@@ -71,7 +71,7 @@ class Reanimater:
         self.start_memo = start_memo_index
         self.batch_id = batch_id
         self.batch_note = f"「{batch_note.strip()}」" if batch_note else ""
-        self.logger = logger or get_logger("memosyne.reanimater")
+        self.logger = logger or get_logger("memosyne.reanimator")
 
     @classmethod
     def from_settings(
@@ -83,8 +83,8 @@ class Reanimater:
         batch_id: str,
         batch_note: str = "",
         term_list_mapping: dict[str, str] | None = None,
-    ) -> "Reanimater":
-        """使用 ``Settings`` 对象快速构建 ``Reanimater`` 实例。
+    ) -> "Reanimator":
+        """使用 ``Settings`` 对象快速构建 ``Reanimator`` 实例。
 
         兼容旧版调用方式：若未显式提供 ``term_list_mapping``，会根据
         ``settings.term_list_path`` 自动加载术语表。
@@ -308,7 +308,7 @@ if __name__ == "__main__":
     }
 
     # 2. 创建处理器
-    processor = Reanimater(
+    processor = Reanimator(
         llm_provider=llm_provider,
         term_list_mapping=term_mapping,
         start_memo_index=2700,
