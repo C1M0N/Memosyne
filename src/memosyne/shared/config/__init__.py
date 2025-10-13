@@ -1,11 +1,16 @@
-"""Shared Configuration"""
-import sys
-from pathlib import Path
+"""
+Shared Configuration
 
-_parent = Path(__file__).resolve().parents[2]
-if str(_parent) not in sys.path:
-    sys.path.insert(0, str(_parent))
+Provides application-wide configuration management using Pydantic Settings.
 
-from memosyne.config import get_settings, Settings
+Following DDD principles:
+- Configuration as a cross-cutting concern
+- Environment-based settings (12-factor app)
+- Validation at startup
+"""
+from .settings import Settings, get_settings
 
-__all__ = ["get_settings", "Settings"]
+__all__ = [
+    "Settings",
+    "get_settings",
+]

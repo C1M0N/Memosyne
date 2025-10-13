@@ -11,7 +11,7 @@ CSV 适配器：实现 Application 层的 TermRepositoryPort 接口
 from pathlib import Path
 
 from ..domain.models import TermInput, TermOutput
-from ...repositories.csv_repository import CSVTermRepository
+from ...shared.infrastructure.storage.csv_repository import CSVTermRepository
 
 
 class CSVTermAdapter:

@@ -5,16 +5,23 @@ LLM 适配器：实现 Application 层的 LLMPort 接口
 
 职责：
 - 封装 LLM Provider（OpenAI/Anthropic）
-- 添加 Reanimator 特定的 Prompt
+- 注入 Reanimator 特定的 Prompts 和 Schemas
 - 处理 LLM 调用和错误
 
 依赖倒置：
 - Infrastructure 层实现 Application 层定义的端口
 - Infrastructure 依赖 Application（而非相反）
+
+DDD 原则（Phase 4.6）：
+- Prompts 和 Schemas 属于子域业务逻辑
+- 不应放在 Shared Kernel 中
+- Adapter 负责组装完整的请求
 """
 from typing import Any
 
 from ...core.interfaces import LLMProvider, LLMError
+from .prompts import REANIMATER_SYSTEM_PROMPT, REANIMATER_USER_TEMPLATE
+from .schemas import TERM_RESULT_SCHEMA
 
 
 class ReanimatorLLMAdapter:
@@ -46,10 +53,16 @@ class ReanimatorLLMAdapter:
             LLMError: LLM 调用失败
         """
         try:
-            # 调用底层 LLM Provider
-            llm_response, token_usage = self.provider.complete_prompt(
-                word=word,
-                zh_def=zh_def
+            # 组装 Reanimator 特定的 prompts
+            system_prompt = REANIMATER_SYSTEM_PROMPT
+            user_prompt = REANIMATER_USER_TEMPLATE.format(word=word, zh_def=zh_def)
+
+            # 调用底层 LLM Provider 的通用方法
+            llm_response, token_usage = self.provider.complete_structured(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                schema=TERM_RESULT_SCHEMA["schema"],
+                schema_name="TermResult"
             )
 
             # 转换 TokenUsage 对象为字典（适配端口接口）

@@ -6,8 +6,9 @@ A thin adapter that orchestrates dependency injection.
 
 Usage:
     python -m memosyne.reanimator.cli.main
-    or
-    python src/memosyne/reanimator/cli/main.py
+
+    Or use the convenience script:
+    ./run_reanimate.sh
 
 Architecture:
 - CLI layer: User interaction and dependency injection
@@ -15,25 +16,18 @@ Architecture:
 - Domain layer: Pure business logic
 - Infrastructure layer: Technical implementations (adapters)
 """
-import sys
 from pathlib import Path
 
-# Support direct execution
-if __name__ == "__main__":
-    src_path = Path(__file__).resolve().parents[3]
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
-
-from ...config import get_settings
-from ...providers import OpenAIProvider, AnthropicProvider
-from ...utils import (
+from ...shared.config import get_settings
+from ...shared.infrastructure.llm import OpenAIProvider, AnthropicProvider
+from ...shared.utils import (
     BatchIDGenerator,
     resolve_model_input,
     get_provider_from_model,
     generate_output_filename,
     unique_path,
 )
-from ...cli.prompts import ask
+from ...shared.cli.prompts import ask
 
 # Import from Reanimator subdomain
 from ..application import ProcessTermsUseCase
@@ -55,7 +49,7 @@ def resolve_model_choice(user_input: str, settings) -> tuple[str, str, str, str]
     Returns:
         (provider, model_id, model_code, model_display)
     """
-    from ...utils import get_code_from_model
+    from ...shared.utils import get_code_from_model
 
     s = user_input.strip().lower()
 
@@ -109,7 +103,7 @@ def resolve_input_and_memo(
     Returns:
         (input_path, start_memo_index)
     """
-    from ...utils import resolve_input_path
+    from ...shared.utils import resolve_input_path
 
     s = user_path.strip()
 

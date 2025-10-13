@@ -8,7 +8,7 @@ import csv
 from pathlib import Path
 from typing import Iterable
 
-from ..reanimator.domain.models import TermInput, TermOutput
+from ....reanimator.domain.models import TermInput, TermOutput
 
 
 # 列名同义词映射

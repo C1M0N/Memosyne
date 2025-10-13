@@ -1,12 +1,16 @@
-"""Shared Storage Infrastructure"""
-import sys
-from pathlib import Path
+"""
+Shared Storage Infrastructure
 
-_parent = Path(__file__).resolve().parents[3]
-if str(_parent) not in sys.path:
-    sys.path.insert(0, str(_parent))
+Provides data persistence implementations (CSV, File repositories) that can be
+reused across different bounded contexts.
 
-from memosyne.repositories import CSVTermRepository, TermListRepo
+Following DDD principles:
+- Repository pattern for data access abstraction
+- Infrastructure layer, no business logic
+- Implements data persistence concerns only
+"""
+from .csv_repository import CSVTermRepository
+from .term_list_repository import TermListRepo
 
 __all__ = [
     "CSVTermRepository",

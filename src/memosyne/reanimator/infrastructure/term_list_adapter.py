@@ -10,7 +10,7 @@ Reanimator Infrastructure - TermList Adapter
 """
 from pathlib import Path
 
-from ...repositories.term_list_repository import TermListRepo
+from ...shared.infrastructure.storage.term_list_repository import TermListRepo
 
 
 class TermListAdapter:

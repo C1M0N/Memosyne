@@ -1,19 +1,18 @@
-"""Shared LLM Infrastructure"""
-import sys
-from pathlib import Path
+"""
+Shared LLM Infrastructure
 
-# Add parent to path for imports
-_parent = Path(__file__).resolve().parents[3]
-if str(_parent) not in sys.path:
-    sys.path.insert(0, str(_parent))
+Provides LLM provider implementations (OpenAI, Anthropic) that can be
+reused across different bounded contexts (Reanimator, Lithoformer).
 
-from memosyne.providers import OpenAIProvider, AnthropicProvider
-from memosyne.core.interfaces import LLMProvider, BaseLLMProvider, LLMError
+Following DDD principles:
+- Infrastructure layer depends on Domain abstractions
+- Implements core.interfaces.LLMProvider protocol
+- No business logic, only technical adapters
+"""
+from .openai_provider import OpenAIProvider
+from .anthropic_provider import AnthropicProvider
 
 __all__ = [
     "OpenAIProvider",
-    "AnthropicProvider", 
-    "LLMProvider",
-    "BaseLLMProvider",
-    "LLMError",
+    "AnthropicProvider",
 ]

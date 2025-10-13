@@ -28,9 +28,15 @@ __author__ = "Memosyne Team"
 # 导出主要 API
 from .api import reanimate, lithoform
 
+# 向后兼容别名
+process_terms = reanimate  # v2.0 之前的名称
+parse_quiz = lithoform     # v2.0 之前的名称
+
 __all__ = [
     "reanimate",
     "lithoform",
+    "process_terms",  # backward compatibility
+    "parse_quiz",     # backward compatibility
     "__version__",
     "__author__",
 ]

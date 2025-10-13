@@ -1,6 +1,6 @@
 """Lithoformer Infrastructure - Formatter Adapter"""
 from ..domain.models import QuizItem
-from ...utils.quiz_formatter import QuizFormatter
+from .formatters.quiz_formatter import QuizFormatter
 
 
 class FormatterAdapter:

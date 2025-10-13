@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
 Lithoformer CLI - Quiz Parsing Tool (Refactored)
+
+Usage:
+    python -m memosyne.lithoformer.cli.main
+
+    Or use the convenience script:
+    ./run_lithoform.sh
 """
-import sys
 from pathlib import Path
 
-if __name__ == "__main__":
-    src_path = Path(__file__).resolve().parents[3]
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
-
-from ...config import get_settings
-from ...providers import OpenAIProvider, AnthropicProvider
-from ...utils import (
+from ...shared.config import get_settings
+from ...shared.infrastructure.llm import OpenAIProvider, AnthropicProvider
+from ...shared.utils import (
     BatchIDGenerator,
     resolve_model_input,
     get_provider_from_model,
@@ -20,7 +20,7 @@ from ...utils import (
     generate_output_filename,
     unique_path,
 )
-from ...cli.prompts import ask
+from ...shared.cli.prompts import ask
 from ..application import ParseQuizUseCase
 from ..infrastructure import LithoformerLLMAdapter, FileAdapter, FormatterAdapter
 from ..domain.services import infer_titles_from_filename

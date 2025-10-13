@@ -1,5 +1,11 @@
-"""OpenAI Provider - 重构版本.
+"""OpenAI Provider - Shared Infrastructure Layer
 
+DDD 原则：
+- Shared Kernel 不包含业务逻辑
+- 提供通用的 LLM 调用能力
+- 业务相关的 prompts/schemas 由子域自行管理
+
+重构说明：
 在上一版尝试切换到 ``client.responses.parse`` 之后，macOS 用户反馈
 ``OSError: [Errno 63] File name too long``。排查发现 OpenAI SDK 会把
 ``input`` 字段当作待上传文件路径，把整段 Markdown 题干错当成文件名。
@@ -13,101 +19,8 @@ from typing import Any
 
 from openai import BadRequestError, OpenAI
 
-from ..core.interfaces import BaseLLMProvider, LLMError
-from ..core.models import TokenUsage
-
-
-# ============================================================
-# Prompt 和 Schema 定义
-# ============================================================
-SYSTEM_PROMPT = """You are a terminologist and lexicographer.
-
-OUTPUT
-- Return ONLY one compact JSON object with keys: IPA, POS, Rarity, EnDef, PPfix, PPmeans, TagEN.
-- No markdown, no code fences, no commentary, no extra keys.
-
-FIELD RULES
-1) EnDef
-   - Exactly ONE sentence and must literally contain the target word (anywhere).
-   - Must fit the given Chinese gloss (ZhDef); learner can infer meaning from EnDef alone.
-
-2) Example
-   - Exactly ONE sentence and must literally contain the target word (anywhere).
-   - Must fit the given Chinese gloss (ZhDef) AND real application scenarios; do NOT write random or generic sentences.
-   - MUST NOT be identical to EnDef.
-
-3) IPA
-   - American IPA between slashes, e.g., "/ˈsʌmplɚ/".
-   - If and only if POS="abbr.", set IPA to "" (empty). Otherwise IPA MUST be non-empty (phrases included).
-
-4) POS (exactly one)
-   - Choose from: ["n.","vt.","vi.","adj.","adv.","P.","O.","abbr."].
-   - "P." = phrase (Word contains a space). "abbr." = abbreviation/initialism/acronym. "O." = other/unclear.
-
-5) TagEN
-   - Output ONE English domain label (e.g., psychology, psychiatry, medicine, biology, culture, linguistics...).
-   - Do NOT output Chinese in TagEN. If uncertain, use "".
-
-6) Rarity
-   - Allowed: "" or "RARE". Use "RARE" only if reputable dictionaries mark THIS sense as uncommon/technical.
-
-7) Morphemes
-   - Fill ONLY for widely recognized Greek/Latin morphemes.
-   - PPfix: space-separated lowercase tokens, no hyphens (e.g., "psycho dia gnosis").
-   - PPmeans: space-separated ASCII tokens 1-to-1 with PPfix; if a single token is a multi-word gloss, use underscores (e.g., "study_of").
-"""
-
-USER_TEMPLATE = """Given:
-Word: {word}
-ZhDef: {zh_def}
-
-Task:
-Return the JSON with keys: IPA, POS, Rarity, EnDef, Example, PPfix, PPmeans, TagEN."""
-
-TERM_RESULT_SCHEMA = {
-    "name": "TermResult",
-    "description": "Terminology fields for a single headword.",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "IPA": {
-                "type": "string",
-                "description": "American IPA between slashes; empty only if POS is abbr.",
-                "pattern": r"^(\/[^\s\/].*\/|)$"
-            },
-            "POS": {
-                "type": "string",
-                "enum": ["n.", "vt.", "vi.", "adj.", "adv.", "P.", "O.", "abbr."]
-            },
-            "Rarity": {
-                "type": "string",
-                "enum": ["", "RARE"]
-            },
-            "EnDef": {
-                "type": "string",
-                "minLength": 1
-            },
-            "Example": {
-                "type": "string",
-                "minLength": 1
-            },
-            "PPfix": {
-                "type": "string"
-            },
-            "PPmeans": {
-                "type": "string",
-                "description": "ASCII only; use underscores inside a token for multi-word gloss.",
-                "pattern": r"^[\x20-\x7E]*$"
-            },
-            "TagEN": {
-                "type": "string"
-            }
-        },
-        "required": ["IPA", "POS", "Rarity", "EnDef", "Example", "PPfix", "PPmeans", "TagEN"]
-    }
-}
+from ....core.interfaces import BaseLLMProvider, LLMError
+from ....core.models import TokenUsage
 
 
 class OpenAIProvider(BaseLLMProvider):
@@ -130,17 +43,6 @@ class OpenAIProvider(BaseLLMProvider):
             model=settings.default_openai_model,
             api_key=settings.openai_api_key,
             temperature=settings.default_temperature,
-        )
-
-    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], TokenUsage]:
-        """调用 OpenAI API 生成术语信息"""
-        user_message = USER_TEMPLATE.format(word=word, zh_def=zh_def)
-
-        return self._request_via_chat(
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=user_message,
-            schema_payload=TERM_RESULT_SCHEMA,
-            system_role="developer",
         )
 
     def complete_structured(

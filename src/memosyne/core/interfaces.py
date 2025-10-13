@@ -20,27 +20,14 @@ if TYPE_CHECKING:
 @runtime_checkable
 class LLMProvider(Protocol):
     """
-    LLM 提供商协议
+    LLM 提供商协议（Phase 4.6: DDD-compliant）
 
-    任何实现了 complete_prompt 和 complete_structured 方法的类都满足此协议，
+    任何实现了 complete_structured 方法的类都满足此协议，
     无需显式继承（结构化子类型，Structural Subtyping）
+
+    注意：complete_prompt() 已移除，因为它包含业务逻辑（Reanimator 专用）
+    各子域应通过 Adapter 注入自己的 prompts/schemas
     """
-
-    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], "TokenUsage"]:
-        """
-        调用 LLM 生成术语信息
-
-        Args:
-            word: 英文词条
-            zh_def: 中文释义
-
-        Returns:
-            (结果字典, Token使用统计) 元组
-
-        Raises:
-            LLMError: LLM 调用失败时抛出
-        """
-        ...
 
     def complete_structured(
         self,
@@ -72,7 +59,7 @@ class LLMProvider(Protocol):
 # ============================================================
 class BaseLLMProvider(ABC):
     """
-    LLM 提供商抽象基类
+    LLM 提供商抽象基类（Phase 4.6: DDD-compliant）
 
     相比 Protocol，ABC 提供：
     - 共享实现（公共方法）
@@ -82,17 +69,15 @@ class BaseLLMProvider(ABC):
     选择建议：
     - 如果需要共享代码 → 使用 ABC
     - 如果只需要接口约束 → 使用 Protocol
+
+    注意：complete_prompt() 已移除，因为它包含业务逻辑（Reanimator 专用）
+    各子域应通过 Adapter 注入自己的 prompts/schemas
     """
 
     def __init__(self, model: str, temperature: float | None = None):
         self.model = model
         self.temperature = temperature
         self._validate_config()
-
-    @abstractmethod
-    def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], "TokenUsage"]:
-        """调用 LLM 生成术语信息（子类必须实现）"""
-        pass
 
     @abstractmethod
     def complete_structured(
@@ -173,11 +158,6 @@ if __name__ == "__main__":
 
     class MockLLM:
         """Mock LLM - 不需要显式继承 LLMProvider"""
-        def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], TokenUsage]:
-            result = {"IPA": "/test/", "POS": "n.", "word": word, "zh_def": zh_def}
-            tokens = TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30)
-            return result, tokens
-
         def complete_structured(
             self,
             system_prompt: str,
@@ -185,7 +165,7 @@ if __name__ == "__main__":
             schema: dict[str, Any],
             schema_name: str = "Response"
         ) -> tuple[dict[str, Any], TokenUsage]:
-            result = {"result": "mock", "schema": schema_name}
+            result = {"result": "mock", "schema": schema_name, "system": system_prompt[:20]}
             tokens = TokenUsage(prompt_tokens=15, completion_tokens=25, total_tokens=40)
             return result, tokens
 
@@ -194,11 +174,6 @@ if __name__ == "__main__":
 
     # 示例 2: 使用 ABC（显式继承）
     class ExampleProvider(BaseLLMProvider):
-        def complete_prompt(self, word: str, zh_def: str) -> tuple[dict[str, Any], TokenUsage]:
-            result = {"model": self.model, "word": word, "zh_def": zh_def}
-            tokens = TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30)
-            return result, tokens
-
         def complete_structured(
             self,
             system_prompt: str,
@@ -214,13 +189,18 @@ if __name__ == "__main__":
     print(provider)  # ExampleProvider(model='gpt-4o-mini')
 
     # 示例 3: 类型检查
-    def process_with_llm(llm: LLMProvider, word: str) -> tuple[dict[str, Any], TokenUsage]:
+    def call_llm(llm: LLMProvider, prompt: str) -> tuple[dict[str, Any], TokenUsage]:
         """接受任何实现了 LLMProvider 协议的对象"""
-        return llm.complete_prompt(word, "测试")
+        return llm.complete_structured(
+            system_prompt="You are a helpful assistant",
+            user_prompt=prompt,
+            schema={"type": "object", "properties": {"answer": {"type": "string"}}},
+            schema_name="Answer"
+        )
 
     # 两种实现都可以传入
-    result1, tokens1 = process_with_llm(mock, "test")
+    result1, tokens1 = call_llm(mock, "test prompt")
     print(f"Mock result: {result1}, {tokens1}")
 
-    result2, tokens2 = process_with_llm(provider, "test")
+    result2, tokens2 = call_llm(provider, "test prompt")
     print(f"Provider result: {result2}, {tokens2}")

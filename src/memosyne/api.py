@@ -22,10 +22,17 @@ Example:
 from pathlib import Path
 from typing import Literal
 
-from .config import get_settings
-from .providers import OpenAIProvider, AnthropicProvider
+# Shared 层导入（DDD: Shared Kernel / Infrastructure）
+from .shared.config import get_settings
+from .shared.infrastructure.llm import OpenAIProvider, AnthropicProvider
+from .shared.utils import (
+    BatchIDGenerator,
+    unique_path,
+    get_code_from_model,
+    generate_output_filename,
+)
 
-# 导入新架构组件
+# 子域导入（DDD: Bounded Contexts）
 from .reanimator.application import ProcessTermsUseCase
 from .reanimator.infrastructure import (
     ReanimatorLLMAdapter,
@@ -37,13 +44,6 @@ from .lithoformer.infrastructure import (
     LithoformerLLMAdapter,
     FileAdapter,
     FormatterAdapter,
-)
-
-from .utils import (
-    BatchIDGenerator,
-    unique_path,
-    get_code_from_model,
-    generate_output_filename,
 )
 
 
