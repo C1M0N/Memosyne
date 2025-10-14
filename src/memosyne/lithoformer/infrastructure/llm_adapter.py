@@ -30,15 +30,15 @@ class LithoformerLLMAdapter:
         """
         self.provider = provider
 
-    def parse_quiz(self, markdown: str) -> tuple[dict[str, Any], dict[str, int]]:
+    def parse_question(self, markdown: str) -> tuple[dict[str, Any], dict[str, int]]:
         """
-        解析 Quiz Markdown（实现 LLMPort.parse_quiz）
+        解析单个 Quiz Markdown 片段（实现 LLMPort.parse_question）
 
         Args:
-            markdown: Quiz Markdown 文本
+            markdown: Quiz 单题 Markdown 文本
 
         Returns:
-            (llm_response_dict, token_usage_dict)
+            (question_dict, token_usage_dict)
 
         Raises:
             LLMError: LLM 调用失败
@@ -56,6 +56,13 @@ class LithoformerLLMAdapter:
                 schema_name=QUIZ_SCHEMA["name"]
             )
 
+            items = llm_response.get("items", [])
+            if not isinstance(items, list) or not items:
+                raise LLMError("LLM 未返回任何题目数据")
+            first_item = items[0]
+            if not isinstance(first_item, dict):
+                raise LLMError("LLM 返回的题目数据格式不正确")
+
             # 转换 TokenUsage 对象为字典（适配端口接口）
             token_dict = {
                 "prompt_tokens": token_usage.prompt_tokens,
@@ -63,7 +70,7 @@ class LithoformerLLMAdapter:
                 "total_tokens": token_usage.total_tokens,
             }
 
-            return llm_response, token_dict
+            return first_item, token_dict
 
         except LLMError:
             # LLM 错误直接向上传播

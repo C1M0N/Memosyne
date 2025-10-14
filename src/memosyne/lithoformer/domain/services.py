@@ -12,7 +12,61 @@ Business rules:
 3. Quiz type detection
 """
 from pathlib import Path
+
 from .models import QuizItem
+
+
+def split_markdown_into_questions(markdown: str) -> list[str]:
+    """
+    将整份 Quiz Markdown 拆分为单题片段。
+
+    规则：
+    - 以以 '## ' 开头的行作为题目边界
+    - 如果文档中没有 '## '，则视为只有一题
+    """
+    lines = markdown.splitlines()
+    blocks: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if not current:
+            return
+        block_text = "\n".join(current).strip()
+        if _looks_like_question(block_text):
+            blocks.append(block_text)
+        current.clear()
+
+    for line in lines:
+        if line.startswith("## "):
+            flush()
+            current.append(line)
+        else:
+            current.append(line)
+
+    if current:
+        flush()
+
+    if not blocks and markdown.strip():
+        return [markdown.strip()]
+
+    return blocks
+
+
+def _looks_like_question(block: str) -> bool:
+    stripped = block.strip()
+    if not stripped:
+        return False
+    lines = [line.strip() for line in block.splitlines() if line.strip()]
+    if not lines:
+        return False
+    if any(line.startswith("## ") for line in lines):
+        return True
+    if any(line.startswith("```") for line in lines):
+        return True
+    option_prefixes = ("a.", "b.", "c.", "d.", "e.", "f.", "a)", "b)", "c)", "d)")
+    if any(line.lower().startswith(option_prefixes) for line in lines):
+        return True
+    return False
 
 
 def is_quiz_item_valid(item: QuizItem) -> bool:

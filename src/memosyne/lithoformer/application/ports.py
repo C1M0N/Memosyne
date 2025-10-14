@@ -11,15 +11,15 @@ from ..domain.models import QuizItem
 class LLMPort(Protocol):
     """LLM calling capability (implemented by Infrastructure)"""
 
-    def parse_quiz(self, markdown: str) -> tuple[dict, dict]:
+    def parse_question(self, markdown: str) -> tuple[dict, dict]:
         """
-        Parse quiz markdown using LLM
+        Parse a single quiz question markdown using LLM
 
         Args:
-            markdown: Quiz markdown content
+            markdown: Question markdown block
 
         Returns:
-            (llm_response_dict, token_usage_dict)
+            (question_dict, token_usage_dict)
 
         Raises:
             LLMError: LLM call failed

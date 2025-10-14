@@ -2,8 +2,11 @@
 Lithoformer Application Use Cases
 """
 
-from ..domain.models import QuizResponse, QuizItem
-from ..domain.services import is_quiz_item_valid
+from ..domain.models import QuizItem
+from ..domain.services import (
+    is_quiz_item_valid,
+    split_markdown_into_questions,
+)
 from .ports import LLMPort
 
 # 导入核心模型
@@ -47,36 +50,44 @@ class ParseQuizUseCase:
         Raises:
             LLMError: LLM call failed
         """
-        with indeterminate_progress("Calling LLM...", enabled=show_progress):
-            llm_dict, token_dict = self.llm.parse_quiz(markdown)
+        question_blocks = split_markdown_into_questions(markdown)
+        if not question_blocks:
+            raise ValueError("未在 Markdown 中解析到任何题目内容")
 
-        # Convert to domain model
-        response = QuizResponse(**llm_dict)
-
-        # Convert token dict to TokenUsage
-        tokens = TokenUsage(**token_dict)
-
-        items = response.items or []
-        total = len(items)
         valid_items: list[QuizItem] = []
+        total_tokens = TokenUsage()
 
         with Progress(
-            total=total if total else None,
+            total=len(question_blocks),
             desc="Validating quiz items [Tokens: 0]",
             unit="item",
             enabled=show_progress,
         ) as progress:
-            for index, item in enumerate(items, start=1):
+            for index, block in enumerate(question_blocks, start=1):
+                with indeterminate_progress(
+                    f"Calling LLM for item #{index}...",
+                    enabled=show_progress,
+                ):
+                    item_dict, token_dict = self.llm.parse_question(block)
+
+                tokens = TokenUsage(**token_dict)
+                total_tokens = total_tokens + tokens
+
+                item = QuizItem(**item_dict)
+
                 if is_quiz_item_valid(item):
                     valid_items.append(item)
-                total_display = total if total else index
+                total_display = len(question_blocks)
                 progress.advance(
-                    desc=f"Validating quiz items [{index}/{total_display}] [Tokens: {tokens.total_tokens:,}]"
+                    desc=(
+                        f"Validating quiz items [{index}/{total_display}] "
+                        f"[Tokens: {total_tokens.total_tokens:,}]"
+                    )
                 )
 
         return ProcessResult(
             items=valid_items,
             success_count=len(valid_items),
-            total_count=len(response.items),
-            token_usage=tokens,
+            total_count=len(question_blocks),
+            token_usage=total_tokens,
         )
