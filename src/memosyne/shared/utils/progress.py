@@ -39,7 +39,7 @@ class Progress:
 
     def __enter__(self) -> "Progress":
         if self._enabled:
-            bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt}" if self._total else "{l_bar}{bar}| {n_fmt}"
+            bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{rate_fmt}] [剩余: {remaining}]" if self._total else "{l_bar}{bar}| {n_fmt} [{rate_fmt}]"
             self._bar = tqdm(
                 total=self._total,
                 desc=self._desc,
