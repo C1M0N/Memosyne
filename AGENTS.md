@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This document captures shared memory and working agreements for AI coding agents collaborating on the Memosyne project (e.g., Claude Code, ChatGPT / OpenAI Code Interpreter, or other assistants invoked by the team).
 
 ## 项目概述
 
@@ -429,8 +429,8 @@ logger.error("LLM 调用失败", exc_info=True)
 
 **IMPORTANT**: 每次代码更改后，必须同时更新以下文档：
 
-1. **CLAUDE.md** (本文件) - 更新命令、架构、流程说明
-2. **README.md** - 更新功能列表、使用示例、安装步骤、架构图、API 示例
+1. **AGENTS.md**（本文件）——同步通用记忆、常用命令、协作流程
+2. **README.md** —— 更新特性、使用示例、安装步骤、架构图、API 示例
 
 **注意**: README.md 现在是项目的唯一主文档，包含完整的架构说明、API 使用指南和设计决策。
 
@@ -438,7 +438,7 @@ logger.error("LLM 调用失败", exc_info=True)
 
 修改代码后，检查：
 - [ ] 是否有新的依赖？→ 更新 `requirements.txt`
-- [ ] 是否有新的 CLI 命令？→ 更新 README.md 和 CLAUDE.md 的"快速开始"部分
+- [ ] 是否有新的 CLI 命令？→ 更新 README.md 和 AGENTS.md 的“快速开始”部分
 - [ ] 是否修改了架构？→ 更新 README.md 中的"架构设计"章节和 Mermaid 图表
 - [ ] 是否添加了新功能？→ 更新 README.md 的特性列表
 - [ ] 是否修改了 API？→ 更新 README.md 的"API 使用指南"章节
@@ -471,13 +471,12 @@ logger.error("LLM 调用失败", exc_info=True)
 
 ```
 Memosyne/
-├── README.md              # 项目主文档（包含完整架构、API 使用指南、设计决策）
-├── CLAUDE.md              # Claude Code 工作指南 (本文件)
-├── CLI_USAGE.md           # CLI 使用说明
-└── GIT_GUIDE.md           # Git 项目管理指南
+├── README.md    # 项目主文档（架构、API、设计决策）
+├── AGENTS.md    # AI 协作记忆（本文件）
+└── GIT_GUIDE.md # Git 项目管理指南
 ```
 
-**注意**: 所有架构设计文档和 API 使用指南已合并到 README.md 中，成为单一的综合文档。
+**说明**：除了本文件和 `GIT_GUIDE.md` 外，其余架构、CLI、API 文档均已整合至 README.md。
 
 ---
 

@@ -1306,7 +1306,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 
 ## 📚 文档
 
-- **[CLAUDE.md](CLAUDE.md)** – Claude Code 工作指南（协作须知、开发流程）
+- **[AGENTS.md](AGENTS.md)** – AI 协作记忆（Claude/ChatGPT 等通用指引）
 - 架构、CLI、API 的详细说明已整合进本 README（参见目录链接）。
 
 ---
@@ -1321,7 +1321,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 - ✨ **医学级解析输出**：每道题新增 `analysis` 字段（领域、中文解析、关键知识点、干扰项理由），Formatter 生成 `[[解析:: ...]]` 区块。
 - ✨ **Prompt & Schema 重写**：Lithoformer LLM 提示词聚焦临床心理学语境，强制返回中文解释，Schema 精简为单题 `QuizQuestion`。
 - 🛠️ **进度反馈增强**：Shared `Progress` 展示速率与剩余时间，运行时显示当前题目所属领域。
-- 📚 **文档更新**：README 补充新版输入/输出规范与简洁架构图，CLAUDE.md 同步版本说明。
+- 📚 **文档更新**：README 补充新版输入/输出规范与简洁架构图，AGENTS.md 同步版本说明。
 
 ### v0.8.3 (2025-10-13)
 
@@ -1352,7 +1352,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 - 📚 **文档更新**：
   - 完整的 DDD + Hexagonal 架构文档
   - 合并 ARCHITECTURE 和 API_GUIDE 到 README
-  - 更新 CLAUDE.md 开发指南
+  - 更新 AGENTS.md（原 CLAUDE.md）开发指南
 
 ### v0.7.1 (2025-10-11)
 
@@ -1393,7 +1393,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 - ✅ 改进：Reanimater 添加告警日志（Example 与 EnDef 相同时）
 - ✅ 改进：Reanimater 内存优化，避免强制转换迭代器为列表
 - 🔧 修复：Lithoformer 破坏 Provider 抽象的问题，现使用统一接口
-- 📚 文档：更新 CLAUDE.md、ARCHITECTURE.md、README.md
+- 📚 文档：更新 AGENTS.md（原 CLAUDE.md）、ARCHITECTURE.md、README.md
 
 ### v2.0.0 (2025-10-07)
 
