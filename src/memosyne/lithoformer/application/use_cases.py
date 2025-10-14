@@ -80,14 +80,6 @@ class ParseQuizUseCase:
                 tokens = TokenUsage(**token_dict)
                 total_tokens = total_tokens + tokens
 
-                context_text = (block.get("context") or "").strip()
-                if context_text:
-                    stem_body = (item_dict.get("stem") or "").strip()
-                    combined = context_text
-                    if stem_body:
-                        combined += "\n\n" + stem_body
-                    item_dict["stem"] = combined
-
                 item = QuizItem(**_normalize_question_dict(item_dict))
 
                 if is_quiz_item_valid(item):
