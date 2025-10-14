@@ -78,7 +78,7 @@ class ParseQuizUseCase:
                 tokens = TokenUsage(**token_dict)
                 total_tokens = total_tokens + tokens
 
-                item = QuizItem(**item_dict)
+                item = QuizItem(**_normalize_question_dict(item_dict))
 
                 if is_quiz_item_valid(item):
                     valid_items.append(item)
@@ -98,3 +98,52 @@ class ParseQuizUseCase:
             total_count=len(question_blocks),
             token_usage=total_tokens,
         )
+
+
+def _normalize_question_dict(data: dict) -> dict:
+    """Ensure LLM output conforms to domain expectations."""
+    result = dict(data)
+
+    # Normalize qtype / answer casing
+    qtype = (result.get("qtype") or "").strip().upper()
+    if qtype:
+        result["qtype"] = qtype
+
+    answer = (result.get("answer") or "").strip()
+    result["answer"] = answer.upper()
+
+    # Ensure options keys exist and strip whitespace
+    options = result.get("options") or {}
+    for key in ["A", "B", "C", "D", "E", "F"]:
+        value = options.get(key, "")
+        if value is None:
+            value = ""
+        options[key] = str(value).strip()
+    result["options"] = options
+
+    # Normalize analysis block
+    analysis = result.get("analysis")
+    if isinstance(analysis, dict):
+        analysis["domain"] = (analysis.get("domain") or "").strip()
+        analysis["rationale"] = (analysis.get("rationale") or "").strip()
+
+        key_points = []
+        for point in analysis.get("key_points") or []:
+            text = str(point).strip()
+            if text:
+                key_points.append(text)
+        analysis["key_points"] = key_points
+
+        distractors = []
+        for dist in analysis.get("distractors") or []:
+            if not isinstance(dist, dict):
+                continue
+            option = (dist.get("option") or "").strip().upper()
+            reason = (dist.get("reason") or "").strip()
+            if option or reason:
+                distractors.append({"option": option, "reason": reason})
+        analysis["distractors"] = distractors
+
+        result["analysis"] = analysis
+
+    return result

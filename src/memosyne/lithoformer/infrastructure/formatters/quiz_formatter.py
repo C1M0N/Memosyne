@@ -33,17 +33,22 @@ def _inject_pic_linebreaks(stem: str) -> str:
 
 def _normalize_linebreaks_to_br(s: str) -> str:
     """统一换行符为 <br>"""
-    return s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = s.replace("\n", "<br>")
+    return s.replace("<br><br><br>", "<br><br>")
 
 
 def _sanitize_stem(stem: str) -> str:
     """清理题干中的垃圾行/伪选项/空行"""
     stem = _normalize_linebreaks_to_br(stem)
-    parts = [p for p in stem.split("<br>")]
+    parts = stem.split("<br>")
     cleaned = []
+    blank_pending = False
     for raw in parts:
+        original = raw
         line = _NOT_SELECTED.sub("", raw).strip()
         if not line:
+            blank_pending = True
             continue
         if _GRADE_ARTIFACT.match(line):
             continue
@@ -51,10 +56,10 @@ def _sanitize_stem(stem: str) -> str:
             continue
         if _LOWER_OPT_LINE.match(line) and line[:1].islower():  # 小写 a./b./c./d. 伪选项行
             continue
-        cleaned.append(raw.strip())
+        prefix = "<br><br>" if blank_pending else ""
+        cleaned.append(prefix + original.strip())
+        blank_pending = False
     out = "<br>".join(cleaned)
-    while "<br><br>" in out:
-        out = out.replace("<br><br>", "<br>")
     return out
 
 

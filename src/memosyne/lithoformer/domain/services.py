@@ -171,44 +171,45 @@ def infer_titles_from_markdown(markdown: str) -> tuple[str, str]:
             return main, sub
 
     # 尝试从题目前的自由文本中获取标题（兼容无 # 标题的旧数据）
-    preface_lines: list[str] = []
+    preface: list[str] = []
+    saw_context = False
     for raw_line in markdown.splitlines():
-        stripped = raw_line.strip()
-        if not stripped:
-            continue
+        stripped_right = raw_line.rstrip()
         upper = stripped.upper()
         if upper.startswith("```QUESTION") or upper.startswith("```ANSWER"):
             break
-        if stripped.startswith("##"):  # 遇到题号即停止
+        if NUMBER_HEADING.match(stripped):
             break
         if stripped.startswith("#"):
             stripped = stripped.lstrip("#").strip()
+            stripped_right = stripped
             if not stripped:
                 continue
-        preface_lines.append(stripped)
+        saw_context = True
+        preface.append(stripped_right if stripped_right else stripped)
 
-    if preface_lines:
-        main_line = preface_lines[0]
-        sub_line = preface_lines[1] if len(preface_lines) > 1 else ""
-
-        normalized = main_line.replace("：", ":")
-        if ":" in normalized:
-            left, right = normalized.split(":", 1)
-            left = left.strip()
-            right = right.strip()
-            if left:
-                main = left
-            if right:
-                sub = right
-            elif sub_line:
-                sub = sub_line
-        else:
-            main = normalized.strip()
-            if sub_line and not sub:
-                sub = sub_line.strip()
-
-        if main:
-            return main, sub
+    if saw_context and preface:
+        cleaned = [line.strip() for line in preface if line.strip()]
+        if cleaned:
+            first = cleaned[0]
+            rest = cleaned[1:]
+            normalized = first.replace(":", "：")
+            if "：" in normalized:
+                left, right = normalized.split("：", 1)
+                left = left.strip()
+                right = right.strip()
+                if left:
+                    main = left
+                if right:
+                    sub = right
+                elif rest:
+                    sub = rest[0]
+            else:
+                main = first.strip()
+                if rest:
+                    sub = rest[0]
+            if main:
+                return main, sub
 
     return "", ""
 
