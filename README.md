@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.9.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.9.1a-orange.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-DDD%20%2B%20Hexagonal-purple.svg)]()
 
 *领域驱动设计、类型安全、生产就绪的 LLM 工作流工具*
@@ -222,7 +222,7 @@ LOG_FORMAT=console
 
 ### 架构概览
 
-Memosyne v0.9.0 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
+Memosyne v0.9.1a 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
 
 #### 核心架构模式
 
@@ -1312,6 +1312,19 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 ---
 
 ## 📝 变更日志
+
+### v0.9.1a (2025-10-14)
+
+**数据更新**
+
+- ✨ 新增测验文件 `121.md`（35 道题目）及其解析输出
+
+### v0.9.1 (2025-10-14)
+
+**生产就绪版本**
+
+- ✨ 添加多个测验文件（42, 45, 55, 59, 79, 82, 94, 97, 101 号测验）
+- 🛠️ Lithoformer 领域服务优化
 
 ### v0.9.0 (2025-10-14)
 

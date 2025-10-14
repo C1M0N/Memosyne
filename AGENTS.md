@@ -7,7 +7,9 @@ This document captures shared memory and working agreements for AI coding agents
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v0.9.0** (当前) - DDD + Hexagonal 架构，Lithoformer 支持逐题中文解析
+- **v0.9.1a** (当前) - 数据更新，新增测验文件
+- **v0.9.1** - 生产就绪版本
+- **v0.9.0** - DDD + Hexagonal 架构，Lithoformer 支持逐题中文解析
 
 **核心架构模式**：
 - **Domain-Driven Design (DDD)** - 领域驱动设计
@@ -108,7 +110,7 @@ LOG_LEVEL=INFO
 
 ---
 
-## 核心架构 (v0.9.0 - DDD + Hexagonal)
+## 核心架构 (v0.9.1a - DDD + Hexagonal)
 
 ### DDD 分层架构
 
@@ -553,5 +555,5 @@ python -m memosyne.reanimator.cli.main
 
 ---
 
-**最后更新**: 2025-10-13
-**文档版本**: v0.9.0
+**最后更新**: 2025-10-14
+**文档版本**: v0.9.1a
