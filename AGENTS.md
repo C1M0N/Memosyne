@@ -480,6 +480,12 @@ Memosyne/
 
 ---
 
+## Lithoformer I/O Notes
+
+- 输入格式：题目使用 ```Question``` / ```Answer``` 成对代码块，兼容旧的 ```Gezhi``` 格式。
+- 标题推断：优先读取 Markdown 中的 `#` 标题；若缺失，可在 `src/memosyne/lithoformer/domain/services.py` 的 `TITLE_OVERRIDES` 中添加映射。
+- 默认字典目前包含 `"23": ("Profiles in Psychopathology", "Anxiety Disorders")`。
+
 ## 常见任务
 
 ### 添加新的 LLM Provider

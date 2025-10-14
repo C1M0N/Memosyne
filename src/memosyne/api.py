@@ -45,7 +45,10 @@ from .lithoformer.infrastructure import (
     FileAdapter,
     FormatterAdapter,
 )
-from .lithoformer.domain.services import infer_titles_from_markdown
+from .lithoformer.domain.services import (
+    infer_titles_from_markdown,
+    infer_titles_from_filename,
+)
 
 
 def reanimate(
@@ -258,7 +261,7 @@ def lithoform(
             title_sub = md_sub
 
         if title_main is None or title_sub is None:
-            inferred_main, inferred_sub = _infer_titles_from_filename(input_path)
+            inferred_main, inferred_sub = infer_titles_from_filename(input_path)
             title_main = title_main or inferred_main
             title_sub = title_sub or inferred_sub
 
@@ -339,31 +342,6 @@ def lithoform(
         },
     }
 
-
-def _infer_titles_from_filename(path: Path) -> tuple[str, str]:
-    """
-    从文件名推断标题
-
-    Example:
-        'Chapter 3 Quiz- Assessment and Classification.md'
-        -> ('Chapter 3 Quiz', 'Assessment and Classification')
-    """
-    name = path.stem  # 不含扩展名
-
-    # 常见模式："... Quiz- Subtitle"
-    if "Quiz" in name:
-        left, _, right = name.partition("Quiz")
-        main = (left + "Quiz").strip()
-        if "-" in right:
-            _, _, sub = right.partition("-")
-            sub = sub.strip()
-        else:
-            sub = right.strip().lstrip(":：-").strip()
-        if main:
-            return main, sub
-
-    # 兜底
-    return name.strip(), ""
 
 
 __all__ = [

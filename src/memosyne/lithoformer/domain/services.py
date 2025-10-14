@@ -170,6 +170,46 @@ def infer_titles_from_markdown(markdown: str) -> tuple[str, str]:
         if main:
             return main, sub
 
+    # 尝试从题目前的自由文本中获取标题（兼容无 # 标题的旧数据）
+    preface_lines: list[str] = []
+    for raw_line in markdown.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        upper = stripped.upper()
+        if upper.startswith("```QUESTION") or upper.startswith("```ANSWER"):
+            break
+        if stripped.startswith("##"):  # 遇到题号即停止
+            break
+        if stripped.startswith("#"):
+            stripped = stripped.lstrip("#").strip()
+            if not stripped:
+                continue
+        preface_lines.append(stripped)
+
+    if preface_lines:
+        main_line = preface_lines[0]
+        sub_line = preface_lines[1] if len(preface_lines) > 1 else ""
+
+        normalized = main_line.replace("：", ":")
+        if ":" in normalized:
+            left, right = normalized.split(":", 1)
+            left = left.strip()
+            right = right.strip()
+            if left:
+                main = left
+            if right:
+                sub = right
+            elif sub_line:
+                sub = sub_line
+        else:
+            main = normalized.strip()
+            if sub_line and not sub:
+                sub = sub_line.strip()
+
+        if main:
+            return main, sub
+
     return "", ""
 
 
