@@ -22,6 +22,7 @@ QUESTION_BLOCK_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL
 )
 HEADING_PATTERN = re.compile(r"^\s*##\s+.*$", re.MULTILINE)
+NUMBER_HEADING = re.compile(r"^\s*##\s+\d+.*$")
 LEGACY_BLOCK_PATTERN = re.compile(
     r"```Gezhi\s*\n(?P<question>.*?)```(?:\s*\n)*```Gezhi\s*\n(?P<answer>.*?)```",
     re.IGNORECASE | re.DOTALL
@@ -42,12 +43,16 @@ def split_markdown_into_questions(markdown: str) -> list[dict[str, str]]:
         question = match.group("question").strip()
         answer = match.group("answer").strip()
 
-        heading_segment = markdown[last_end:match.start()]
-        headings = HEADING_PATTERN.findall(heading_segment)
-        heading_prefix = headings[-1].strip() if headings else ""
+        segment = markdown[last_end:match.start()]
+        context_text = segment.strip()
+        if context_text:
+            ctx_lines = context_text.splitlines()
+            while ctx_lines and NUMBER_HEADING.match(ctx_lines[-1].strip()):
+                ctx_lines.pop()
+            context_text = "\n".join(ctx_lines).strip()
 
         blocks.append({
-            "context": heading_prefix,
+            "context": context_text,
             "question": question,
             "answer": answer,
         })
@@ -175,6 +180,7 @@ def infer_titles_from_markdown(markdown: str) -> tuple[str, str]:
     saw_context = False
     for raw_line in markdown.splitlines():
         stripped_right = raw_line.rstrip()
+        stripped = stripped_right.strip()
         upper = stripped.upper()
         if upper.startswith("```QUESTION") or upper.startswith("```ANSWER"):
             break

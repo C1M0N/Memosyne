@@ -32,35 +32,49 @@ def _inject_pic_linebreaks(stem: str) -> str:
 
 
 def _normalize_linebreaks_to_br(s: str) -> str:
-    """统一换行符为 <br>"""
+    """统一换行符为 <br>，保留空白段落"""
     s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = s.replace("\n\n", "\n<PARA>\n")
     s = s.replace("\n", "<br>")
-    return s.replace("<br><br><br>", "<br><br>")
+    return s.replace("<PARA>", "<br>")
 
 
 def _sanitize_stem(stem: str) -> str:
     """清理题干中的垃圾行/伪选项/空行"""
     stem = _normalize_linebreaks_to_br(stem)
     parts = stem.split("<br>")
-    cleaned = []
-    blank_pending = False
+    result: list[str] = []
+    blank_seen = False
+
     for raw in parts:
-        original = raw
         line = _NOT_SELECTED.sub("", raw).strip()
         if not line:
-            blank_pending = True
+            blank_seen = True
             continue
         if _GRADE_ARTIFACT.match(line):
+            blank_seen = False
             continue
-        if _NAKED_LETTER.match(line):  # 空的 'A.' 行
+        if _NAKED_LETTER.match(line):
+            blank_seen = False
             continue
-        if _LOWER_OPT_LINE.match(line) and line[:1].islower():  # 小写 a./b./c./d. 伪选项行
+        if _LOWER_OPT_LINE.match(line) and line[:1].islower():
+            blank_seen = False
             continue
-        prefix = "<br><br>" if blank_pending else ""
-        cleaned.append(prefix + original.strip())
-        blank_pending = False
-    out = "<br>".join(cleaned)
-    return out
+
+        text = raw.strip()
+        if not text:
+            blank_seen = False
+            continue
+
+        if result:
+            result.append("<br><br>" if blank_seen else "<br>")
+        elif blank_seen:
+            result.append("<br><br>")
+
+        result.append(text)
+        blank_seen = False
+
+    return "".join(result)
 
 
 def _strip_option_prefix(text: str) -> str:
@@ -117,9 +131,9 @@ def _has_any_option_text(options: dict) -> bool:
 
 
 def _collapse_br(s: str) -> str:
-    """折叠连续的 <br>"""
-    while "<br><br>" in s:
-        s = s.replace("<br><br>", "<br>")
+    """折叠过多的 <br>，保留双换行"""
+    while "<br><br><br>" in s:
+        s = s.replace("<br><br><br>", "<br><br>")
     return s
 
 
