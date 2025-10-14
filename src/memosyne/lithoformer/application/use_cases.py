@@ -68,7 +68,12 @@ class ParseQuizUseCase:
                     f"Calling LLM for item #{index}...",
                     enabled=show_progress,
                 ):
-                    item_dict, token_dict = self.llm.parse_question(block)
+                    item_dict, token_dict = self.llm.parse_question({
+                        "context": block.get("context", ""),
+                        "question": block.get("question", ""),
+                        "answer": block.get("answer", ""),
+                        "index": str(index),
+                    })
 
                 tokens = TokenUsage(**token_dict)
                 total_tokens = total_tokens + tokens
@@ -77,6 +82,8 @@ class ParseQuizUseCase:
 
                 if is_quiz_item_valid(item):
                     valid_items.append(item)
+                    if show_progress and progress and item.analysis:
+                        progress.set_postfix(领域=item.analysis.domain)
                 total_display = len(question_blocks)
                 progress.advance(
                     desc=(

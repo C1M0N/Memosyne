@@ -11,61 +11,77 @@ Quiz Schema - Quiz 题目 JSON Schema
   - ORDER: steps 必填，options 可省略, cloze_answers=[], answer=""
 """
 
-QUIZ_SCHEMA = {
-    "name": "QuizItems",
-    "strict": True,  # 严格模式，类型安全
+QUESTION_SCHEMA = {
+    "name": "QuizQuestion",
+    "strict": True,
     "schema": {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "items": {
+            "qtype": {
+                "type": "string",
+                "enum": ["MCQ", "CLOZE", "ORDER"],
+                "description": "题目类型：MCQ=选择题, CLOZE=填空题, ORDER=排序题"
+            },
+            "stem": {
+                "type": "string",
+                "description": "题干内容（需要保留原始换行，使用 <br> 表示）"
+            },
+            "steps": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "qtype": {
-                            "type": "string",
-                            "enum": ["MCQ", "CLOZE", "ORDER"],
-                            "description": "题目类型：MCQ=选择题, CLOZE=填空题, ORDER=排序题"
-                        },
-                        "stem": {
-                            "type": "string",
-                            "description": "题干（题目主要内容）"
-                        },
-                        "steps": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "排序题的步骤列表（ORDER 类型必填，其他类型给空数组 []）"
-                        },
-                        "options": {
+                "items": {"type": "string"},
+                "description": "排序题步骤列表（ORDER 类型必填，其他类型填 []）"
+            },
+            "options": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "A": {"type": "string"},
+                    "B": {"type": "string"},
+                    "C": {"type": "string"},
+                    "D": {"type": "string"},
+                    "E": {"type": "string"},
+                    "F": {"type": "string"}
+                },
+                "required": ["A", "B", "C", "D", "E", "F"],
+                "description": "选择题选项（无选项则均为空字符串）"
+            },
+            "answer": {
+                "type": "string",
+                "description": "正确答案：MCQ/ORDER 填 A-F，CLOZE 填空字符串"
+            },
+            "cloze_answers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "填空题答案列表（CLOZE 类型必填，其他类型填 []）"
+            },
+            "analysis": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "domain": {"type": "string"},
+                    "rationale": {"type": "string"},
+                    "key_points": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    },
+                    "distractors": {
+                        "type": "array",
+                        "items": {
                             "type": "object",
                             "additionalProperties": False,
                             "properties": {
-                                "A": {"type": "string"},
-                                "B": {"type": "string"},
-                                "C": {"type": "string"},
-                                "D": {"type": "string"},
-                                "E": {"type": "string"},
-                                "F": {"type": "string"}
+                                "option": {"type": "string"},
+                                "reason": {"type": "string"}
                             },
-                            "required": ["A", "B", "C", "D", "E", "F"],
-                            "description": "选择题的选项（MCQ 类型必填，其他类型填空字符串）"
-                        },
-                        "answer": {
-                            "type": "string",
-                            "description": "选择题的正确答案字母（MCQ 类型填 A-F，其他类型填空字符串）"
-                        },
-                        "cloze_answers": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "填空题的答案列表（CLOZE 类型必填，其他类型给空数组 []）"
+                            "required": ["option", "reason"]
                         }
-                    },
-                    "required": ["qtype", "stem", "steps", "options", "answer", "cloze_answers"]
-                }
+                    }
+                },
+                "required": ["domain", "rationale", "key_points", "distractors"],
+                "description": "题目解析信息"
             }
         },
-        "required": ["items"]
+        "required": ["qtype", "stem", "steps", "options", "answer", "cloze_answers", "analysis"]
     }
 }

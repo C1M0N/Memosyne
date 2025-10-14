@@ -24,6 +24,23 @@ class QuizOptions(BaseModel):
         return {k: v for k, v in self.model_dump().items() if v}
 
 
+class DistractorAnalysis(BaseModel):
+    """解析单个错误选项的原因"""
+    option: str = Field(..., description="错误选项字母，如 'A'")
+    reason: str = Field(..., description="该选项不正确的原因说明")
+
+
+class QuizAnalysis(BaseModel):
+    """题目解析信息"""
+    domain: str = Field(..., description="知识领域标签")
+    rationale: str = Field(..., description="为什么正确答案正确的核心解释")
+    key_points: list[str] = Field(default_factory=list, description="相关知识点列表")
+    distractors: list[DistractorAnalysis] = Field(
+        default_factory=list,
+        description="每个错误选项的说明"
+    )
+
+
 class QuizItem(BaseModel):
     """Single quiz question (domain entity)"""
 
@@ -55,6 +72,10 @@ class QuizItem(BaseModel):
         default_factory=list,
         description="Fill-in-blank answers (for CLOZE type)"
     )
+    analysis: QuizAnalysis | None = Field(
+        default=None,
+        description="题目解析与知识点"
+    )
 
     def is_valid(self) -> bool:
         """Check if quiz item is valid"""
@@ -62,16 +83,23 @@ class QuizItem(BaseModel):
             return False
 
         if self.qtype == "MCQ":
-            # MCQ needs options and answer
-            return bool(self.options.to_dict() and self.answer)
+            if not (self.options.to_dict() and self.answer):
+                return False
         elif self.qtype == "CLOZE":
-            # CLOZE needs cloze_answers
-            return bool(self.cloze_answers)
+            if not self.cloze_answers:
+                return False
         elif self.qtype == "ORDER":
-            # ORDER needs steps and answer
-            return bool(self.steps and self.answer)
+            if not (self.steps and self.answer):
+                return False
+        else:
+            return False
 
-        return False
+        if not self.analysis or not self.analysis.domain.strip():
+            return False
+        if not self.analysis.rationale.strip():
+            return False
+
+        return True
 
 
 class QuizResponse(BaseModel):

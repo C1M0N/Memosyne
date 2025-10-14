@@ -17,7 +17,7 @@ from typing import Any
 
 from ...core.interfaces import LLMProvider, LLMError
 from .prompts import LITHOFORMER_SYSTEM_PROMPT, LITHOFORMER_USER_TEMPLATE
-from .schemas import QUIZ_SCHEMA
+from .schemas import QUESTION_SCHEMA
 
 
 class LithoformerLLMAdapter:
@@ -30,12 +30,12 @@ class LithoformerLLMAdapter:
         """
         self.provider = provider
 
-    def parse_question(self, markdown: str) -> tuple[dict[str, Any], dict[str, int]]:
+    def parse_question(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
         """
-        解析单个 Quiz Markdown 片段（实现 LLMPort.parse_question）
+        解析并分析单个题目（实现 LLMPort.parse_question）
 
         Args:
-            markdown: Quiz 单题 Markdown 文本
+            payload: 包含 context/question/answer 的字典
 
         Returns:
             (question_dict, token_usage_dict)
@@ -44,33 +44,37 @@ class LithoformerLLMAdapter:
             LLMError: LLM 调用失败
         """
         try:
-            # 组装 Lithoformer 特定的 prompts
-            system_prompt = LITHOFORMER_SYSTEM_PROMPT
-            user_prompt = LITHOFORMER_USER_TEMPLATE.format(md=markdown)
+            context = (payload.get("context") or "").strip()
+            question = (payload.get("question") or "").strip()
+            answer = (payload.get("answer") or "").strip()
+
+            if not question:
+                raise LLMError("题目内容为空，无法解析")
+
+            user_prompt = LITHOFORMER_USER_TEMPLATE.format(
+                context=context if context else "",
+                question=question,
+                answer=answer,
+            )
 
             # 调用底层 LLM Provider 的通用方法
             llm_response, token_usage = self.provider.complete_structured(
-                system_prompt=system_prompt,
+                system_prompt=LITHOFORMER_SYSTEM_PROMPT,
                 user_prompt=user_prompt,
-                schema=QUIZ_SCHEMA["schema"],
-                schema_name=QUIZ_SCHEMA["name"]
+                schema=QUESTION_SCHEMA["schema"],
+                schema_name=QUESTION_SCHEMA["name"]
             )
 
-            items = llm_response.get("items", [])
-            if not isinstance(items, list) or not items:
-                raise LLMError("LLM 未返回任何题目数据")
-            first_item = items[0]
-            if not isinstance(first_item, dict):
-                raise LLMError("LLM 返回的题目数据格式不正确")
+            if not isinstance(llm_response, dict):
+                raise LLMError("LLM 返回的数据格式不正确")
 
-            # 转换 TokenUsage 对象为字典（适配端口接口）
             token_dict = {
                 "prompt_tokens": token_usage.prompt_tokens,
                 "completion_tokens": token_usage.completion_tokens,
                 "total_tokens": token_usage.total_tokens,
             }
 
-            return first_item, token_dict
+            return llm_response, token_dict
 
         except LLMError:
             # LLM 错误直接向上传播

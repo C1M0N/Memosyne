@@ -11,12 +11,12 @@ from ..domain.models import QuizItem
 class LLMPort(Protocol):
     """LLM calling capability (implemented by Infrastructure)"""
 
-    def parse_question(self, markdown: str) -> tuple[dict, dict]:
+    def parse_question(self, payload: dict[str, str]) -> tuple[dict, dict]:
         """
-        Parse a single quiz question markdown using LLM
+        Analyse a single quiz question using LLM
 
         Args:
-            markdown: Question markdown block
+            payload: Dict containing context/question/answer texts
 
         Returns:
             (question_dict, token_usage_dict)

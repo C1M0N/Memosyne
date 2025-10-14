@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v0.8.3** (当前) - 采用 DDD + Hexagonal Architecture，生产就绪
+- **v0.9.0** (当前) - DDD + Hexagonal 架构，Lithoformer 支持逐题中文解析
 
 **核心架构模式**：
 - **Domain-Driven Design (DDD)** - 领域驱动设计
@@ -17,7 +17,7 @@ Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析
 
 主要功能：
 1. **Reanimator（术语重生器）** - 术语记忆处理管道，生成结构化术语卡片
-2. **Lithoformer（Quiz 重塑器）** - 测验解析器，将 Markdown 测验转换为标准化格式
+2. **Lithoformer（Quiz 重塑器）** - 测验解析器，将 Markdown 测验转换为标准化格式（输入使用 ```Question``` / ```Answer``` 配对代码块，并为每题生成详细解析）
 
 ---
 
@@ -108,7 +108,7 @@ LOG_LEVEL=INFO
 
 ---
 
-## 核心架构 (v0.8.3 - DDD + Hexagonal)
+## 核心架构 (v0.9.0 - DDD + Hexagonal)
 
 ### DDD 分层架构
 
@@ -549,4 +549,4 @@ python -m memosyne.reanimator.cli.main
 ---
 
 **最后更新**: 2025-10-13
-**文档版本**: v0.8.3
+**文档版本**: v0.9.0

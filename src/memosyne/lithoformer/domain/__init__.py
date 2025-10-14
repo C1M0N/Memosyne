@@ -3,7 +3,13 @@ Lithoformer Domain Layer
 
 The innermost layer following strict dependency rules.
 """
-from .models import QuizOptions, QuizItem, QuizResponse
+from .models import (
+    QuizOptions,
+    QuizItem,
+    QuizResponse,
+    QuizAnalysis,
+    DistractorAnalysis,
+)
 from .services import (
     is_quiz_item_valid,
     filter_valid_items,
@@ -25,6 +31,8 @@ __all__ = [
     "QuizOptions",
     "QuizItem",
     "QuizResponse",
+    "QuizAnalysis",
+    "DistractorAnalysis",
     # Services
     "is_quiz_item_valid",
     "filter_valid_items",

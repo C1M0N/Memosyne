@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.8.3-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.9.0-orange.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-DDD%20%2B%20Hexagonal-purple.svg)]()
 
 *领域驱动设计、类型安全、生产就绪的 LLM 工作流工具*
@@ -75,6 +75,37 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 - ✅ 自动批次 ID 生成（格式：YYMMDD + RunLetter + Count）
 - ✅ 智能文件命名（BatchID-FileName-ModelCode.ext）
 - ✅ 防重名输出路径
+
+---
+
+### Lithoformer 输入/输出规范
+
+**📥 输入 Markdown（每题一对代码块）**
+
+```Question
+Unlike fear, panic __________.
+    a. is present oriented
+    b. occurs in the absence of a "real" threat
+    c. is future oriented
+    d. involves autonomic nervous system (ANS) arousal
+```
+
+```Answer
+b
+```
+
+- `Question` 代码块中保留题干与选项的原始排版（缩进、空行、图片占位等均可）。
+- `Answer` 代码块填写标准答案：选择题写字母、填空题写正确填空（多空以逗号/换行分隔）、排序题写顺序（如 `B,A,C,D`）。
+- 可在代码块前保留 `## 章节/题号` 等标题，Lithoformer 会自动带入上下文信息。
+- 兼容性：历史数据使用的 ` ```Gezhi` 格式仍可解析，但建议尽快迁移到新的 `Question/Answer` 语法。
+
+**📤 输出示例（ShouldBe.txt 片段）**
+
+```
+<b>Chapter 5 Quiz:<br>Anxiety and Obsessive-Compulsive and Related Disorders</b><br><br>[Unlike fear, panic __________.<br>A. is present oriented<br>B. occurs in the absence of a "real" threat<br>C. is future oriented<br>D. involves autonomic nervous system (ANS) arousal<br>]::(B)<br><br>[[解析::<br><div>领域：Anxiety Disorders</div><div>为什么选 b（Panic，惊恐障碍）</div><div>广场恐惧症常与惊恐障碍共病：患者害怕在难以逃离或无法得到帮助的场所再次出现惊恐发作，因此会回避公共场所。</div><div><br></div><div>相关知识：</div><div>DSM-5-TR 将惊恐障碍与广场恐惧症分列诊断，但临床筛查中两者高度共病。</div><div>惊恐障碍的核心是突发惊恐发作与对再次发作的预期性焦虑，这是促成广场恐惧情境回避的直接机制。</div><div><br></div><div>其他选项为什么不如 b：</div><div>A. 广泛性焦虑属于弥散性担忧，缺少“在难以逃离处怕惊恐发作”的机制。</div><div>C. 焦虑强调对未来威胁的预期，与广场恐惧的回避触发点耦合度较低。</div><div>D. 皮肤搔抓障碍属体聚焦重复行为，与惊恐—回避机制关系较远。</div>]]<br>
+```
+
+> 每题输出包含：原题 → 标准答案 → 自动生成的领域分析、关键知识点和错误选项逐条解析。
 
 ---
 
@@ -191,7 +222,7 @@ LOG_FORMAT=console
 
 ### 架构概览
 
-Memosyne v0.8.3 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
+Memosyne v0.9.0 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
 
 #### 核心架构模式
 
@@ -341,7 +372,7 @@ src/memosyne/
 │   ├── infrastructure/             # 基础设施层
 │   │   ├── llm_adapter.py          # LithoformerLLMAdapter（注入 prompts/schemas）
 │   │   ├── prompts.py              # LITHOFORMER_SYSTEM_PROMPT
-│   │   ├── schemas.py              # QUIZ_SCHEMA
+│   │   ├── schemas.py              # QUESTION_SCHEMA
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
 │   │   └── formatters/             # QuizFormatter（依赖领域模型）
@@ -364,245 +395,59 @@ db/
 
 ### 架构图表
 
-#### 系统架构图
+#### 系统架构（简化）
 
 ```mermaid
-graph TB
-    subgraph "用户接口层"
-        CLI1[Reanimator CLI]
-        CLI2[Lithoformer CLI]
-        API[Programming API<br/>reanimate/lithoform]
-    end
+flowchart LR
+    CLI["CLI / Scripts"]
+    API["Python API"]
+    App["Application Layer<br/>(Use Cases & Ports)"]
+    Infra["Infrastructure Layer<br/>(Adapters)"]
+    Domain["Domain Layer<br/>(Models & Services)"]
+    Shared["Shared Kernel<br/>(Providers · Config · Utils)"]
 
-    subgraph "Reanimator 子域"
-        subgraph "Infrastructure"
-            RA_LLMAdapter[LLM Adapter]
-            RA_CSVAdapter[CSV Adapter]
-            RA_TermListAdapter[TermList Adapter]
-            RA_Prompts[Prompts/Schemas]
-        end
-        subgraph "Application"
-            RA_UseCase[ProcessTermsUseCase]
-            RA_Ports[Ports: LLMPort, TermListPort]
-        end
-        subgraph "Domain"
-            RA_Models[TermInput/Output]
-            RA_Services[Business Rules]
-        end
-    end
-
-    subgraph "Lithoformer 子域"
-        subgraph "Infrastructure"
-            LF_LLMAdapter[LLM Adapter]
-            LF_FileAdapter[File Adapter]
-            LF_Formatter[Quiz Formatter]
-            LF_Prompts[Prompts/Schemas]
-        end
-        subgraph "Application"
-            LF_UseCase[ParseQuizUseCase]
-            LF_Ports[Ports: LLMPort]
-        end
-        subgraph "Domain"
-            LF_Models[QuizItem]
-            LF_Services[Domain Services]
-        end
-    end
-
-    subgraph "Shared Kernel"
-        Config[Settings]
-        LLMProviders[OpenAI/Anthropic Providers]
-        Storage[CSV/TermList Repository]
-        Utils[Utils: Batch, Logger, Progress]
-        CoreModels[TokenUsage, ProcessResult]
-    end
-
-    CLI1 --> RA_UseCase
-    CLI2 --> LF_UseCase
-    API --> RA_UseCase
-    API --> LF_UseCase
-
-    RA_UseCase --> RA_Ports
-    RA_LLMAdapter -.implements.-> RA_Ports
-    RA_CSVAdapter -.implements.-> RA_Ports
-    RA_TermListAdapter -.implements.-> RA_Ports
-    RA_LLMAdapter --> RA_Prompts
-    RA_LLMAdapter --> LLMProviders
-    RA_UseCase --> RA_Services
-    RA_Services --> RA_Models
-
-    LF_UseCase --> LF_Ports
-    LF_LLMAdapter -.implements.-> LF_Ports
-    LF_LLMAdapter --> LF_Prompts
-    LF_LLMAdapter --> LLMProviders
-    LF_UseCase --> LF_Services
-    LF_Services --> LF_Models
-    LF_Formatter --> LF_Models
-
-    RA_UseCase --> CoreModels
-    LF_UseCase --> CoreModels
-    RA_CSVAdapter --> Storage
-    RA_TermListAdapter --> Storage
-    RA_UseCase --> Utils
-    LF_UseCase --> Utils
-
-    style CLI1 fill:#e1f5ff
-    style CLI2 fill:#e1f5ff
-    style API fill:#e1f5ff
-    style RA_UseCase fill:#ffd700
-    style LF_UseCase fill:#ffd700
-    style LLMProviders fill:#87ceeb
-    style Config fill:#90ee90
-```
-
-#### Reanimator 子域架构
-
-```mermaid
-flowchart TB
-    subgraph "CLI"
-        CLI[Reanimator CLI<br/>src/memosyne/reanimator/cli/main.py]
-    end
-
-    subgraph "Application Layer"
-        UseCase[ProcessTermsUseCase<br/>业务流程编排]
-        Ports[Ports<br/>LLMPort, TermListPort]
-    end
-
-    subgraph "Infrastructure Layer"
-        LLMAdapter[ReanimatorLLMAdapter<br/>注入 Prompts/Schemas]
-        CSVAdapter[CSVTermAdapter<br/>CSV 读写]
-        TermListAdapter[TermListAdapter<br/>术语表查询]
-        Prompts[Prompts<br/>REANIMATER_SYSTEM_PROMPT]
-        Schemas[Schemas<br/>TERM_RESULT_SCHEMA]
-    end
-
-    subgraph "Domain Layer"
-        Models[Models<br/>TermInput, LLMResponse, TermOutput]
-        Services[Domain Services<br/>apply_business_rules<br/>get_chinese_tag<br/>generate_memo_id]
-    end
-
-    subgraph "Shared Kernel"
-        OpenAI[OpenAIProvider]
-        Anthropic[AnthropicProvider]
-        CSVRepo[CSVRepository]
-        TermListRepo[TermListRepository]
-        Progress[Progress]
-        TokenUsage[TokenUsage, ProcessResult]
-    end
-
-    CLI --> UseCase
-    UseCase --> Ports
-    LLMAdapter -.implements.-> Ports
-    CSVAdapter -.implements.-> Ports
-    TermListAdapter -.implements.-> Ports
-
-    LLMAdapter --> Prompts
-    LLMAdapter --> Schemas
-    LLMAdapter --> OpenAI
-    LLMAdapter --> Anthropic
-
-    CSVAdapter --> CSVRepo
-    TermListAdapter --> TermListRepo
-
-    UseCase --> Services
-    Services --> Models
-    UseCase --> TokenUsage
-    UseCase --> Progress
-
-    style UseCase fill:#ffd700
-    style Ports fill:#ffe1e1
-    style Services fill:#90ee90
-    style Models fill:#fff4e1
-```
-
-#### Lithoformer 子域架构
-
-```mermaid
-flowchart TB
-    subgraph "CLI"
-        CLI[Lithoformer CLI<br/>src/memosyne/lithoformer/cli/main.py]
-    end
-
-    subgraph "Application Layer"
-        UseCase[ParseQuizUseCase<br/>业务流程编排]
-        Ports[Ports<br/>LLMPort]
-    end
-
-    subgraph "Infrastructure Layer"
-        LLMAdapter[LithoformerLLMAdapter<br/>注入 Prompts/Schemas]
-        FileAdapter[FileAdapter<br/>文件读写]
-        FormatterAdapter[FormatterAdapter<br/>Quiz 格式化]
-        Prompts[Prompts<br/>LITHOFORMER_SYSTEM_PROMPT]
-        Schemas[Schemas<br/>QUIZ_SCHEMA]
-        QuizFormatter[QuizFormatter<br/>依赖 QuizItem]
-    end
-
-    subgraph "Domain Layer"
-        Models[Models<br/>QuizItem, QuizOptions]
-        Services[Domain Services<br/>split_markdown_into_questions<br/>infer_titles_from_markdown<br/>is_quiz_item_valid]
-    end
-
-    subgraph "Shared Kernel"
-        OpenAI[OpenAIProvider]
-        Anthropic[AnthropicProvider]
-        Progress[Progress]
-        TokenUsage[TokenUsage, ProcessResult]
-    end
-
-    CLI --> UseCase
-    UseCase --> Ports
-    LLMAdapter -.implements.-> Ports
-
-    LLMAdapter --> Prompts
-    LLMAdapter --> Schemas
-    LLMAdapter --> OpenAI
-    LLMAdapter --> Anthropic
-
-    FormatterAdapter --> QuizFormatter
-    QuizFormatter --> Models
-
-    UseCase --> Services
-    Services --> Models
-    UseCase --> TokenUsage
-    UseCase --> Progress
-
-    style UseCase fill:#ffd700
-    style Ports fill:#ffe1e1
-    style Services fill:#90ee90
-    style Models fill:#fff4e1
-    style QuizFormatter fill:#ff6b6b
-```
-
-#### 依赖关系图
-
-```mermaid
-graph LR
-    subgraph "Dependency Flow（依赖流向）"
-        CLI[CLI/API]
-        Infra[Infrastructure<br/>Adapters]
-        App[Application<br/>Use Cases + Ports]
-        Domain[Domain<br/>Models + Services]
-        Shared[Shared Kernel]
-    end
-
-    CLI --> Infra
     CLI --> App
-    Infra -.implements.-> App
+    API --> App
     App --> Domain
+    App --> Infra
     Infra --> Shared
-    App --> Shared
-
-    style CLI fill:#e1f5ff
-    style Infra fill:#f0e1ff
-    style App fill:#ffd700
-    style Domain fill:#90ee90
-    style Shared fill:#fff4e1
+    Domain --> Shared
 ```
 
-**关键规则**：
-- ✅ 外层可以依赖内层
-- ✅ Infrastructure 实现 Application 的端口接口
-- ❌ 内层不能依赖外层
-- ❌ Domain 层不依赖任何层
+**关键规则**
+- ✅ CLI / API 仅与 Application 层交互
+- ✅ Infrastructure 实现 Application 定义的端口接口
+- ✅ Domain 层不依赖外层，保持业务纯净
+- ❌ Shared Kernel 不包含任何子域业务逻辑（Prompt、Schema 等需留在子域）
+
+#### 子域组件速览
+
+**Reanimator（术语重生器）**
+
+| 层级 | 关键组件 |
+|------|-----------|
+| Domain | `TermInput` / `TermOutput`；`apply_business_rules`、`generate_memo_id` 等领域服务 |
+| Application | `ProcessTermsUseCase`；端口接口 `LLMPort`、`TermListPort` |
+| Infrastructure | `ReanimatorLLMAdapter`、`CSVTermAdapter`、`TermListAdapter`、`REANIMATER_SYSTEM_PROMPT`、`TERM_RESULT_SCHEMA` |
+| CLI | `reanimator/cli/main.py`、`run_reanimate.sh` |
+
+**Lithoformer（Quiz 重塑器）**
+
+| 层级 | 关键组件 |
+|------|-----------|
+| Domain | `QuizItem`、`QuizAnalysis`；`split_markdown_into_questions`、`infer_titles_from_markdown` 等领域服务 |
+| Application | `ParseQuizUseCase`；端口接口 `LLMPort` |
+| Infrastructure | `LithoformerLLMAdapter`、`FileAdapter`、`FormatterAdapter`、`LITHOFORMER_SYSTEM_PROMPT`、`QUESTION_SCHEMA` |
+| CLI | `lithoformer/cli/main.py`、`run_lithoform.sh` |
+
+**Shared Kernel**
+
+| 模块 | 说明 |
+|------|------|
+| Config & Settings | `.env` 驱动的 `Settings` 单例，集中管理目录/密钥 |
+| Utils | `BatchIDGenerator`、`Progress`、`model_codes`、`path` 等通用工具 |
+| LLM Providers | `OpenAIProvider`、`AnthropicProvider`（不包含任何业务逻辑） |
+| Core Models | `TokenUsage`、`ProcessResult[T]` |
 
 ### 设计决策
 
@@ -1461,13 +1306,22 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 
 ## 📚 文档
 
-- **[CLAUDE.md](CLAUDE.md)** - Claude Code 工作指南（开发指南）
-- **[CLI_USAGE.md](CLI_USAGE.md)** - CLI 使用说明
-- **[GIT_GUIDE.md](GIT_GUIDE.md)** - Git 项目管理完整教程
+- **[CLAUDE.md](CLAUDE.md)** – Claude Code 工作指南（协作须知、开发流程）
+- 架构、CLI、API 的详细说明已整合进本 README（参见目录链接）。
 
 ---
 
 ## 📝 变更日志
+
+### v0.9.0 (2025-10-14)
+
+**逐题解析与中文详解**
+
+- ✨ **题目格式升级**：支持 ` ```Question` / ` ```Answer` 代码块输入，自动兼容旧的 ` ```Gezhi` 格式，并按题逐条调用 LLM。
+- ✨ **医学级解析输出**：每道题新增 `analysis` 字段（领域、中文解析、关键知识点、干扰项理由），Formatter 生成 `[[解析:: ...]]` 区块。
+- ✨ **Prompt & Schema 重写**：Lithoformer LLM 提示词聚焦临床心理学语境，强制返回中文解释，Schema 精简为单题 `QuizQuestion`。
+- 🛠️ **进度反馈增强**：Shared `Progress` 展示速率与剩余时间，运行时显示当前题目所属领域。
+- 📚 **文档更新**：README 补充新版输入/输出规范与简洁架构图，CLAUDE.md 同步版本说明。
 
 ### v0.8.3 (2025-10-13)
 

@@ -11,62 +11,66 @@ Business rules:
 2. Title inference from filename
 3. Quiz type detection
 """
+import re
 from pathlib import Path
 
 from .models import QuizItem
 
 
-def split_markdown_into_questions(markdown: str) -> list[str]:
+QUESTION_BLOCK_PATTERN = re.compile(
+    r"```Question\s*\n(?P<question>.*?)```(?:\s*\n)*```Answer\s*\n(?P<answer>.*?)```",
+    re.IGNORECASE | re.DOTALL
+)
+HEADING_PATTERN = re.compile(r"^\s*##\s+.*$", re.MULTILINE)
+LEGACY_BLOCK_PATTERN = re.compile(
+    r"```Gezhi\s*\n(?P<question>.*?)```(?:\s*\n)*```Gezhi\s*\n(?P<answer>.*?)```",
+    re.IGNORECASE | re.DOTALL
+)
+
+
+def split_markdown_into_questions(markdown: str) -> list[dict[str, str]]:
     """
-    将整份 Quiz Markdown 拆分为单题片段。
+    将遵循 ```Question``` / ```Answer``` 格式的 Markdown 拆分为题目块，返回包含上下文信息的字典。
 
-    规则：
-    - 以以 '## ' 开头的行作为题目边界
-    - 如果文档中没有 '## '，则视为只有一题
+    Returns:
+        每个元素包含 {"context": ..., "question": ..., "answer": ...}
     """
-    lines = markdown.splitlines()
-    blocks: list[str] = []
-    current: list[str] = []
+    blocks: list[dict[str, str]] = []
+    last_end = 0
 
-    def flush() -> None:
-        if not current:
-            return
-        block_text = "\n".join(current).strip()
-        if _looks_like_question(block_text):
-            blocks.append(block_text)
-        current.clear()
+    for match in QUESTION_BLOCK_PATTERN.finditer(markdown):
+        question = match.group("question").strip()
+        answer = match.group("answer").strip()
 
-    for line in lines:
-        if line.startswith("## "):
-            flush()
-            current.append(line)
-        else:
-            current.append(line)
+        heading_segment = markdown[last_end:match.start()]
+        headings = HEADING_PATTERN.findall(heading_segment)
+        heading_prefix = headings[-1].strip() if headings else ""
 
-    if current:
-        flush()
+        blocks.append({
+            "context": heading_prefix,
+            "question": question,
+            "answer": answer,
+        })
+        last_end = match.end()
+
+    if not blocks:
+        for match in LEGACY_BLOCK_PATTERN.finditer(markdown):
+            question = match.group("question").strip()
+            answer = match.group("answer").strip()
+            blocks.append({
+                "context": "",
+                "question": question,
+                "answer": answer,
+            })
 
     if not blocks and markdown.strip():
-        return [markdown.strip()]
+        blocks.append({
+            "context": "",
+            "question": markdown.strip(),
+            "answer": "",
+        })
 
     return blocks
-
-
-def _looks_like_question(block: str) -> bool:
-    stripped = block.strip()
-    if not stripped:
-        return False
-    lines = [line.strip() for line in block.splitlines() if line.strip()]
-    if not lines:
-        return False
-    if any(line.startswith("## ") for line in lines):
-        return True
-    if any(line.startswith("```") for line in lines):
-        return True
-    option_prefixes = ("a.", "b.", "c.", "d.", "e.", "f.", "a)", "b)", "c)", "d)")
-    if any(line.lower().startswith(option_prefixes) for line in lines):
-        return True
-    return False
 
 
 def is_quiz_item_valid(item: QuizItem) -> bool:

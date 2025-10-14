@@ -118,6 +118,53 @@ def _collapse_br(s: str) -> str:
     return s
 
 
+def _format_analysis(item: QuizItem) -> str:
+    analysis = item.analysis
+    if analysis is None:
+        return ""
+
+    sections: list[str] = []
+    if analysis.domain.strip():
+        sections.append(f"<div>领域：{analysis.domain.strip()}</div>")
+
+    answer_letter = (item.answer or "").strip().upper()
+    options_map = item.options.model_dump()
+    answer_text = (options_map.get(answer_letter) or "").strip()
+    header = f"为什么选 {answer_letter.lower()}"
+    if answer_text:
+        header += f"（{answer_text}）"
+    sections.append(f"<div>{header}</div>")
+
+    if analysis.rationale.strip():
+        sections.append(f"<div>{_normalize_linebreaks_to_br(analysis.rationale.strip())}</div>")
+
+    key_points = [kp.strip() for kp in analysis.key_points if kp.strip()]
+    if key_points:
+        sections.append("<div><br></div>")
+        sections.append("<div>相关知识：</div>")
+        for kp in key_points:
+            sections.append(f"<div>{_normalize_linebreaks_to_br(kp)}</div>")
+
+    distractors_html: list[str] = []
+    for dist in analysis.distractors:
+        option_letter = (dist.option or "").strip().upper()
+        if not option_letter:
+            continue
+        reason = _normalize_linebreaks_to_br(dist.reason.strip())
+        distractors_html.append(f"<div>{option_letter}. {reason}</div>")
+
+    if distractors_html:
+        sections.append("<div><br></div>")
+        sections.append(f"<div>其他选项为什么不如 {answer_letter.lower()}：</div>")
+        sections.extend(distractors_html)
+
+    if not sections:
+        return ""
+
+    analysis_body = _collapse_br("".join(sections))
+    return f"<br><br>[[解析::<br>{analysis_body}]]<br>"
+
+
 def _remove_option_texts_from_stem(stem: str, options: dict) -> str:
     """把题干中"恰好和某个选项文本相同"的行移除，避免重复"""
     option_texts = set(
@@ -233,8 +280,8 @@ class QuizFormatter:
                 # 正常 CLOZE：按答案覆盖
                 stem_render = _replace_cloze(stem, cloz)
                 body = _collapse_br(stem_render)
-                block = f"{head}<br><br>{body}"
-                blocks.append(block)
+                analysis_html = _format_analysis(item)
+                blocks.append(f"{head}<br><br>{body}{analysis_html}")
                 continue
 
             if qtype == "ORDER":
@@ -260,7 +307,8 @@ class QuizFormatter:
                         lines.append(f"{letter}. {_normalize_sequence(text)}")
                 lines.append(f"]::({ans})")
                 body = _collapse_br("<br>".join(lines))
-                blocks.append(f"{head}<br><br>{body}")
+                analysis_html = _format_analysis(item)
+                blocks.append(f"{head}<br><br>{body}{analysis_html}")
                 continue
 
             # MCQ：图题若选项全空 → 回填 A..D = "A/B/C/D"
@@ -284,7 +332,8 @@ class QuizFormatter:
                     lines.append(f"{letter}. {text}")
             lines.append(f"]::({ans})")
             body = _collapse_br("<br>".join(lines))
-            blocks.append(f"{head}<br><br>{body}")
+            analysis_html = _format_analysis(item)
+            blocks.append(f"{head}<br><br>{body}{analysis_html}")
 
         # 每题之间物理换行
         return "\n".join(blocks)

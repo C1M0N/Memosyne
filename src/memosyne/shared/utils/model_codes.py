@@ -21,7 +21,7 @@ MODEL_TO_CODE: dict[str, str] = {
     "gpt-5-mini": "o50m",
     "gpt-5": "o50o",
     "gpt-4o": "o4oo",
-    "gpt-4o-mini": "oo4m",
+    "gpt-4o-mini": "o4om",
     "o3": "oo3o",
     "o4-mini": "oo4m",  # 别名
 
@@ -41,7 +41,7 @@ CODE_TO_MODEL: dict[str, str] = {
     "o50m": "gpt-5-mini",
     "o50o": "gpt-5",
     "o4oo": "gpt-4o",
-    "oo4m": "gpt-4o-mini",
+    "o4om": "gpt-4o-mini",
     "oo3o": "o3",
 
     # Claude
