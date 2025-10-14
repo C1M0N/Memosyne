@@ -44,11 +44,19 @@ def split_markdown_into_questions(markdown: str) -> list[dict[str, str]]:
         answer = match.group("answer").strip()
 
         segment = markdown[last_end:match.start()]
-        context_text = segment.strip()
-        if context_text:
-            ctx_lines = context_text.splitlines()
-            while ctx_lines and NUMBER_HEADING.match(ctx_lines[-1].strip()):
-                ctx_lines.pop()
+        context_text = segment
+        if context_text.strip():
+            ctx_lines = []
+            for line in context_text.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    ctx_lines.append("")
+                    continue
+                if NUMBER_HEADING.match(stripped):
+                    continue
+                if stripped.startswith("#"):
+                    continue
+                ctx_lines.append(line.rstrip())
             context_text = "\n".join(ctx_lines).strip()
 
         blocks.append({

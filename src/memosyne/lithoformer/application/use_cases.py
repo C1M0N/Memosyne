@@ -2,6 +2,8 @@
 Lithoformer Application Use Cases
 """
 
+import re
+
 from ..domain.models import QuizItem
 from ..domain.services import (
     is_quiz_item_valid,
@@ -118,7 +120,13 @@ def _normalize_question_dict(data: dict) -> dict:
         result["qtype"] = qtype
 
     answer = (result.get("answer") or "").strip()
-    if qtype in {"MCQ", "ORDER"}:
+    if qtype == "MCQ":
+        letters = re.findall(r"[A-Fa-f]", answer)
+        if letters:
+            result["answer"] = "".join(ch.upper() for ch in letters)
+        else:
+            result["answer"] = answer.upper()
+    elif qtype == "ORDER":
         result["answer"] = answer.upper()
     else:
         result["answer"] = answer

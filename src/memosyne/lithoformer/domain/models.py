@@ -7,7 +7,8 @@ Dependency rules:
 - Pure business concepts (Quiz, Question types, etc.)
 """
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+import re
 
 
 class QuizOptions(BaseModel):
@@ -65,8 +66,8 @@ class QuizItem(BaseModel):
     )
     answer: str = Field(
         default="",
-        pattern=r"^[A-F]?$",
-        description="Answer letter (for MCQ/ORDER)"
+        min_length=0,
+        description="Answer (MCQ/ORDER/CLOZE)"
     )
     cloze_answers: list[str] = Field(
         default_factory=list,
@@ -100,6 +101,19 @@ class QuizItem(BaseModel):
             return False
 
         return True
+
+    @model_validator(mode="after")
+    def validate_answer_format(self):
+        if self.qtype == "MCQ":
+            if not self.answer or not re.fullmatch(r"[A-F]+", self.answer):
+                raise ValueError("MCQ 答案必须为 A-F 字母组合（可多选，连续写，如 ACD）")
+        elif self.qtype == "ORDER":
+            if not self.answer or not re.fullmatch(r"[A-F](,[A-F])*", self.answer):
+                raise ValueError("ORDER 答案必须为以逗号分隔的 A-F 字母序列")
+        else:  # CLOZE
+            # 可为空，或任意字符串
+            pass
+        return self
 
 
 class QuizResponse(BaseModel):
