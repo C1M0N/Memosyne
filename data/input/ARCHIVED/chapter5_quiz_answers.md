@@ -1,5 +1,6 @@
-# Chapter 5 Quiz: 
-Anxiety and Obsessive-Compulsive and Related Disorders
+你是一个全科大学教授  
+通过图片/文字等信息自动识别题干与选项并给出答案  
+以下为按要求整理的固定格式 Markdown 输出（1–20）：
 
 ## 1
 ```Question
