@@ -7,28 +7,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v2.0** (当前) - 重构版本，采用现代化架构，位于 `src/memosyne/`
+- **v0.8.3** (当前) - 采用 DDD + Hexagonal Architecture，生产就绪
+
+**核心架构模式**：
+- **Domain-Driven Design (DDD)** - 领域驱动设计
+- **Hexagonal Architecture** - 六边形架构（端口适配器模式）
+- **Bounded Contexts** - Reanimator 和 Lithoformer 作为独立子域
+- **Shared Kernel** - 业务无关的基础设施
 
 主要功能：
-1. **Reanimater Pipeline（术语重生器）** - 术语记忆处理管道，用于生成结构化术语卡片
-2. **Lithoformer（Quiz重塑器）** - 测验解析器，将 Markdown 格式的测验转换为标准化格式
+1. **Reanimator（术语重生器）** - 术语记忆处理管道，生成结构化术语卡片
+2. **Lithoformer（Quiz 重塑器）** - 测验解析器，将 Markdown 测验转换为标准化格式
+
+---
 
 ## 常用命令
 
 ### 运行项目
 
 ```bash
-# 方式 1: 交互式 CLI
-python src/memosyne/cli/reanimate.py    # Reanimate - 术语重生
-python src/memosyne/cli/lithoform.py   # Lithoform - Quiz 重塑
+# 方式 1: 模块执行（推荐）
+python -m memosyne.reanimator.cli.main    # Reanimator - 术语重生
+python -m memosyne.lithoformer.cli.main   # Lithoformer - Quiz 重塑
 
-# 方式 2: Python 模块
-python -m memosyne.cli.reanimate
-python -m memosyne.cli.lithoform
+# 方式 2: 便捷脚本
+./run_reanimate.sh     # Reanimator
+./run_lithoform.sh     # Lithoformer
 
 # 方式 3: 编程 API
-python -c "from memosyne import reanimate; help(reanimate)"
-# 注：旧名 process_terms 仍可用以保持向后兼容
+python -c "from memosyne.api import reanimate; help(reanimate)"
+python -c "from memosyne.api import lithoform; help(lithoform)"
 ```
 
 ### 依赖管理
@@ -54,35 +62,31 @@ cp .env.example .env
 `.env` 文件示例：
 ```bash
 OPENAI_API_KEY=your-key-here
-ANTHROPIC_API_KEY=your-key-here
+ANTHROPIC_API_KEY=your-key-here  # 可选
 DEFAULT_OPENAI_MODEL=gpt-4o-mini
 DEFAULT_ANTHROPIC_MODEL=claude-sonnet-4-5
 LOG_LEVEL=INFO
 
-# 配置项（Settings）命名已更新：
-# reanimater_input_dir=data/input/reanimater
-# reanimater_output_dir=data/output/reanimater
-# lithoformer_input_dir=data/input/lithoformer
-# lithoformer_output_dir=data/output/lithoformer
-# REANIMATER_TERM_LIST_VERSION=1
+# 配置项示例：
+# BATCH_TIMEZONE=America/New_York
+# REANIMATOR_TERM_LIST_VERSION=1
 ```
 
 **注意**: `.env` 文件已在 `.gitignore` 中，绝不能提交到版本控制。
 
-**🔧 集中配置管理**（v0.7.1a 新增）：
+### 集中配置管理
 
 模型名称现已集中配置，**只需在一处修改**即可全局生效：
 
 1. **修改 `.env` 文件**（推荐）：
    ```bash
-   # 在 .env 文件中修改，立即生效
    DEFAULT_OPENAI_MODEL=gpt-4o-mini
    DEFAULT_ANTHROPIC_MODEL=claude-sonnet-4-5
    ```
 
 2. **或修改 `settings.py`**（作为代码默认值）：
    ```python
-   # src/memosyne/config/settings.py
+   # src/memosyne/shared/config/settings.py
    default_openai_model: str = "gpt-4o-mini"
    default_anthropic_model: str = "claude-sonnet-4-5"
    ```
@@ -102,129 +106,233 @@ LOG_LEVEL=INFO
 - `claude-3-5-haiku-20241022`
 - `claude-3-opus-20240229`
 
-**配置项命名变更说明**（v2.0 重命名）：
-- `mms_input_dir` → `reanimater_input_dir`
-- `mms_output_dir` → `reanimater_output_dir`
-- `parser_input_dir` → `lithoformer_input_dir`
-- `parser_output_dir` → `lithoformer_output_dir`
-- `TERM_LIST_VERSION` → `REANIMATER_TERM_LIST_VERSION`
+---
 
-## 核心架构 (v2.0)
+## 核心架构 (v0.8.3 - DDD + Hexagonal)
 
-### 分层架构
+### DDD 分层架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    CLI / API Layer                      │  用户接口
+│              (reanimator/cli, lithoformer/cli, api.py)  │
+├─────────────────────────────────────────────────────────┤
+│              Infrastructure Layer (Adapters)            │  适配器实现
+│    (llm_adapter, csv_adapter, file_adapter, ...)        │
+├─────────────────────────────────────────────────────────┤
+│           Application Layer (Use Cases + Ports)         │  业务协调
+│  (ProcessTermsUseCase, ParseQuizUseCase, Ports)         │
+├─────────────────────────────────────────────────────────┤
+│           Domain Layer (Models + Services)              │  核心业务逻辑
+│   (TermInput/Output, QuizItem, business rules)          │
+├─────────────────────────────────────────────────────────┤
+│        Shared Kernel (Core + Shared Infrastructure)    │  共享基础设施
+│  (TokenUsage, ProcessResult, Config, LLM Providers)     │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 项目结构
 
 ```
 src/memosyne/
-├── config/          # 配置层：Pydantic Settings
-├── core/            # 核心层：抽象接口、异常定义
-├── models/          # 模型层：Pydantic 数据模型
-├── providers/       # 提供商层：LLM Provider 实现
-├── repositories/    # 仓储层：数据访问（CSV、术语表）
-├── services/        # 服务层：业务逻辑
-├── utils/           # 工具层：路径、批次ID生成、日志系统、Quiz格式化
-└── cli/             # 界面层：命令行接口
+├── core/                           # 核心层（抽象接口、核心模型）
+│   ├── interfaces.py               # LLMProvider Protocol/ABC, 异常定义
+│   └── models.py                   # TokenUsage, ProcessResult[T]
+│
+├── shared/                         # 共享内核（Shared Kernel）
+│   ├── config/                     # Pydantic Settings
+│   ├── utils/                      # 通用工具（batch, logger, progress, path, model_codes）
+│   ├── cli/                        # CLI 提示工具
+│   └── infrastructure/             # 业务无关的基础设施
+│       ├── llm/                    # OpenAI/Anthropic Provider（通用）
+│       ├── storage/                # CSV/TermList Repository
+│       └── logging/                # 日志
+│
+├── reanimator/                     # Reanimator 子域（Bounded Context）
+│   ├── domain/                     # 领域层
+│   │   ├── models.py               # TermInput, LLMResponse, TermOutput
+│   │   └── services.py             # apply_business_rules, get_chinese_tag, generate_memo_id
+│   ├── application/                # 应用层
+│   │   ├── ports.py                # LLMPort, TermListPort（端口接口）
+│   │   └── use_cases.py            # ProcessTermsUseCase（用例）
+│   ├── infrastructure/             # 基础设施层
+│   │   ├── llm_adapter.py          # ReanimatorLLMAdapter（注入 prompts/schemas）
+│   │   ├── prompts.py              # REANIMATER_SYSTEM_PROMPT
+│   │   ├── schemas.py              # TERM_RESULT_SCHEMA
+│   │   ├── csv_adapter.py          # CSVTermAdapter
+│   │   └── term_list_adapter.py    # TermListAdapter
+│   └── cli/main.py                 # Reanimator CLI
+│
+├── lithoformer/                    # Lithoformer 子域（Bounded Context）
+│   ├── domain/                     # 领域层
+│   │   ├── models.py               # QuizItem, QuizOptions
+│   │   └── services.py             # split_markdown, infer_titles, is_quiz_item_valid
+│   ├── application/                # 应用层
+│   │   ├── ports.py                # LLMPort（端口接口）
+│   │   └── use_cases.py            # ParseQuizUseCase（用例）
+│   ├── infrastructure/             # 基础设施层
+│   │   ├── llm_adapter.py          # LithoformerLLMAdapter（注入 prompts/schemas）
+│   │   ├── prompts.py              # LITHOFORMER_SYSTEM_PROMPT
+│   │   ├── schemas.py              # QUIZ_SCHEMA
+│   │   ├── file_adapter.py         # FileAdapter
+│   │   ├── formatter_adapter.py    # FormatterAdapter
+│   │   └── formatters/             # QuizFormatter（依赖领域模型）
+│   └── cli/main.py                 # Lithoformer CLI
+│
+└── api.py                          # 编程 API（reanimate(), lithoform()）
 ```
 
-### Reanimater Pipeline 处理流程（术语重生器）
+### 核心设计原则
 
-**入口**: `src/memosyne/cli/reanimate.py`
+1. **Bounded Contexts（限界上下文）**
+   - Reanimator 和 Lithoformer 作为独立子域
+   - 每个子域管理自己的 Domain、Application、Infrastructure
+   - Prompts/Schemas 在各自子域的 Infrastructure 层
 
-1. **配置加载** (`config/settings.py`):
-   - `Settings` - Pydantic Settings 自动验证 API Key
-   - `get_settings()` - 单例模式获取配置
+2. **Ports & Adapters（端口适配器）**
+   - Application 层定义端口接口（Protocol）
+   - Infrastructure 层实现适配器
+   - Adapter 注入 Prompts/Schemas 到通用 Provider
 
-2. **数据读取** (`repositories/csv_repository.py`):
-   - `CSVTermRepository.read_input()` - 读取输入 CSV
-   - 自动识别分隔符、BOM、多语言列名
-   - 返回 `TermInput` Pydantic 模型列表
+3. **Dependency Inversion（依赖倒置）**
+   - Domain 层不依赖任何层
+   - Application 层依赖 Domain
+   - Infrastructure 层实现 Application 的端口
+   - CLI/API 层依赖所有层
 
-3. **术语表加载** (`repositories/term_list_repository.py`):
-   - `TermListRepo.load()` - 加载术语表
-   - `get_chinese_tag()` - 英文标签 → 中文映射
+4. **Shared Kernel（共享内核）**
+   - 只包含业务无关的基础设施
+   - TokenUsage, ProcessResult - 通用数据模型
+   - OpenAI/Anthropic Provider - 通用 LLM 提供商（无业务逻辑）
+   - Config, Utils - 通用基础设施
 
-4. **LLM 处理** (`services/reanimater.py`):
-   - `Reanimater` - 依赖注入 LLM Provider
-   - 调用 `process()` 批量处理术语
-   - 使用 tqdm 显示进度条
+---
 
-5. **LLM Provider** (`providers/`):
-   - `OpenAIProvider` - OpenAI 实现
-   - `AnthropicProvider` - Anthropic 实现
-   - 均继承 `BaseLLMProvider` 抽象基类
-   - 接口一致，可互换
+## Reanimator Pipeline 处理流程
 
-6. **数据写出** (`repositories/csv_repository.py`):
-   - `CSVTermRepository.write_output()` - 写出到 `data/output/reanimater/`
+**入口**: `src/memosyne/reanimator/cli/main.py`
+
+**分层调用流程**：
+1. **CLI** → 创建所有依赖（Provider, Adapters, Use Case）
+2. **Use Case** (`ProcessTermsUseCase`) → 编排业务流程
+3. **Adapter** (`ReanimatorLLMAdapter`) → 注入 prompts/schemas，调用 Provider
+4. **Provider** (`OpenAIProvider/AnthropicProvider`) → 调用 LLM API
+5. **Domain Services** → 应用业务规则（词组标记、缩写处理等）
+6. **Domain Models** → 数据验证（Pydantic）
+
+**关键文件**：
+- `reanimator/cli/main.py` - CLI 入口，依赖注入
+- `reanimator/application/use_cases.py` - `ProcessTermsUseCase`，业务流程编排
+- `reanimator/application/ports.py` - `LLMPort`, `TermListPort`，端口接口
+- `reanimator/infrastructure/llm_adapter.py` - `ReanimatorLLMAdapter`，注入 prompts/schemas
+- `reanimator/infrastructure/prompts.py` - `REANIMATER_SYSTEM_PROMPT`，业务逻辑
+- `reanimator/infrastructure/schemas.py` - `TERM_RESULT_SCHEMA`，JSON Schema
+- `reanimator/domain/services.py` - 业务规则函数
+- `reanimator/domain/models.py` - `TermInput`, `LLMResponse`, `TermOutput`
 
 **输出字段**: WMpair, MemoID, Word, ZhDef, IPA, POS, Tag, Rarity, EnDef, Example, PPfix, PPmeans, BatchID, BatchNote
 
-### Lithoformer 架构（Quiz重塑器，v2.0）
+---
 
-**入口**: `src/memosyne/cli/lithoform.py`
+## Lithoformer 架构
 
-处理流程：
-1. **Quiz 解析** (`services/lithoformer.py`):
-   - `Lithoformer` - 使用依赖注入的 LLM Provider
-   - 支持 OpenAI 和 Anthropic
-   - 使用 JSON Schema 确保结构化输出
-   - 返回 `QuizItem` Pydantic 模型列表
+**入口**: `src/memosyne/lithoformer/cli/main.py`
 
-2. **格式化输出** (`utils/quiz_formatter.py`):
-   - `QuizFormatter.format()` - 将 QuizItem 转换为 ShouldBe 格式
-   - 支持题型：MCQ（选择题）、CLOZE（填空题）、ORDER（排序题）
-   - 自动处理图片占位符（`§Pic.N§`）
-   - 清理题干垃圾行、规范化选项文本
+**分层调用流程**：
+1. **CLI** → 创建所有依赖（Provider, Adapters, Use Case）
+2. **Use Case** (`ParseQuizUseCase`) → 逐题解析，编排业务流程
+3. **Adapter** (`LithoformerLLMAdapter`) → 注入 prompts/schemas，调用 Provider
+4. **Provider** (`OpenAIProvider/AnthropicProvider`) → 调用 LLM API
+5. **Domain Services** → split_markdown, infer_titles, is_quiz_item_valid
+6. **Formatter** → 格式化输出（依赖领域模型 QuizItem）
 
-3. **编程 API** (`api.py`):
-   - `lithoform(input_md, model, provider, ...)` - 直接调用
-   - 注：旧名 `parse_quiz()` 仍可用以保持向后兼容
-   - 返回包含成功状态、输出路径、题目数量的 dict
+**关键文件**：
+- `lithoformer/cli/main.py` - CLI 入口，依赖注入
+- `lithoformer/application/use_cases.py` - `ParseQuizUseCase`，业务流程编排
+- `lithoformer/application/ports.py` - `LLMPort`，端口接口
+- `lithoformer/infrastructure/llm_adapter.py` - `LithoformerLLMAdapter`，注入 prompts/schemas
+- `lithoformer/infrastructure/prompts.py` - `LITHOFORMER_SYSTEM_PROMPT`，业务逻辑
+- `lithoformer/infrastructure/schemas.py` - `QUIZ_SCHEMA`，JSON Schema
+- `lithoformer/infrastructure/formatters/quiz_formatter.py` - `QuizFormatter`，格式化输出
+- `lithoformer/domain/services.py` - 业务规则函数
+- `lithoformer/domain/models.py` - `QuizItem`, `QuizOptions`
 
 **输入**: `data/input/lithoformer/*.md` - Markdown 格式测验文件
 **输出**: `data/output/lithoformer/ShouldBe.txt` - 标准化测验文本
+
+---
 
 ## 数据目录结构
 
 ```
 data/
 ├── input/
-│   ├── reanimater/    # Reanimater 输入 CSV（Word, ZhDef）
+│   ├── reanimator/    # Reanimator 输入 CSV（Word, ZhDef）
 │   └── lithoformer/   # Lithoformer 输入 Markdown 测验
-├── output/
-│   ├── reanimater/    # Reanimater 输出 CSV
-│   ├── lithoformer/   # Lithoformer 输出 TXT
-│   └── archived/      # 历史归档文件
+└── output/
+    ├── reanimator/    # Reanimator 输出 CSV
+    └── lithoformer/   # Lithoformer 输出 TXT
+
 db/
 ├── term_list_v1.csv   # 术语表（英文→两字中文）
-└── reanimater_db/     # Reanimater 数据库文件
+└── reanimator_db/     # Reanimator 数据库文件
 ```
 
-## 关键设计模式 (v2.0)
+---
+
+## 关键设计模式
 
 ### 1. 依赖注入
-所有组件通过构造函数注入依赖，而非全局状态：
+
+**原则**：所有组件通过构造函数注入依赖，避免全局状态。
+
+**示例**：
 ```python
-reanimater = Reanimater(
-    llm_provider=llm_provider,        # 可替换为任何实现
-    term_list_mapping=repo.mapping,    # 可注入测试数据
+# CLI 层：创建所有依赖并注入
+llm_adapter = ReanimatorLLMAdapter.from_provider(llm_provider)
+term_list_adapter = TermListAdapter.from_settings(settings)
+
+use_case = ProcessTermsUseCase(
+    llm=llm_adapter,
+    term_list=term_list_adapter,
     start_memo_index=2700,
     batch_id="251007A015"
 )
+
+result = use_case.execute(terms, show_progress=True)
 ```
 
-### 2. 抽象接口 (Protocol/ABC)
-LLM Provider 使用 Protocol 定义接口：
+### 2. 端口适配器模式
+
+**原则**：Application 层定义端口接口，Infrastructure 层实现适配器。
+
+**示例**：
 ```python
-class LLMProvider(Protocol):
-    def complete_prompt(self, word: str, zh_def: str) -> dict: ...
-    def complete_structured(self, system_prompt: str, user_prompt: str, schema: dict, schema_name: str = "Response") -> dict: ...
+# Application 层：定义端口接口
+class LLMPort(Protocol):
+    def process_term(self, word: str, zh_def: str) -> tuple[dict, dict]:
+        ...
+
+# Infrastructure 层：实现适配器
+class ReanimatorLLMAdapter:
+    def process_term(self, word: str, zh_def: str) -> tuple[dict, dict]:
+        # 注入 Reanimator 专用的 prompts/schemas
+        system_prompt = REANIMATER_SYSTEM_PROMPT
+        user_prompt = REANIMATER_USER_TEMPLATE.format(word=word, zh_def=zh_def)
+
+        return self.provider.complete_structured(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema=TERM_RESULT_SCHEMA["schema"],
+            schema_name="TermResult"
+        )
 ```
-任何实现了这两个方法的类都可作为 Provider，无需显式继承。
-- `complete_prompt()` 用于 Reanimater 术语处理
-- `complete_structured()` 用于 Lithoformer Quiz 解析（结构化 JSON 输出）
 
 ### 3. Pydantic 数据验证
-所有数据模型使用 Pydantic，自动验证：
+
+**原则**：所有数据模型使用 Pydantic，自动验证。
+
+**示例**：
 ```python
 class TermInput(BaseModel):
     word: str = Field(..., min_length=1)
@@ -239,15 +347,19 @@ class TermInput(BaseModel):
 ```
 
 ### 4. 配置管理
-使用 Pydantic Settings 自动加载和验证配置：
+
+**原则**：使用 Pydantic Settings 自动加载和验证配置。
+
+**示例**：
 ```python
-from memosyne.config import get_settings
+from memosyne.shared.config import get_settings
 
 settings = get_settings()  # 自动从 .env 加载
 # 如果 API Key 缺失或无效，会抛出 ValidationError
 ```
 
 ### 5. BatchID 生成
+
 使用独立的 `BatchIDGenerator` 类：
 - 格式：`YYMMDD + RunLetter + NNN`
 - `YYMMDD`: 纽约时区当日日期
@@ -256,14 +368,16 @@ settings = get_settings()  # 自动从 .env 加载
 - 示例：`251007A015` = 2025-10-07 的首批（A），包含 15 个词条
 
 ### 6. 仓储模式
+
 数据访问通过 Repository 层隔离：
-- `CSVTermRepository` - CSV 读写
-- `TermListRepo` - 术语表管理
+- `CSVRepository` - CSV 读写
+- `TermListRepository` - 术语表管理
 
 ### 7. 统一日志系统
+
 使用标准 `logging` 模块，提供灵活的日志配置：
 ```python
-from memosyne.utils.logger import setup_logger
+from memosyne.shared.utils.logger import setup_logger
 
 logger = setup_logger(
     name="memosyne",
@@ -276,34 +390,60 @@ logger.info("开始处理术语")
 logger.warning("Example 与 EnDef 相同")
 logger.error("LLM 调用失败", exc_info=True)
 ```
-服务层（Reanimater、Lithoformer）使用日志记录器替代 print，支持依赖注入。
 
-## 开发约定 (v2.0)
+---
+
+## 开发约定
+
+### 代码规范
 
 - **类型提示**: 所有函数/方法必须有完整的类型提示
 - **数据验证**: 使用 Pydantic 模型，而非 dict 或 dataclass
 - **依赖注入**: 避免全局状态，通过构造函数传递依赖
 - **抽象优于具体**: 依赖抽象接口（Protocol/ABC），而非具体实现
-- **进度显示**: 使用 tqdm 显示进度条
+- **进度显示**: 使用 `Progress` 类显示进度条
 - **错误处理**: 使用自定义异常（`LLMError`, `ConfigError` 等）
 - **编码**: 统一使用 UTF-8
+
+### DDD 规则
+
+- **Shared Kernel 只包含业务无关的基础设施**
+  - ✅ 允许：TokenUsage, ProcessResult, LLM Provider（无业务逻辑）
+  - ❌ 不允许：Prompts, Schemas（包含业务逻辑）
+
+- **Prompts/Schemas 属于子域**
+  - 放在各自子域的 Infrastructure 层
+  - Adapter 负责注入到通用 Provider
+
+- **Domain 层不依赖任何层**
+  - 只包含纯粹的业务逻辑
+  - 不依赖 Infrastructure、Application、CLI
+
+- **依赖方向**
+  - CLI/API → Infrastructure → Application → Domain
+  - Infrastructure 实现 Application 的端口接口
+
+---
 
 ## 文档维护规范
 
 **IMPORTANT**: 每次代码更改后，必须同时更新以下文档：
 
 1. **CLAUDE.md** (本文件) - 更新命令、架构、流程说明
-2. **README.md** - 更新功能列表、使用示例、安装步骤
-3. **ARCHITECTURE.md** - 更新架构图、设计决策、UML 图
+2. **README.md** - 更新功能列表、使用示例、安装步骤、架构图、API 示例
+
+**注意**: README.md 现在是项目的唯一主文档，包含完整的架构说明、API 使用指南和设计决策。
 
 ### 更新检查清单
 
 修改代码后，检查：
 - [ ] 是否有新的依赖？→ 更新 `requirements.txt`
-- [ ] 是否有新的 CLI 命令？→ 更新所有文档的"快速开始"部分
-- [ ] 是否修改了架构？→ 更新 `ARCHITECTURE.md` 中的图表
-- [ ] 是否添加了新功能？→ 更新 `README.md` 的特性列表
-- [ ] 是否修改了 API？→ 更新 `API_GUIDE.md`
+- [ ] 是否有新的 CLI 命令？→ 更新 README.md 和 CLAUDE.md 的"快速开始"部分
+- [ ] 是否修改了架构？→ 更新 README.md 中的"架构设计"章节和 Mermaid 图表
+- [ ] 是否添加了新功能？→ 更新 README.md 的特性列表
+- [ ] 是否修改了 API？→ 更新 README.md 的"API 使用指南"章节
+
+---
 
 ## Git 工作流程
 
@@ -315,45 +455,98 @@ logger.error("LLM 调用失败", exc_info=True)
 - **同步文档**: 代码和文档同时提交
 - **及时推送**: 每天至少 Push 一次
 
+---
+
 ## 版本发布流程
 
 1. **更新版本号**: 修改 `src/memosyne/__init__.py` 中的 `__version__`
 2. **更新 CHANGELOG**: 在 `README.md` 中添加版本变更记录
-3. **创建 Git 标签**: `git tag -a v2.x.x -m "Release v2.x.x"`
-4. **推送标签**: `git push origin v2.x.x`
+3. **创建 Git 标签**: `git tag -a v0.x.x -m "Release v0.x.x"`
+4. **推送标签**: `git push origin v0.x.x`
 5. **GitHub Release**: 在 GitHub 上创建正式 Release
 
-## Lithoformer 详细说明（Quiz重塑器，v2.0 已重构）
-
-**入口**: `src/memosyne/cli/lithoform.py`
-
-处理流程：
-1. **Quiz 解析** (`services/lithoformer.py`):
-   - `Lithoformer` - 使用 LLM Provider 解析 Markdown
-   - 支持 OpenAI 和 Anthropic
-   - 返回 `QuizItem` Pydantic 模型列表
-
-2. **格式化输出** (`utils/quiz_formatter.py`):
-   - `QuizFormatter` - 将 QuizItem 转换为 ShouldBe 格式
-   - 支持题型：MCQ（选择题）、CLOZE（填空题）、ORDER（排序题）
-   - 自动清理题干、规范化选项
-
-3. **编程 API** (`api.py`):
-   - `lithoform()` - 可在代码中直接调用
-   - 注：旧名 `parse_quiz()` 仍可用以保持向后兼容
-   - 返回详细结果 dict
-
-**输入**: `data/input/lithoformer/*.md` - Markdown 格式测验文件
-**输出**: `data/output/lithoformer/ShouldBe.txt` - 标准化测验文本
+---
 
 ## 项目文档结构
 
 ```
 Memosyne/
-├── README.md              # 项目主文档
+├── README.md              # 项目主文档（包含完整架构、API 使用指南、设计决策）
 ├── CLAUDE.md              # Claude Code 工作指南 (本文件)
-├── ARCHITECTURE.md        # 架构设计文档（含所有图表）
-├── API_GUIDE.md           # API 使用指南
-├── GIT_GUIDE.md           # Git 项目管理指南
-└── refactor_examples/     # 重构示例代码
+├── CLI_USAGE.md           # CLI 使用说明
+└── GIT_GUIDE.md           # Git 项目管理指南
 ```
+
+**注意**: 所有架构设计文档和 API 使用指南已合并到 README.md 中，成为单一的综合文档。
+
+---
+
+## 常见任务
+
+### 添加新的 LLM Provider
+
+1. 在 `shared/infrastructure/llm/` 创建新 Provider 类
+2. 继承 `BaseLLMProvider`
+3. 实现 `complete_structured()` 方法
+4. 在 `shared/infrastructure/llm/__init__.py` 导出
+
+**无需修改子域代码**！
+
+### 添加新的子域（Bounded Context）
+
+1. 创建新子域目录：`src/memosyne/new_subdomain/`
+2. 创建分层结构：
+   - `domain/` - 领域模型和服务
+   - `application/` - 用例和端口接口
+   - `infrastructure/` - 适配器、Prompts、Schemas
+   - `cli/` - CLI 入口
+3. 在 `api.py` 添加新的 API 函数
+
+**无需修改其他子域**！
+
+### 修改业务逻辑
+
+1. **修改领域模型** → `reanimator/domain/models.py` 或 `lithoformer/domain/models.py`
+2. **修改业务规则** → `reanimator/domain/services.py` 或 `lithoformer/domain/services.py`
+3. **修改 LLM Prompts** → `reanimator/infrastructure/prompts.py` 或 `lithoformer/infrastructure/prompts.py`
+4. **修改 JSON Schema** → `reanimator/infrastructure/schemas.py` 或 `lithoformer/infrastructure/schemas.py`
+
+**无需修改 Shared Kernel**！
+
+---
+
+## 故障排除
+
+### 问题：ImportError
+
+**原因**：直接运行 CLI 文件（如 `python src/memosyne/reanimator/cli/main.py`）
+
+**解决**：使用模块执行方式：
+```bash
+python -m memosyne.reanimator.cli.main
+# 或使用便捷脚本
+./run_reanimate.sh
+```
+
+### 问题：ValidationError: Field required
+
+**原因**：`.env` 文件配置错误或 API Key 为空
+
+**解决**：
+1. 检查 `.env` 文件是否存在
+2. 确保 `OPENAI_API_KEY` 已正确配置
+3. 确保 API Key 长度 ≥ 20 字符
+
+### 问题：LLMError: OpenAI API 错误
+
+**原因**：API 调用失败（额度不足、网络问题等）
+
+**解决**：
+1. 检查 API Key 是否有效
+2. 检查账户额度
+3. 检查网络连接
+
+---
+
+**最后更新**: 2025-10-13
+**文档版本**: v0.8.3
