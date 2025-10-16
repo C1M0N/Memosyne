@@ -2,11 +2,11 @@
 
 <div align="center">
 
-**基于 LLM 的术语处理和 Quiz 解析工具包**
+**基于 LLM 的术语处理、双语 Quiz 解析工具包**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.9.1a-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.10.1a-orange.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-DDD%20%2B%20Hexagonal-purple.svg)]()
 
 *领域驱动设计、类型安全、生产就绪的 LLM 工作流工具*
@@ -37,6 +37,7 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 - 填空题（CLOZE）
 - 排序题（ORDER）
 - 自动题目验证和格式化
+- 逐题输出原文 + 简体中文翻译，并追加批次号与 `L` 系列题目编码
 
 ---
 
@@ -76,6 +77,7 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 - ✅ 自动批次 ID 生成（格式：YYMMDD + RunLetter + Count）
 - ✅ 智能文件命名（BatchID-FileName-ModelCode.ext）
 - ✅ 防重名输出路径
+- ✅ Lithoformer 输出原文与简体中文翻译逐行交织，附带批次号与题目唯一编码（Lxxxxxx）
 
 ---
 
@@ -99,11 +101,12 @@ b
 - `Answer` 代码块填写标准答案：选择题写字母、填空题写正确填空（多空以逗号/换行分隔）、排序题写顺序（如 `B,A,C,D`）。
 - 可在代码块前保留 `## 章节/题号` 等标题，Lithoformer 会自动带入上下文信息。
 - 兼容性：历史数据使用的 ` ```Gezhi` 格式仍可解析，但建议尽快迁移到新的 `Question/Answer` 语法。
+- LLM 将根据扩展 Schema 同步返回英文字段与 `*_translation` 字段；Formatter 会逐行交织原文与译文。
 
-**📤 输出示例（ShouldBe.txt 片段）**
+**📤 输出示例（ShouldBe.txt 片段，逐行中英双语）**
 
 ```
-<b>Chapter 5 Quiz:<br>Anxiety and Obsessive-Compulsive and Related Disorders</b><br><br>[Unlike fear, panic __________.<br>A. is present oriented<br>B. occurs in the absence of a "real" threat<br>C. is future oriented<br>D. involves autonomic nervous system (ANS) arousal<br>]::(B)<br><br>[[解析::<br><div>领域：Anxiety Disorders</div><div>为什么选 b（Panic，惊恐障碍）</div><div>广场恐惧症常与惊恐障碍共病：患者害怕在难以逃离或无法得到帮助的场所再次出现惊恐发作，因此会回避公共场所。</div><div><br></div><div>相关知识：</div><div>DSM-5-TR 将惊恐障碍与广场恐惧症分列诊断，但临床筛查中两者高度共病。</div><div>惊恐障碍的核心是突发惊恐发作与对再次发作的预期性焦虑，这是促成广场恐惧情境回避的直接机制。</div><div><br></div><div>其他选项为什么不如 b：</div><div>A. 广泛性焦虑属于弥散性担忧，缺少“在难以逃离处怕惊恐发作”的机制。</div><div>C. 焦虑强调对未来威胁的预期，与广场恐惧的回避触发点耦合度较低。</div><div>D. 皮肤搔抓障碍属体聚焦重复行为，与惊恐—回避机制关系较远。</div>]]<br>
+<b>Chapter 5 Quiz:<br>Anxiety and Obsessive-Compulsive and Related Disorders</b><br><br>[Unlike fear, panic __________.<br>((::与恐惧不同，惊恐 __________。))<br>A. is present oriented<br>((::是指向当下的体验。))<br>B. occurs in the absence of a "real" threat<br>((::在没有“真实”威胁的情况下仍然发生。))<br>C. is future oriented<br>((::是指向未来的体验。))<br>D. involves autonomic nervous system (ANS) arousal<br>((::会涉及自主神经系统的激活。))<br>]::(B)<br><br>[[解析::<br><div>领域：Anxiety Disorders</div><div>为什么选 b（occurs in the absence of a "real" threat<br>((::因为惊恐可在缺乏真实威胁的情况下发生。))）</div><div>惊恐发作的核心特点是突发性强烈恐惧、伴随自主神经反应，即便客观环境并不存在真实危险。</div><div><br></div><div>相关知识：</div><div>惊恐障碍患者常因“下一次发作”而形成广场恐惧（agoraphobia），避免身处难以逃离的场景。</div><div>DSM-5-TR 将惊恐障碍与广场恐惧症拆分为独立诊断，但临床中高度共病，需要分别评估。</div><div><br></div><div>其他选项为什么不如 b：</div><div>A. 恐惧与惊恐都可以发生在当下；差异在于是否存在现实威胁。</div><div>C. “未来取向”是焦虑（anxiety）的特征描述，而非惊恐。</div><div>D. 自主神经激活对恐惧与惊恐而言都可能出现，不足以区分。</div>]]<br>
 ```
 
 > 每题输出包含：原题 → 标准答案 → 自动生成的领域分析、关键知识点和错误选项逐条解析。
@@ -180,6 +183,7 @@ python -m memosyne.lithoformer.tui.app
 - **文件树**：仅枚举选定输入目录下的 `.md` 文件；选择文件后可以在表单中保留或覆盖自动推断的字段，目录路径可随时调整。
 - **日志与命令区**：挂接标准 `logging` 输出，高亮级别、展示时间戳，保留最近 999 条；命令行支持 `/clear` 清屏，右下角实时显示单题与总进度、耗时估计、Token 消耗。
 - **模型配置**：自动联动厂商/模型下拉与手动输入框，支持默认模型与自定义覆盖，备注字段可给同事留下提示。
+- **输出格式**：解析完成后自动写出逐行中英双语的 ShouldBe.txt，并在日志中汇报批次号与 `L` 编码范围，便于追踪与验收。
 
 ---
 
@@ -247,7 +251,7 @@ LOG_FORMAT=console
 
 ### 架构概览
 
-Memosyne v0.9.1a 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
+Memosyne v0.10.1a 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
 
 #### 核心架构模式
 
@@ -267,6 +271,12 @@ Memosyne v0.9.1a 采用**领域驱动设计（DDD）**和**六边形架构（Hex
    - 里氏替换原则 (LSP)
    - 接口隔离原则 (ISP)
    - 依赖倒置原则 (DIP)
+
+#### 4. 双语输出流水线
+
+- LLM 端严格遵循扩展后的 JSON Schema，同步返回英文字段及 `*_translation` 对应字段。
+- Application 层在 `ParseQuizUseCase` 中做结构归一化（数量对齐、去除空白），保证译文与原文一一对应。
+- Infrastructure 层 `QuizFormatter` 负责将原文与译文逐行交织输出，并附带批次号与 `L` 系列题目代码，确保下游无需再次对齐。
 
 ### DDD 分层架构
 
@@ -389,7 +399,7 @@ src/memosyne/
 │
 ├── lithoformer/                    # Lithoformer 子域（Bounded Context）
 │   ├── domain/                     # 领域层
-│   │   ├── models.py               # QuizItem, QuizOptions
+│   │   ├── models.py               # QuizItem, QuizOptions（含翻译字段）
 │   │   └── services.py             # split_markdown, infer_titles, is_quiz_item_valid
 │   ├── application/                # 应用层
 │   │   ├── ports.py                # LLMPort（端口接口）
@@ -397,7 +407,7 @@ src/memosyne/
 │   ├── infrastructure/             # 基础设施层
 │   │   ├── llm_adapter.py          # LithoformerLLMAdapter（注入 prompts/schemas）
 │   │   ├── prompts.py              # LITHOFORMER_SYSTEM_PROMPT
-│   │   ├── schemas.py              # QUESTION_SCHEMA
+│   │   ├── schemas.py              # QUESTION_SCHEMA（含翻译字段）
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
 │   │   └── formatters/             # QuizFormatter（依赖领域模型）
@@ -417,6 +427,14 @@ db/
 ├── term_list_v1.csv                # 术语表（英文→两字中文）
 └── reanimator_db/                  # Reanimator 数据库文件
 ```
+
+## 🗂️ 版本历史（自 v0.9.0）
+
+- **v0.10.1a** — Lithoformer 输出升级为逐行双语；Schema 新增翻译字段，CLI/API/TUI 自动附带批次号与题目 `L` 编码；QuizFormatter 实现原文与译文交织。
+- **v0.9.2** — Lithoformer TUI 全面重写，采用 JiraTUI 布局，支持 Detect/Start 双阶段、实时日志与题目表格。
+- **v0.9.1a** — 扩充测验数据集，导入新的 Markdown 题库文件。
+- **v0.9.1** — 标记生产就绪，补齐 CLI/API、批次 ID、日志追踪与错误处理能力。
+- **v0.9.0** — 引入 DDD + Hexagonal 架构，确立 Reanimator / Lithoformer 子域与共享内核。
 
 ### 架构图表
 
@@ -460,9 +478,9 @@ flowchart LR
 
 | 层级 | 关键组件 |
 |------|-----------|
-| Domain | `QuizItem`、`QuizAnalysis`；`split_markdown_into_questions`、`infer_titles_from_markdown` 等领域服务 |
-| Application | `ParseQuizUseCase`；端口接口 `LLMPort` |
-| Infrastructure | `LithoformerLLMAdapter`、`FileAdapter`、`FormatterAdapter`、`LITHOFORMER_SYSTEM_PROMPT`、`QUESTION_SCHEMA` |
+| Domain | `QuizItem`（含翻译字段）、`QuizAnalysis`；`split_markdown_into_questions`、`infer_titles_from_markdown`、`infer_question_seed`|
+| Application | `ParseQuizUseCase`（对齐翻译字段、累计 Token）；端口接口 `LLMPort` |
+| Infrastructure | `LithoformerLLMAdapter`、`FileAdapter`、`FormatterAdapter`、`LITHOFORMER_SYSTEM_PROMPT`、`QUESTION_SCHEMA`（含翻译字段） |
 | CLI | `lithoformer/cli/main.py`、`run_lithoform.sh` |
 
 **Shared Kernel**
@@ -1337,6 +1355,23 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 ---
 
 ## 📝 变更日志
+
+### v0.10.1a (2025-10-16)
+
+**双语输出 & 题目元数据**
+
+- ✨ Lithoformer LLM Schema 新增 `stem_translation`、`options_translation` 等字段，输出逐行中英双语。
+- ✨ CLI/API/TUI 自动推算批次号与题目 `L` 编码，Formatter 在写出 ShouldBe.txt 时一并附加。
+- 🛠️ `ParseQuizUseCase` 对译文字段做长度对齐和空白清洗，防止 Formatter 阶段出现错位。
+- 🛠️ `QuizFormatter` 重写为行级交织逻辑，并在日志中记录输出统计。
+
+### v0.9.2 (2025-10-15)
+
+**Lithoformer TUI 重构**
+
+- ✨ Textual TUI 参考 JiraTUI 进行 UI/交互重写，加入 Detect → START 双阶段流程与文件树选择。
+- ✨ 新增实时日志、题目状态表、双进度条及命令输入区，默认保留最近 999 条记录。
+- 🛠️ CLI 与 TUI 共享批次推断逻辑，支持 Detect 阶段轻量扫描，Start 阶段流式更新。
 
 ### v0.9.1a (2025-10-14)
 

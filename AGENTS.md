@@ -7,7 +7,9 @@ This document captures shared memory and working agreements for AI coding agents
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v0.9.2** (当前) - Lithoformer TUI 完全重写，基于 JiraTUI 最佳实践
+- **v0.10.1a** (当前) - Lithoformer 输出升级为逐行双语，Schema/Formatter/TUI/CLI 全链路支持批次号与题目编码
+- **v0.9.3** - 首次引入双语输出管线，Formatter 与 CLI/TUI 联动
+- **v0.9.2** - Lithoformer TUI 完全重写，基于 JiraTUI 最佳实践
 - **v0.9.1a** - 数据更新，新增测验文件
 - **v0.9.1** - 生产就绪版本
 - **v0.9.0** - DDD + Hexagonal 架构，Lithoformer 支持逐题中文解析
@@ -114,7 +116,7 @@ LOG_LEVEL=INFO
 
 ---
 
-## 核心架构 (v0.9.1a - DDD + Hexagonal)
+## 核心架构 (v0.10.1a - DDD + Hexagonal + Bilingual Pipeline)
 
 ### DDD 分层架构
 
@@ -136,6 +138,13 @@ LOG_LEVEL=INFO
 │  (TokenUsage, ProcessResult, Config, LLM Providers)     │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### 双语输出要点（v0.10.1a+）
+
+- LLM 端严格遵循扩展后的 JSON Schema，同时返回英文字段及 `*_translation` 对应字段。
+- `ParseQuizUseCase` 在 Application 层对译文进行数量对齐与空白清洗，避免 Formatter 阶段出错。
+- `QuizFormatter` 负责逐行交织原文与译文，并在每题末尾写入批次号与题目 `L` 编码。
+- CLI/API/TUI 均会把批次号与题号种子传给 Formatter，确保同一批次输出的题号连续且唯一。
 
 ### 项目结构
 
@@ -171,7 +180,7 @@ src/memosyne/
 │
 ├── lithoformer/                    # Lithoformer 子域（Bounded Context）
 │   ├── domain/                     # 领域层
-│   │   ├── models.py               # QuizItem, QuizOptions
+│   │   ├── models.py               # QuizItem, QuizOptions（含翻译字段）
 │   │   └── services.py             # split_markdown, infer_titles, is_quiz_item_valid
 │   ├── application/                # 应用层
 │   │   ├── ports.py                # LLMPort（端口接口）
@@ -179,7 +188,7 @@ src/memosyne/
 │   ├── infrastructure/             # 基础设施层
 │   │   ├── llm_adapter.py          # LithoformerLLMAdapter（注入 prompts/schemas）
 │   │   ├── prompts.py              # LITHOFORMER_SYSTEM_PROMPT
-│   │   ├── schemas.py              # QUIZ_SCHEMA
+│   │   ├── schemas.py              # QUIZ_SCHEMA（含翻译字段）
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
 │   │   └── formatters/             # QuizFormatter（依赖领域模型）
@@ -503,6 +512,7 @@ Memosyne/
 - 输入格式：题目使用 ```Question``` / ```Answer``` 成对代码块，兼容旧的 ```Gezhi``` 格式。
 - 标题推断：优先读取 Markdown 中的 `#` 标题；若缺失，可在 `src/memosyne/lithoformer/domain/services.py` 的 `TITLE_OVERRIDES` 中添加映射。
 - 默认字典目前包含 `"23": ("Profiles in Psychopathology", "Anxiety Disorders")`。
+- LLM 输出会包含英文字段与 `*_translation` 字段，Formatter 会逐行交织生成中英双语 ShouldBe.txt，并在每题末尾追加批次号与题目 `L` 编码。
 
 ## 常见任务
 
@@ -675,4 +685,4 @@ PYTHONPATH=src python -m memosyne.lithoformer.tui.app
 ---
 
 **最后更新**: 2025-10-15
-**文档版本**: v0.9.2
+**文档版本**: v0.10.1a
