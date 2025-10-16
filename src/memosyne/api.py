@@ -48,6 +48,7 @@ from .lithoformer.infrastructure import (
 from .lithoformer.domain.services import (
     infer_titles_from_markdown,
     infer_titles_from_filename,
+    infer_question_seed,
 )
 
 
@@ -301,7 +302,13 @@ def lithoform(
 
     # 9. 格式化输出（使用 Infrastructure Adapter）
     formatter_adapter = FormatterAdapter.create()
-    out_text = formatter_adapter.format(process_result.items, title_main, title_sub)
+    out_text = formatter_adapter.format(
+        process_result.items,
+        title_main,
+        title_sub,
+        batch_code=batch_id,
+        question_start=infer_question_seed(input_path),
+    )
 
     # 10. 确定输出路径（使用智能命名）
     if output_txt is None:

@@ -286,4 +286,29 @@ def _normalize_question_dict(data: dict) -> dict:
 
         result["analysis"] = analysis
 
+    # Ensure translations exist and align with base fields
+    result["stem_translation"] = (result.get("stem_translation") or "").strip()
+
+    steps = result.get("steps") or []
+    steps_trans = result.get("steps_translation") or []
+    if len(steps_trans) < len(steps):
+        steps_trans = list(steps_trans) + [""] * (len(steps) - len(steps_trans))
+    elif len(steps_trans) > len(steps):
+        steps_trans = steps_trans[: len(steps)]
+    result["steps_translation"] = [str(step).strip() for step in steps_trans]
+
+    options_translation = result.get("options_translation") or {}
+    normalized_options_translation = {}
+    for key in ["A", "B", "C", "D", "E", "F"]:
+        normalized_options_translation[key] = str(options_translation.get(key, "") or "").strip()
+    result["options_translation"] = normalized_options_translation
+
+    cloze_trans = result.get("cloze_answers_translation") or []
+    cloze = result.get("cloze_answers") or []
+    if len(cloze_trans) < len(cloze):
+        cloze_trans = list(cloze_trans) + [""] * (len(cloze) - len(cloze_trans))
+    elif len(cloze_trans) > len(cloze):
+        cloze_trans = cloze_trans[: len(cloze)]
+    result["cloze_answers_translation"] = [str(text).strip() for text in cloze_trans]
+
     return result

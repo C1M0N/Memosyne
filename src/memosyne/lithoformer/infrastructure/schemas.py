@@ -27,10 +27,19 @@ QUESTION_SCHEMA = {
                 "type": "string",
                 "description": "题干内容（需要保留原始换行，使用 <br> 表示）"
             },
+            "stem_translation": {
+                "type": "string",
+                "description": "题干的简体中文翻译"
+            },
             "steps": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "排序题步骤列表（ORDER 类型必填，其他类型填 []）"
+            },
+            "steps_translation": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "排序题步骤的中文翻译（与 steps 数量一致）"
             },
             "options": {
                 "type": "object",
@@ -46,6 +55,20 @@ QUESTION_SCHEMA = {
                 "required": ["A", "B", "C", "D", "E", "F"],
                 "description": "选择题选项（无选项则均为空字符串）"
             },
+            "options_translation": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "A": {"type": "string"},
+                    "B": {"type": "string"},
+                    "C": {"type": "string"},
+                    "D": {"type": "string"},
+                    "E": {"type": "string"},
+                    "F": {"type": "string"}
+                },
+                "required": ["A", "B", "C", "D", "E", "F"],
+                "description": "选择题选项的简体中文翻译"
+            },
             "answer": {
                 "type": "string",
                 "description": "正确答案：MCQ/ORDER 填 A-F，CLOZE 填空字符串"
@@ -54,6 +77,11 @@ QUESTION_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "填空题答案列表（CLOZE 类型必填，其他类型填 []）"
+            },
+            "cloze_answers_translation": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "填空题答案的简体中文翻译"
             },
             "analysis": {
                 "type": "object",
@@ -82,6 +110,18 @@ QUESTION_SCHEMA = {
                 "description": "题目解析信息"
             }
         },
-        "required": ["qtype", "stem", "steps", "options", "answer", "cloze_answers", "analysis"]
+        "required": [
+            "qtype",
+            "stem",
+            "stem_translation",
+            "steps",
+            "steps_translation",
+            "options",
+            "options_translation",
+            "answer",
+            "cloze_answers",
+            "cloze_answers_translation",
+            "analysis"
+        ]
     }
 }

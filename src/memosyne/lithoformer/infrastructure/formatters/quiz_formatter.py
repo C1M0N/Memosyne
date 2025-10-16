@@ -137,6 +137,50 @@ def _collapse_br(s: str) -> str:
     return s
 
 
+def _normalize_translation_text(text: str) -> str:
+    """Normalize translation text to use <br> markers consistently."""
+    return _collapse_br(_normalize_linebreaks_to_br(text.strip())) if text else ""
+
+
+def _combine_bilingual(text_en: str, text_cn: str) -> str:
+    """Render English + Chinese translation as a single block, line by line."""
+    text_en = text_en.strip()
+    text_cn = text_cn.strip()
+    if not text_en and not text_cn:
+        return ""
+    if not text_cn:
+        return text_en
+    return _interleave_translation(text_en, text_cn)
+
+
+def _interleave_translation(text_en: str, text_cn: str) -> str:
+    """Interleave translation lines with the matching English lines."""
+    en_segments = text_en.split("<br>") if text_en else [""]
+    cn_segments = text_cn.split("<br>") if text_cn else []
+
+    max_len = max(len(en_segments), len(cn_segments))
+    out_segments: list[str] = []
+
+    for idx in range(max_len):
+        en_part = en_segments[idx] if idx < len(en_segments) else ""
+        cn_part = cn_segments[idx] if idx < len(cn_segments) else ""
+
+        en_part = en_part.strip()
+        cn_part = cn_part.strip()
+
+        if en_part:
+            if cn_part:
+                out_segments.append(f"{en_part}<br>((::{cn_part}))")
+            else:
+                out_segments.append(en_part)
+        elif cn_part:
+            out_segments.append(f"((::{cn_part}))")
+        else:
+            out_segments.append("")
+
+    return "<br>".join(out_segments)
+
+
 def _format_analysis(item: QuizItem) -> str:
     analysis = item.analysis
     if analysis is None:
@@ -257,7 +301,11 @@ class QuizFormatter:
         self,
         items: list[QuizItem],
         title_main: str,
-        title_sub: str = ""
+        title_sub: str = "",
+        *,
+        batch_code: str = "",
+        question_start: int | None = None,
+        question_prefix: str = "L",
     ) -> str:
         """
         格式化 Quiz 题目列表
@@ -266,39 +314,53 @@ class QuizFormatter:
             items: QuizItem 列表
             title_main: 主标题（如 "Chapter 3 Quiz"）
             title_sub: 副标题（如 "Mental Disorders"）
+            batch_code: 批次代码（输出文件名的前缀）
+            question_start: 题号起始基准值（例如文件名中的数字部分）
+            question_prefix: 题号前缀，默认 "L"
 
         Returns:
             格式化后的文本（ShouldBe.txt 格式）
         """
         blocks = []
         head = f"<b>{title_main}:<br>{title_sub}</b>"
+        base_number = question_start or 0
 
-        for item in items:
+        for idx, item in enumerate(items, start=1):
             qtype = item.qtype.upper()
-            stem = item.stem.strip()
+            stem_en = item.stem.strip()
+            stem_cn = _normalize_translation_text(item.stem_translation)
             steps = item.steps or []
+            steps_cn = [
+                _normalize_translation_text(text)
+                for text in (item.steps_translation or [])
+            ]
             opts = item.options.model_dump()  # 转为 dict
+            opts_cn = {
+                key: _normalize_translation_text(value)
+                for key, value in item.options_translation.model_dump().items()
+            }
             ans = item.answer.strip().upper()
             cloz = item.cloze_answers or []
 
             # 统一换行 & 图片占位
-            stem = _inject_pic_linebreaks(_normalize_linebreaks_to_br(stem))
+            stem_en = _inject_pic_linebreaks(_normalize_linebreaks_to_br(stem_en))
             # 清理题干垃圾
-            stem = _sanitize_stem(stem)
+            stem_en = _sanitize_stem(stem_en)
 
             # 跳过"答案总结句"伪题（仅当非 CLOZE & 无选项文本）
-            if qtype != "CLOZE" and not _has_any_option_text(opts) and _ANS_SUMMARY_RE.search(stem):
+            if qtype != "CLOZE" and not _has_any_option_text(opts) and _ANS_SUMMARY_RE.search(stem_en):
                 continue
 
             # —— CLOZE 误判兜底：有选项却是 CLOZE → 当 MCQ，且还原 {{...}} 为 _______ ——
             if qtype == "CLOZE" and _has_any_option_text(opts):
                 qtype = "MCQ"
-                stem = _restore_underscores(stem)
+                stem_en = _restore_underscores(stem_en)
 
             if qtype == "CLOZE":
                 # 正常 CLOZE：按答案覆盖
-                stem_render = _replace_cloze(stem, cloz)
-                body = _collapse_br(stem_render)
+                stem_render_en = _replace_cloze(stem_en, cloz)
+                stem_render_en = _collapse_br(stem_render_en)
+                body = _combine_bilingual(stem_render_en, stem_cn)
                 analysis_html = _format_analysis(item)
                 blocks.append(f"{head}<br><br>{body}{analysis_html}")
                 continue
@@ -306,24 +368,26 @@ class QuizFormatter:
             if qtype == "ORDER":
                 # 兜底：从 stem 提取序列选项（若 options 空）
                 if not _has_any_option_text(opts):
-                    stem, recovered = _extract_order_sequences_from_stem(stem)
+                    stem_en, recovered = _extract_order_sequences_from_stem(stem_en)
                     # 合并（仅填充空位）
                     for k in ["A", "B", "C", "D", "E", "F"]:
                         if not (opts.get(k) or "").strip():
                             opts[k] = recovered.get(k, "")
                 # 从 stem 剔除 steps（避免重复）
-                stem = _strip_steps_from_stem(stem, steps)
+                stem_en = _strip_steps_from_stem(stem_en, steps)
                 # 渲染
-                lines = [f"[{stem}"]
-                for s in steps:
+                lines = [f"[{_combine_bilingual(stem_en, stem_cn)}"]
+                for step_en, step_cn in zip(steps, steps_cn):
                     s = _NOT_SELECTED.sub("", s).rstrip()
                     if s and not _NAKED_LETTER.match(s):
-                        lines.append(f" {s}")
+                        lines.append(f" {_combine_bilingual(s, step_cn)}")
                 # 标准化 & 输出序列选项
                 for letter in ["A", "B", "C", "D", "E", "F"]:
                     text = (opts.get(letter) or "").strip()
+                    text_cn = (opts_cn.get(letter) or "").strip()
                     if text:
-                        lines.append(f"{letter}. {_normalize_sequence(text)}")
+                        normalized_seq = _normalize_sequence(text)
+                        lines.append(f"{letter}. {_combine_bilingual(normalized_seq, text_cn)}")
                 lines.append(f"]::({ans})")
                 body = _collapse_br("<br>".join(lines))
                 analysis_html = _format_analysis(item)
@@ -334,6 +398,7 @@ class QuizFormatter:
             if not _has_any_option_text(opts) and "§Pic." in stem:
                 for k, v in zip(["A", "B", "C", "D"], ["A", "B", "C", "D"]):
                     opts[k] = v
+                    opts_cn.setdefault(k, "")
 
             # 规范化选项文本（去内层前缀）
             for k in list(opts.keys()):
@@ -341,21 +406,39 @@ class QuizFormatter:
                     opts[k] = _strip_option_prefix(opts[k])
 
             # —— 去题干里的"重复选项句子" ——
-            stem = _remove_option_texts_from_stem(stem, opts)
+            stem_en = _remove_option_texts_from_stem(stem_en, opts)
+            stem_render = _combine_bilingual(stem_en, stem_cn)
 
             # MCQ 渲染
-            lines = [f"[{stem}"]
+            lines = [f"[{stem_render}"]
             for letter in ["A", "B", "C", "D", "E", "F"]:
                 text = (opts.get(letter) or "").strip()
+                text_cn = (opts_cn.get(letter) or "").strip()
                 if text:
-                    lines.append(f"{letter}. {text}")
+                    lines.append(f"{letter}. {_combine_bilingual(text, text_cn)}")
             lines.append(f"]::({ans})")
             body = _collapse_br("<br>".join(lines))
             analysis_html = _format_analysis(item)
+
             blocks.append(f"{head}<br><br>{body}{analysis_html}")
 
+        if not blocks:
+            return ""
+
+        question_blocks: list[str] = []
+        for offset, block in enumerate(blocks, start=1):
+            code_number = base_number + offset
+            question_code = f"{question_prefix}{code_number:06d}"
+            meta_parts = []
+            if batch_code:
+                meta_parts.append(f"<div style=\"text-align: right;\">{batch_code}</div>")
+            if question_code:
+                meta_parts.append(f"<div style=\"text-align: right;\">{question_code}</div>")
+            metadata_html = "".join(meta_parts)
+            question_blocks.append(f"{block}{metadata_html}")
+
         # 每题之间物理换行
-        return "\n".join(blocks)
+        return "\n".join(question_blocks)
 
 
 # ============================================================

@@ -35,6 +35,7 @@ from ...application import ParseQuizUseCase, QuizProcessingEvent
 from ...domain.services import (
     infer_titles_from_filename,
     infer_titles_from_markdown,
+    infer_question_seed,
     split_markdown_into_questions,
 )
 from ...infrastructure import FileAdapter, FormatterAdapter, LithoformerLLMAdapter
@@ -541,7 +542,14 @@ class MainScreen(Screen):
                 output_dir = Path(self.output_path_input.value.strip() or self.settings.lithoformer_output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = unique_path(output_dir / detection.output_filename)
-                output_text = formatter.format(items, detection.title_main, detection.title_sub)
+                sequence_source = self.sequence_input.value.strip() or detection.sequence
+                output_text = formatter.format(
+                    items,
+                    detection.title_main,
+                    detection.title_sub,
+                    batch_code=detection.batch_id,
+                    question_start=infer_question_seed(sequence_source),
+                )
                 file_adapter.write_text(output_path, output_text)
             except Exception as exc:
                 self.logger.error("写入输出文件失败：%s", exc)

@@ -26,6 +26,7 @@ from ..infrastructure import LithoformerLLMAdapter, FileAdapter, FormatterAdapte
 from ..domain.services import (
     infer_titles_from_filename,
     infer_titles_from_markdown,
+    infer_question_seed,
 )
 
 
@@ -120,7 +121,13 @@ def main():
 
     # Format output
     formatter_adapter = FormatterAdapter.create()
-    output_text = formatter_adapter.format(result.items, title_main, title_sub)
+    output_text = formatter_adapter.format(
+        result.items,
+        title_main,
+        title_sub,
+        batch_code=batch_id,
+        question_start=infer_question_seed(input_path),
+    )
 
     # Write output
     try:

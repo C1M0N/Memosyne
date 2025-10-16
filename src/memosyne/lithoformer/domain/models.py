@@ -56,13 +56,26 @@ class QuizItem(BaseModel):
         min_length=1,
         description="Question stem"
     )
+    stem_translation: str = Field(
+        ...,
+        min_length=1,
+        description="Stem rendered in Simplified Chinese"
+    )
     steps: list[str] = Field(
         default_factory=list,
         description="Step list (for ORDER type)"
     )
+    steps_translation: list[str] = Field(
+        default_factory=list,
+        description="Steps translated into Simplified Chinese"
+    )
     options: QuizOptions = Field(
         default_factory=QuizOptions,
         description="Options A-F"
+    )
+    options_translation: QuizOptions = Field(
+        default_factory=QuizOptions,
+        description="Options A-F translated into Simplified Chinese"
     )
     answer: str = Field(
         default="",
@@ -72,6 +85,10 @@ class QuizItem(BaseModel):
     cloze_answers: list[str] = Field(
         default_factory=list,
         description="Fill-in-blank answers (for CLOZE type)"
+    )
+    cloze_answers_translation: list[str] = Field(
+        default_factory=list,
+        description="Translations for cloze answers"
     )
     analysis: QuizAnalysis | None = Field(
         default=None,
@@ -99,6 +116,19 @@ class QuizItem(BaseModel):
             return False
         if not self.analysis.rationale.strip():
             return False
+
+        if not self.stem_translation.strip():
+            return False
+
+        if self.qtype == "MCQ":
+            if not any((self.options_translation.model_dump().get(letter) or "").strip() for letter in ["A", "B", "C", "D", "E", "F"]):
+                return False
+        elif self.qtype == "ORDER":
+            if len(self.steps) != len(self.steps_translation):
+                return False
+        elif self.qtype == "CLOZE":
+            if len(self.cloze_answers) != len(self.cloze_answers_translation):
+                return False
 
         return True
 

@@ -216,6 +216,26 @@ def infer_titles_from_markdown(markdown: str) -> tuple[str, str]:
     return "", ""
 
 
+def infer_question_seed(value: str | Path) -> int:
+    """
+    根据文件名或路径推断题号种子（用于计算题代码 L000xxx）。
+
+    规则：提取路径最后一段中的数字，返回其整数值；若包含多组数字，使用最后一组。
+    """
+    if isinstance(value, Path):
+        stem = value.stem
+    else:
+        stem = Path(value).stem
+
+    matches = re.findall(r"\d+", stem)
+    if not matches:
+        return 0
+    try:
+        return int(matches[-1])
+    except ValueError:
+        return 0
+
+
 def infer_titles_from_filename(path: Path) -> tuple[str, str]:
     """
     Infer titles from filename
