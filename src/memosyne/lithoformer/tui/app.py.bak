@@ -1,0 +1,872 @@
+"""Lithoformer Textual UI strictly matching the provided layout."""
+from __future__ import annotations
+
+import asyncio
+import re
+import threading
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from time import perf_counter
+from typing import Optional
+
+from rich.markup import escape
+from textual import events
+from textual.app import App, ComposeResult
+from textual.containers import Container, Grid, Horizontal, Vertical
+from textual.reactive import reactive
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, DirectoryTree, Footer, Input, ProgressBar, Select, Static
+
+try:  # Textual 0.6 uses TextLog, newer versions renamed to Log
+    from textual.widgets import TextLog  # type: ignore
+except ImportError:  # pragma: no cover
+    from textual.widgets import Log as TextLog  # type: ignore
+
+from ... import __version__
+from ...shared.config import get_settings
+from ...shared.infrastructure.llm import AnthropicProvider, OpenAIProvider
+from ...shared.utils import (
+    BatchIDGenerator,
+    generate_output_filename,
+    get_provider_from_model,
+    resolve_model_input,
+    unique_path,
+)
+from ...shared.utils.model_codes import list_all_models
+from ..application import ParseQuizUseCase, QuizProcessingEvent
+from ..domain.services import (
+    infer_titles_from_filename,
+    infer_titles_from_markdown,
+    split_markdown_into_questions,
+)
+from ..infrastructure import FileAdapter, FormatterAdapter, LithoformerLLMAdapter
+
+
+ASCII_LOGO = r"""
+ _      _ _   _           __
+| |    (_) | (_)         / _|
+| |     _| |_ _  ___ ___| |_ ___  _ __ ___  ___
+| |    | | __| |/ __/ _ \  _/ _ \| '__/ _ \/ __|
+| |____| | |_| | (_|  __/ || (_) | | |  __/\__ \
+|______|_|\__|_|\___\___|_| \___/|_|  \___||___/
+            Lithoformer Control Console
+"""
+
+
+@dataclass(slots=True)
+class QuestionRowState:
+    row_key: str
+    index: int
+    number: str
+    status: str = "Pending"
+    char_count: int = 0
+    qtype: str = "MCQ"
+    output_chars: int = 0
+    elapsed: float = 0.0
+    error: str | None = None
+    block: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class DetectionResult:
+    file_path: Path
+    markdown: str
+    blocks: list[dict[str, str]]
+    provider: str
+    model_id: str
+    model_code: str
+    title_main: str
+    title_sub: str
+    sequence: str
+    batch_id: str
+    output_filename: str
+    detected_at: datetime
+    questions: list[QuestionRowState]
+
+
+class RunState(str, Enum):
+    IDLE = "idle"
+    DETECTING = "detecting"
+    READY = "ready"
+    RUNNING = "running"
+
+
+class FilePickerModal(ModalScreen[Path | None]):
+    CSS_PATH = "styles.tcss"
+
+    def __init__(self, root: Path):
+        super().__init__()
+        self._root = root
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Static("选择 Lithoformer 输入文件", classes="modal-title"),
+            DirectoryTree(self._root, id="picker-tree"),
+            Horizontal(Button("取消", id="picker-cancel")),
+            id="picker-container",
+        )
+
+    async def on_directory_tree_file_selected(
+        self,
+        event: DirectoryTree.FileSelected,
+    ) -> None:
+        if event.path.suffix.lower() == ".md":
+            self.dismiss(event.path)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "picker-cancel":
+            self.dismiss(None)
+
+
+class DetectionSummaryModal(ModalScreen[bool]):
+    CSS_PATH = "styles.tcss"
+
+    def __init__(self, detection: DetectionResult):
+        super().__init__()
+        self._detection = detection
+
+    def compose(self) -> ComposeResult:
+        info_lines = [
+            f"[b]输入文件：[/] {self._detection.file_path.name}",
+            f"[b]题目数量：[/] {len(self._detection.questions)}",
+            f"[b]标题：[/] {self._detection.title_main or '—'}",
+            f"[b]副标题：[/] {self._detection.title_sub or '—'}",
+            f"[b]序号：[/] {self._detection.sequence or '—'}",
+            f"[b]批次号：[/] {self._detection.batch_id}",
+            f"[b]输出文件：[/] {self._detection.output_filename}",
+        ]
+        yield Container(
+            Static("检测完成", classes="modal-title"),
+            *(Static(line, classes="modal-text") for line in info_lines),
+            Horizontal(
+                Button("开始解析", id="modal-start", variant="error"),
+                Button("取消", id="modal-cancel"),
+                classes="modal-actions",
+            ),
+            id="summary-modal",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "modal-start":
+            self.dismiss(True)
+        elif event.button.id == "modal-cancel":
+            self.dismiss(False)
+
+
+class LithoformerTUIApp(App[None]):
+    CSS_PATH = "styles.tcss"
+    BINDINGS = [("q", "app.quit", "退出")]
+
+    selected_file: reactive[Optional[Path]] = reactive(None)
+    run_state: reactive[RunState] = reactive(RunState.IDLE)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.settings = get_settings()
+        self.settings.ensure_dirs()
+
+        self._detection: DetectionResult | None = None
+        self._rows: dict[int, QuestionRowState] = {}
+        self._model_option_values: set[str] = set()
+        self._main_thread_id: int | None = None
+        self._run_start_time: float | None = None
+        self._total_tokens: int = 0
+
+        # Widgets (defined in compose)
+        self.date_display: Static
+        self.time_display: Static
+        self.version_display: Static
+        self.title_display: Static
+
+        self.input_path_display: Input
+        self.output_dir_input: Input
+        self.provider_select: Select
+        self.model_select: Select
+        self.model_input: Input
+        self.tag_input: Input
+        self.title_main_input: Input
+        self.sequence_input: Input
+        self.batch_input: Input
+        self.output_name_input: Input
+        self.model_note_input: Input
+        self.file_tree: DirectoryTree
+        self.detect_button: Button
+        self.start_button: Button
+
+        self.table: DataTable
+        self.log_view: TextLog
+        self.command_input: Input
+        self.status_message: Static
+        self.stats_count: Static
+        self.stats_time: Static
+        self.stats_tokens: Static
+        self.progress_bar: ProgressBar
+
+    # ------------------------------------------------------------------ Layout
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Static(ASCII_LOGO, id="header"),
+            self._build_info_row(),
+            Horizontal(
+                self._build_table_section(),
+                self._build_right_column(),
+                id="middle-row",
+            ),
+            Horizontal(
+                self._build_log_section(),
+                self._build_command_section(),
+                id="bottom-row",
+            ),
+            self._build_progress_section(),
+            id="root",
+        )
+
+    def _build_info_row(self) -> Horizontal:
+        self.date_display = Static("--", classes="info-value")
+        self.time_display = Static("--", classes="info-value")
+        self.version_display = Static(__version__, classes="info-value")
+        self.title_display = Static("—", classes="info-value")
+
+        date_box = self._info_box("日期", self.date_display)
+        time_box = self._info_box("时间", self.time_display)
+        version_box = self._info_box("版本号", self.version_display)
+        title_box = self._info_box("标题", self.title_display)
+
+        left = Horizontal(date_box, time_box, id="info-left")
+        right = Horizontal(version_box, title_box, id="info-right")
+        return Horizontal(left, right, id="info-row")
+
+    def _build_table_section(self) -> Container:
+        self.table = DataTable(id="question-table")
+        self.table.add_column("#", key="index", width=4)
+        self.table.add_column("题号", key="number", width=14)
+        self.table.add_column("Status", key="status", width=12)
+        self.table.add_column("字符数", key="char", width=10)
+        self.table.add_column("题型", key="qtype", width=8)
+        self.table.add_column("输出字符数", key="output_chars", width=12)
+        self.table.add_column("所用时间", key="elapsed", width=12)
+        self.table.cursor_type = "row"
+        self.table.zebra_stripes = True
+
+        return Container(self.table, id="table-section")
+
+    def _build_right_column(self) -> Vertical:
+        return Vertical(
+            self._build_form_and_tree(),
+            self._build_button_row(),
+            id="right-column",
+        )
+
+    def _build_form_and_tree(self) -> Horizontal:
+        self.input_path_display = Input(placeholder="请选择输入文件", disabled=True, id="input-path")
+        self.output_dir_input = Input(value=str(self.settings.lithoformer_output_dir), id="output-dir")
+
+        provider_options = [("OpenAI", "openai"), ("Anthropic", "anthropic")]
+        default_provider = (
+            self.settings.default_llm_provider if self.settings.default_llm_provider in {"openai", "anthropic"} else "openai"
+        )
+        self.provider_select = Select(provider_options, value=default_provider, allow_blank=False, id="provider-select")
+
+        model_options = [(model, model) for model in list_all_models().get(default_provider, [])]
+        default_model = (
+            self.settings.default_openai_model if default_provider == "openai" else self.settings.default_anthropic_model
+        )
+        if default_model not in {value for _, value in model_options} and model_options:
+            default_model = model_options[0][1]
+        self._model_option_values = {value for _, value in model_options}
+        self.model_select = Select(
+            model_options,
+            value=default_model if default_model in self._model_option_values else Select.BLANK,
+            id="model-select",
+        )
+
+        self.model_input = Input(value=default_model if default_model in self._model_option_values else "", id="model-input")
+        self.tag_input = Input(placeholder="", id="tag-input")
+        self.title_main_input = Input(placeholder="", id="title-input")
+        self.sequence_input = Input(placeholder="", id="sequence-input")
+        self.batch_input = Input(placeholder="", id="batch-input")
+        self.output_name_input = Input(placeholder="", id="output-name-input")
+        self.model_note_input = Input(placeholder="（可选）备注传给模型的说明", id="note-input")
+
+        form_rows = [
+            self._form_row("输入路径", self.input_path_display, hint="input"),
+            self._form_row("输出路径", self.output_dir_input, hint="input"),
+            self._form_row("厂商选择", self.provider_select, hint="dropdown"),
+            self._form_row("模型选择", self.model_select, hint="dropdown"),
+            self._form_row("使用模型", self.model_input, hint="auto"),
+            self._form_row("标签", self.tag_input, hint="auto"),
+            self._form_row("标题", self.title_main_input, hint="auto"),
+            self._form_row("序号", self.sequence_input, hint="auto"),
+            self._form_row("批次号", self.batch_input, hint="auto"),
+            self._form_row("输出文件名", self.output_name_input, hint="auto"),
+            self._form_row("给模型的备注", self.model_note_input, hint="input"),
+        ]
+
+        form_panel = Vertical(*form_rows, id="form-panel")
+        self.file_tree = DirectoryTree(self.settings.lithoformer_input_dir, id="file-tree")
+        tree_panel = Vertical(Static("文件选择", classes="form-label"), self.file_tree, id="file-panel")
+
+        return Horizontal(form_panel, tree_panel, id="form-and-tree")
+
+    def _build_button_row(self) -> Container:
+        self.detect_button = Button("Detect", id="detect-button", variant="primary")
+        self.start_button = Button("Start", id="start-button", variant="error", disabled=True)
+        return Container(Horizontal(self.detect_button, self.start_button, id="button-row"), id="button-panel")
+
+    def _build_log_section(self) -> Container:
+        self.log_view = TextLog(id="log-view", highlight=True)
+        return Container(
+            Static("Log", classes="form-label"),
+            self.log_view,
+            id="log-section",
+        )
+
+    def _build_command_section(self) -> Container:
+        self.command_input = Input(placeholder="/clear 清空日志", id="command-input")
+        self.status_message = Static("状态：待机", id="status-message")
+        self.stats_count = Static("完成：0/0", id="stats-count")
+        self.stats_time = Static("耗时：00:00 / 估计剩余 --:--", id="stats-time")
+        self.stats_tokens = Static("Tokens：0", id="stats-tokens")
+
+        return Container(
+            Static("指令输入区", classes="form-label"),
+            self.command_input,
+            self.status_message,
+            self.stats_count,
+            self.stats_time,
+            self.stats_tokens,
+            id="command-section",
+        )
+
+    def _build_progress_section(self) -> Container:
+        self.progress_bar = ProgressBar(id="progress-bar")
+        return Container(self.progress_bar, id="progress-section")
+
+    def _info_box(self, label: str, value_widget: Static) -> Container:
+        return Container(
+            Static(label, classes="info-label"),
+            value_widget,
+            classes="info-box",
+        )
+
+    def _form_row(self, label: str, widget, *, hint: str) -> Container:
+        hints = {
+            "input": ("输入", "hint-input"),
+            "dropdown": ("下拉菜单", "hint-dropdown"),
+            "auto": ("自动推断", "hint-auto"),
+        }
+        hint_text, hint_style = hints.get(hint, ("", "hint-input"))
+        return Container(
+            Horizontal(
+                Static(label, classes="form-label"),
+                Static(hint_text, classes=f"form-hint {hint_style}"),
+                classes="form-label-box",
+            ),
+            widget,
+            classes="form-row",
+        )
+
+    # ------------------------------------------------------------ Lifecycle --
+
+    async def on_mount(self) -> None:
+        self._main_thread_id = threading.get_ident()
+        self._update_datetime()
+        self.version_display.update(__version__)
+        self._update_controls()
+
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        widget = event.input
+        value = event.value.strip()
+        if widget is self.model_input:
+            if value in self._model_option_values and self.model_select.value != value:
+                self.model_select.value = value
+        elif widget is self.output_dir_input:
+            try:
+                new_path = Path(value)
+                if new_path.exists() and new_path.is_dir():
+                    self.file_tree.path = new_path
+            except Exception:  # pragma: no cover
+                pass
+        self._update_controls()
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input is not self.command_input:
+            return
+        command = event.value.strip()
+        if command == "/clear":
+            self.log_view.clear()
+            self.command_input.value = ""
+            self._log("INFO", "日志已清空")
+        elif command:
+            self._log("WARNING", "未知命令：%s", command)
+            self.command_input.value = ""
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select is self.provider_select:
+            provider = event.value if isinstance(event.value, str) else "openai"
+            if provider not in {"openai", "anthropic"}:
+                provider = "openai"
+            self._refresh_model_options(provider)
+        elif event.select is self.model_select:
+            value = event.value if isinstance(event.value, str) else ""
+            if value and self.model_input.value != value:
+                self.model_input.value = value
+
+    async def on_directory_tree_file_selected(
+        self,
+        event: DirectoryTree.FileSelected,
+    ) -> None:
+        if event.path.suffix.lower() != ".md":
+            self._log("WARNING", "请选择 Markdown (.md) 文件")
+            return
+        self.selected_file = event.path
+        self.input_path_display.value = str(event.path)
+        self._log("INFO", "已选择输入文件：%s", event.path.name)
+        self._reset_after_file_change()
+        self._update_controls()
+
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "detect-button":
+            await self._handle_detect()
+        elif event.button.id == "start-button":
+            await self._handle_start_request()
+
+    # -------------------------------------------------------------- Helpers --
+
+    def _update_datetime(self) -> None:
+        now = datetime.now()
+        self.date_display.update(now.strftime("%Y-%m-%d"))
+        self.time_display.update(now.strftime("%H:%M"))
+
+    def _reset_after_file_change(self) -> None:
+        self._detection = None
+        self._rows.clear()
+        self.table.clear()
+        self.title_display.update("—")
+        self.tag_input.value = ""
+        self.title_main_input.value = ""
+        self.sequence_input.value = ""
+        self.batch_input.value = ""
+        self.output_name_input.value = ""
+        self.model_note_input.value = ""
+        self._run_start_time = None
+        self._total_tokens = 0
+        self.progress_bar.update(total=1, progress=0)
+        self._set_status("状态：待机")
+        self._update_stats(0, 0, 0.0, None, 0)
+
+    def _set_status(self, text: str) -> None:
+        self.status_message.update(text)
+
+    def _update_stats(
+        self,
+        completed: int,
+        total: int,
+        elapsed: float,
+        eta: float | None,
+        tokens: int,
+    ) -> None:
+        self.stats_count.update(f"完成：{completed}/{total}")
+        elapsed_str = self._format_seconds(elapsed)
+        eta_str = self._format_seconds(eta) if eta is not None else "--:--"
+        self.stats_time.update(f"耗时：{elapsed_str} / 估计剩余 {eta_str}")
+        self.stats_tokens.update(f"Tokens：{tokens:,}")
+
+    def _format_seconds(self, seconds: float | None) -> str:
+        if seconds is None or seconds < 0:
+            return "--:--"
+        minutes, secs = divmod(int(seconds), 60)
+        return f"{minutes:02d}:{secs:02d}"
+
+    def _can_detect(self) -> bool:
+        return self.selected_file is not None and bool(self.model_input.value.strip())
+
+    def _update_controls(self) -> None:
+        if not hasattr(self, "detect_button"):
+            return
+        if self.run_state == RunState.IDLE:
+            self.detect_button.disabled = not self._can_detect()
+            self.detect_button.label = "Detect"
+            self.start_button.disabled = True
+        elif self.run_state == RunState.DETECTING:
+            self.detect_button.disabled = True
+            self.detect_button.label = "Detecting..."
+            self.start_button.disabled = True
+        elif self.run_state == RunState.READY:
+            self.detect_button.disabled = False
+            self.detect_button.label = "Detect"
+            self.start_button.disabled = False
+        elif self.run_state == RunState.RUNNING:
+            self.detect_button.disabled = True
+            self.detect_button.label = "Detect"
+            self.start_button.disabled = True
+
+    async def _handle_detect(self) -> None:
+        if not self._can_detect():
+            self._log("ERROR", "请先选择输入文件并配置模型。")
+            return
+        assert self.selected_file is not None
+
+        try:
+            provider, model_id, model_code = self._resolve_model()
+        except Exception as exc:
+            self._log("ERROR", "模型解析失败：%s", exc)
+            return
+
+        self.run_state = RunState.DETECTING
+        self._update_controls()
+        self._set_status("状态：检测中…")
+        self._log("INFO", "开始检测：%s", self.selected_file.name)
+
+        try:
+            detection = await asyncio.to_thread(
+                self._detect_worker,
+                self.selected_file,
+                provider,
+                model_id,
+                model_code,
+            )
+        except Exception as exc:  # pragma: no cover
+            self._log("ERROR", "检测阶段失败：%s", exc)
+            self.run_state = RunState.IDLE
+            self._update_controls()
+            return
+
+        self._detection = detection
+        self._rows = {row.index: row for row in detection.questions}
+        self._populate_table(detection.questions)
+        self._populate_detection_fields(detection)
+        self.progress_bar.update(total=max(len(detection.questions), 1), progress=0)
+        self._log("INFO", "检测完成，共 %d 题。", len(detection.questions))
+        self._set_status("状态：等待开始")
+        self._update_stats(0, len(detection.questions), 0.0, None, 0)
+        self._run_start_time = None
+
+        self.run_state = RunState.READY
+        self._update_controls()
+
+    def _populate_detection_fields(self, detection: DetectionResult) -> None:
+        self._update_datetime()
+        self.title_display.update(detection.title_main or "—")
+        self.tag_input.value = detection.title_sub or ""
+        self.title_main_input.value = detection.title_main or ""
+        self.sequence_input.value = detection.sequence or ""
+        self.batch_input.value = detection.batch_id
+        self.output_name_input.value = detection.output_filename
+        if detection.model_code:
+            self.model_input.value = detection.model_code
+
+    async def _handle_start_request(self) -> None:
+        if not self._detection:
+            self._log("ERROR", "请先执行 Detect。")
+            return
+        modal = DetectionSummaryModal(self._detection)
+        confirmed = await self.push_screen(modal)
+        if confirmed:
+            await self._handle_start(self._detection)
+        else:
+            self._log("INFO", "已取消解析。")
+
+    async def _handle_start(self, detection: DetectionResult) -> None:
+        try:
+            adapter = self._create_llm_adapter(detection.provider, detection.model_id)
+        except Exception as exc:
+            self._log("ERROR", "创建 LLM Provider 失败：%s", exc)
+            return
+
+        use_case = ParseQuizUseCase(llm=adapter)
+        formatter = FormatterAdapter.create()
+        file_adapter = FileAdapter.create()
+
+        self.run_state = RunState.RUNNING
+        self._update_controls()
+        self._set_status("状态：解析中…")
+        self._log("INFO", "开始解析，共 %d 题。", len(detection.questions))
+
+        self._run_start_time = perf_counter()
+        self._total_tokens = 0
+        self.progress_bar.update(total=max(len(detection.questions), 1), progress=0)
+
+        items = []
+        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+
+        def worker() -> None:
+            try:
+                for event in use_case.stream(detection.markdown):
+                    queue.put_nowait(("event", event))
+            except Exception as exc:  # pragma: no cover
+                queue.put_nowait(("error", exc))
+            finally:
+                queue.put_nowait(("done", None))
+
+        threading.Thread(target=worker, name="LithoformerWorker", daemon=True).start()
+
+        completed = 0
+        total = len(detection.questions)
+        while True:
+            message, payload = await queue.get()
+            if message == "event":
+                event = payload
+                assert isinstance(event, QuizProcessingEvent)
+                self._apply_event_to_row(event, formatter, detection.title_main, detection.title_sub)
+                if event.status == "success" and event.item:
+                    items.append(event.item)
+                    completed += 1
+                self._total_tokens = event.total_tokens.total_tokens
+                self._refresh_progress(event, completed, total)
+            elif message == "error":
+                self._log("ERROR", "解析过程中发生错误：%s", payload)
+                self.run_state = RunState.IDLE
+                self._set_status("状态：解析失败")
+                self._update_controls()
+                return
+            elif message == "done":
+                break
+
+        try:
+            output_text = formatter.format(items, detection.title_main, detection.title_sub)
+            output_dir = Path(self.output_dir_input.value.strip() or self.settings.lithoformer_output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = unique_path(output_dir / detection.output_filename)
+            file_adapter.write_text(output_path, output_text)
+        except Exception as exc:  # pragma: no cover
+            self._log("ERROR", "写入输出文件失败：%s", exc)
+            self.run_state = RunState.IDLE
+            self._set_status("状态：写入失败")
+            self._update_controls()
+            return
+
+        self._log(
+            "INFO",
+            "解析完成：%s（成功 %d / %d · Tokens %s）",
+            detection.output_filename,
+            completed,
+            total,
+            f"{self._total_tokens:,}",
+        )
+        self._set_status("状态：解析完成")
+        self._run_start_time = None
+        self.run_state = RunState.IDLE
+        self._update_controls()
+
+    def _populate_table(self, rows: list[QuestionRowState]) -> None:
+        self.table.clear()
+        for row in rows:
+            self.table.add_row(
+                str(row.index),
+                row.number,
+                row.status,
+                str(row.char_count),
+                row.qtype,
+                str(row.output_chars),
+                f"{row.elapsed:.2f}s",
+                key=row.row_key,
+            )
+            self._style_row(row)
+
+    def _apply_event_to_row(
+        self,
+        event: QuizProcessingEvent,
+        formatter: FormatterAdapter,
+        title_main: str,
+        title_sub: str,
+    ) -> None:
+        row = self._rows.get(event.index)
+        if not row:
+            return
+
+        if event.status == "success" and event.item:
+            row.status = "Done"
+            row.qtype = event.item.qtype
+            rendered = formatter.format([event.item], title_main, title_sub)
+            row.output_chars = len(rendered)
+            row.elapsed = event.elapsed
+            row.error = None
+        elif event.status == "invalid":
+            row.status = "ERROR"
+            row.error = event.error or "输出校验失败"
+            row.elapsed = event.elapsed
+        else:
+            row.status = "ERROR"
+            row.error = event.error or "解析失败"
+            row.elapsed = event.elapsed
+
+        self.table.update_cell(row.row_key, "status", row.status)
+        self.table.update_cell(row.row_key, "qtype", row.qtype)
+        self.table.update_cell(row.row_key, "output_chars", row.output_chars)
+        self.table.update_cell(row.row_key, "elapsed", f"{row.elapsed:.2f}s")
+        self._style_row(row)
+        if row.error:
+            self._log("ERROR", "题目 #%s 解析失败：%s", row.number, row.error)
+
+    def _style_row(self, row: QuestionRowState) -> None:
+        style = {
+            "Pending": "orange3",
+            "In Progress": "medium_purple3",
+            "Done": "green3",
+            "ERROR": "red",
+        }.get(row.status, "white")
+        try:
+            self.table.set_cell_style(row.row_key, "status", style)
+        except KeyError:  # pragma: no cover
+            pass
+
+    def _refresh_progress(self, event: QuizProcessingEvent, completed: int, total: int) -> None:
+        processed = sum(1 for row in self._rows.values() if row.status in {"Done", "ERROR"})
+        self.progress_bar.update(total=max(total, 1), progress=processed)
+        elapsed = (perf_counter() - self._run_start_time) if self._run_start_time else 0.0
+        eta = None
+        if processed > 0 and total > 0:
+            remaining = total - processed
+            eta = (elapsed / processed) * remaining if processed else None
+        self._update_stats(completed, total, elapsed, eta, self._total_tokens)
+        self._set_status(f"状态：解析第 {event.index}/{total} 题…")
+
+    def _detect_worker(
+        self,
+        file_path: Path,
+        provider: str,
+        model_id: str,
+        model_code: str,
+    ) -> DetectionResult:
+        adapter = FileAdapter.create()
+        markdown = adapter.read_markdown(file_path)
+        blocks = split_markdown_into_questions(markdown)
+        if not blocks:
+            raise ValueError("未在 Markdown 中检测到题目内容")
+
+        title_main, title_sub = infer_titles_from_markdown(markdown)
+        if not title_main or not title_sub:
+            fallback_main, fallback_sub = infer_titles_from_filename(file_path)
+            title_main = title_main or fallback_main
+            title_sub = title_sub or fallback_sub
+        sequence = self._infer_sequence_from_path(file_path)
+
+        generator = BatchIDGenerator(
+            output_dir=self.settings.lithoformer_output_dir,
+            timezone=self.settings.batch_timezone,
+        )
+        batch_id = generator.generate(term_count=len(blocks))
+        output_filename = generate_output_filename(
+            batch_id=batch_id,
+            model_code=model_code,
+            input_filename=file_path.name,
+            ext="txt",
+        )
+
+        questions: list[QuestionRowState] = []
+        for index, block in enumerate(blocks, start=1):
+            context = (block.get("context") or "").strip()
+            number = context or f"Q{index}"
+            char_count = len(block.get("context", "")) + len(block.get("question", "")) + len(block.get("answer", ""))
+            qtype_guess = self._guess_question_type(block)
+            questions.append(
+                QuestionRowState(
+                    row_key=f"row-{index}",
+                    index=index,
+                    number=number[:24],
+                    char_count=char_count,
+                    qtype=qtype_guess,
+                    block=block,
+                )
+            )
+
+        return DetectionResult(
+            file_path=file_path,
+            markdown=markdown,
+            blocks=blocks,
+            provider=provider,
+            model_id=model_id,
+            model_code=model_code,
+            title_main=title_main,
+            title_sub=title_sub,
+            sequence=sequence,
+            batch_id=batch_id,
+            output_filename=output_filename,
+            detected_at=datetime.now(),
+            questions=questions,
+        )
+
+    @staticmethod
+    def _guess_question_type(block: dict[str, str]) -> str:
+        question = (block.get("question") or "").lower()
+        answer = (block.get("answer") or "").strip()
+        if re.search(r"_{3,}", question) or "{{" in question:
+            return "CLOZE"
+        if "\n" in answer and not re.fullmatch(r"[a-zA-Z]+", answer.replace("\n", "")):
+            return "CLOZE"
+        return "MCQ"
+
+    @staticmethod
+    def _infer_sequence_from_path(path: Path) -> str:
+        matches = re.findall(r"\d+", path.stem)
+        return matches[-1] if matches else ""
+
+    def _resolve_model(self) -> tuple[str, str, str]:
+        value = self.model_input.value.strip()
+        if not value:
+            raise ValueError("模型输入不能为空")
+        model_id, model_code = resolve_model_input(value)
+        provider = get_provider_from_model(model_id)
+        return provider, model_id, model_code
+
+    def _refresh_model_options(self, provider: str) -> None:
+        models = list_all_models()
+        options = [(model, model) for model in models.get(provider, [])]
+        self.model_select.set_options(options)
+        self._model_option_values = {value for _, value in options}
+        default_model = (
+            self.settings.default_openai_model if provider == "openai" else self.settings.default_anthropic_model
+        )
+        if default_model not in self._model_option_values and options:
+            default_model = options[0][1]
+        if default_model in self._model_option_values:
+            self.model_select.value = default_model
+            self.model_input.value = default_model
+        else:
+            self.model_select.value = Select.BLANK
+        self._update_controls()
+
+    def _create_llm_adapter(self, provider: str, model_id: str) -> LithoformerLLMAdapter:
+        if provider == "anthropic":
+            if not self.settings.anthropic_api_key:
+                raise RuntimeError("未配置 ANTHROPIC_API_KEY")
+            llm_provider = AnthropicProvider(
+                model=model_id,
+                api_key=self.settings.anthropic_api_key,
+                temperature=self.settings.default_temperature,
+            )
+        else:
+            llm_provider = OpenAIProvider(
+                model=model_id,
+                api_key=self.settings.openai_api_key,
+                temperature=self.settings.default_temperature,
+            )
+        return LithoformerLLMAdapter.from_provider(llm_provider)
+
+    def _log(self, level: str, message: str, *args: object) -> None:
+        text = message % args if args else message
+        style = {
+            "INFO": "cyan",
+            "WARNING": "yellow",
+            "ERROR": "bold red",
+            "DEBUG": "dim",
+        }.get(level.upper(), "white")
+        if hasattr(self, "log_view"):
+            safe_text = escape(text)
+            markup = f"[{style}]{safe_text}[/]" if style and style != "white" else safe_text
+            if threading.get_ident() == self._main_thread_id:
+                self.log_view.write(markup)
+            else:
+                self.call_from_thread(self.log_view.write, markup)
+
+
+def run() -> None:
+    LithoformerTUIApp().run()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    run()

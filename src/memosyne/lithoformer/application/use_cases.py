@@ -3,6 +3,9 @@ Lithoformer Application Use Cases
 """
 
 import re
+from dataclasses import dataclass
+from time import perf_counter
+from typing import Iterable, Iterator, Literal
 
 from ..domain.models import QuizItem
 from ..domain.services import (
@@ -14,6 +17,34 @@ from .ports import LLMPort
 # 导入核心模型
 from ...core.models import ProcessResult, TokenUsage
 from ...shared.utils import Progress, indeterminate_progress
+
+
+@dataclass(slots=True)
+class QuizProcessingEvent:
+    """
+    单题解析事件，供流式消费（如 TUI）使用。
+
+    Attributes:
+        index: 当前题目的序号（从 1 开始）
+        total: 总题数
+        status: 解析结果状态
+        item: 解析成功时的 QuizItem
+        block: 原始题目块内容（context/question/answer）
+        tokens: 当前题目的 Token 消耗
+        total_tokens: 截至当前的 Token 累计值
+        error: 解析失败原因
+        elapsed: 本题耗时（秒）
+    """
+
+    index: int
+    total: int
+    status: Literal["success", "invalid", "error"]
+    item: QuizItem | None
+    block: dict[str, str]
+    tokens: TokenUsage
+    total_tokens: TokenUsage
+    error: str | None
+    elapsed: float
 
 
 class ParseQuizUseCase:
@@ -52,54 +83,152 @@ class ParseQuizUseCase:
         Raises:
             LLMError: LLM call failed
         """
-        question_blocks = split_markdown_into_questions(markdown)
-        if not question_blocks:
-            raise ValueError("未在 Markdown 中解析到任何题目内容")
-
+        question_blocks = self._split_markdown(markdown)
+        total_count = len(question_blocks)
         valid_items: list[QuizItem] = []
-        total_tokens = TokenUsage()
+        token_snapshot = TokenUsage()
 
         with Progress(
-            total=len(question_blocks),
+            total=total_count,
             desc="Validating quiz items [Tokens: 0]",
             unit="item",
             enabled=show_progress,
         ) as progress:
-            for index, block in enumerate(question_blocks, start=1):
-                with indeterminate_progress(
-                    f"Calling LLM for item #{index}...",
-                    enabled=show_progress,
-                ):
-                    item_dict, token_dict = self.llm.parse_question({
-                        "context": block.get("context", ""),
-                        "question": block.get("question", ""),
-                        "answer": block.get("answer", ""),
-                        "index": str(index),
-                    })
-
-                tokens = TokenUsage(**token_dict)
-                total_tokens = total_tokens + tokens
-
-                item = QuizItem(**_normalize_question_dict(item_dict))
-
-                if is_quiz_item_valid(item):
-                    valid_items.append(item)
-                    if show_progress and progress and item.analysis:
-                        progress.set_postfix(领域=item.analysis.domain)
-                total_display = len(question_blocks)
-                progress.advance(
-                    desc=(
-                        f"Validating quiz items [{index}/{total_display}] "
-                        f"[Tokens: {total_tokens.total_tokens:,}]"
-                    )
+            for event in self._stream_blocks(
+                question_blocks,
+                show_spinner=show_progress,
+            ):
+                token_snapshot = event.total_tokens
+                desc = (
+                    f"Validating quiz items "
+                    f"[{event.index}/{event.total}] "
+                    f"[Tokens: {event.total_tokens.total_tokens:,}]"
                 )
+                if show_progress and progress:
+                    progress.advance(desc=desc)
+
+                if event.status == "success" and event.item:
+                    valid_items.append(event.item)
+                    if show_progress and progress and event.item.analysis:
+                        progress.set_postfix(领域=event.item.analysis.domain)
+                elif event.status != "success" and show_progress and progress:
+                    progress.set_postfix(错误=event.error or "解析失败")
 
         return ProcessResult(
             items=valid_items,
             success_count=len(valid_items),
-            total_count=len(question_blocks),
-            token_usage=total_tokens,
+            total_count=total_count,
+            token_usage=token_snapshot,
         )
+
+    def stream(self, markdown: str) -> Iterable[QuizProcessingEvent]:
+        """
+        逐题解析 Markdown，生成流式事件。
+
+        用于 TUI 等需要实时反馈的场景。
+
+        Args:
+            markdown: Quiz markdown content
+
+        Yields:
+            QuizProcessingEvent
+        """
+        question_blocks = self._split_markdown(markdown)
+        yield from self._stream_blocks(question_blocks)
+
+    @staticmethod
+    def _split_markdown(markdown: str) -> list[dict[str, str]]:
+        question_blocks = split_markdown_into_questions(markdown)
+        if not question_blocks:
+            raise ValueError("未在 Markdown 中解析到任何题目内容")
+        return question_blocks
+
+    def process_block(
+        self,
+        block: dict[str, str],
+        index: int,
+        total_count: int,
+        total_tokens: TokenUsage,
+        *,
+        show_spinner: bool = False,
+    ) -> tuple[QuizProcessingEvent, TokenUsage]:
+        """
+        处理单个题目块，返回事件和累积 Token。
+
+        提供给 TUI 等外部组件复用，以便插入自定义的进度控制。
+        """
+        start_time = perf_counter()
+        status: Literal["success", "invalid", "error"]
+        item: QuizItem | None = None
+        error_message: str | None = None
+        token_usage = TokenUsage()
+
+        try:
+            with indeterminate_progress(
+                f"Calling LLM for item #{index}...",
+                enabled=show_spinner,
+            ):
+                item_dict, token_dict = self.llm.parse_question(
+                    {
+                        "context": block.get("context", ""),
+                        "question": block.get("question", ""),
+                        "answer": block.get("answer", ""),
+                        "index": str(index),
+                    }
+                )
+
+            token_usage = TokenUsage(**token_dict)
+            new_total_tokens = total_tokens + token_usage
+
+            candidate = QuizItem(**_normalize_question_dict(item_dict))
+
+            if is_quiz_item_valid(candidate):
+                status = "success"
+                item = candidate
+            else:
+                status = "invalid"
+                error_message = "LLM 输出未通过业务规则校验"
+        except Exception as exc:  # 捕获 LLMError 和其它异常
+            status = "error"
+            error_message = str(exc)
+            new_total_tokens = total_tokens
+
+        elapsed = perf_counter() - start_time
+
+        event = QuizProcessingEvent(
+            index=index,
+            total=total_count,
+            status=status,
+            item=item,
+            block=block,
+            tokens=token_usage,
+            total_tokens=new_total_tokens,
+            error=error_message,
+            elapsed=elapsed,
+        )
+        return event, new_total_tokens
+
+    def _stream_blocks(
+        self,
+        blocks: list[dict[str, str]],
+        *,
+        show_spinner: bool = False,
+    ) -> Iterator[QuizProcessingEvent]:
+        """
+        核心迭代逻辑，供 execute() 和 stream() 复用。
+        """
+        total_tokens = TokenUsage()
+        total_count = len(blocks)
+
+        for index, block in enumerate(blocks, start=1):
+            event, total_tokens = self.process_block(
+                block,
+                index,
+                total_count,
+                total_tokens,
+                show_spinner=show_spinner,
+            )
+            yield event
 
 
 def _normalize_question_dict(data: dict) -> dict:

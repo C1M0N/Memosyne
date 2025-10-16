@@ -11,6 +11,8 @@ tqdm>=4.66.0
 # === 新增：重构所需依赖 ===
 pydantic>=2.5.0              # 数据验证
 pydantic-settings>=2.0.0     # 配置管理
+textual>=0.58.0             # TUI 框架（基于 Rich）
+rich>=13.7.0                # 富文本渲染
 
 # === 可选：开发工具 ===
 pytest>=8.3.0               # 单元测试

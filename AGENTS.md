@@ -7,7 +7,8 @@ This document captures shared memory and working agreements for AI coding agents
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v0.9.1a** (当前) - 数据更新，新增测验文件
+- **v0.9.2** (当前) - Lithoformer TUI 完全重写，基于 JiraTUI 最佳实践
+- **v0.9.1a** - 数据更新，新增测验文件
 - **v0.9.1** - 生产就绪版本
 - **v0.9.0** - DDD + Hexagonal 架构，Lithoformer 支持逐题中文解析
 
@@ -31,10 +32,12 @@ Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析
 # 方式 1: 模块执行（推荐）
 python -m memosyne.reanimator.cli.main    # Reanimator - 术语重生
 python -m memosyne.lithoformer.cli.main   # Lithoformer - Quiz 重塑
+python -m memosyne.lithoformer.tui.app    # Lithoformer - Textual TUI（Detect + START 流程）
 
 # 方式 2: 便捷脚本
 ./run_reanimate.sh     # Reanimator
 ./run_lithoform.sh     # Lithoformer
+./run_lithoformer_tui.sh  # Lithoformer Textual TUI
 
 # 方式 3: 编程 API
 python -c "from memosyne.api import reanimate; help(reanimate)"
@@ -46,6 +49,7 @@ python -c "from memosyne.api import lithoform; help(lithoform)"
 ```bash
 # 安装依赖
 pip install -r requirements.txt
+# （包含 Textual/Rich，用于 Lithoformer TUI）
 
 # 创建虚拟环境（推荐）
 python -m venv .venv
@@ -179,7 +183,11 @@ src/memosyne/
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
 │   │   └── formatters/             # QuizFormatter（依赖领域模型）
-│   └── cli/main.py                 # Lithoformer CLI
+│   ├── cli/main.py                 # Lithoformer CLI
+│   └── tui/                        # Textual TUI 界面
+│       ├── __init__.py             # 导出 LithoformerTUIApp
+│       ├── app.py                  # Detect/Start 控制台
+│       └── styles.tcss             # TUI 主题样式
 │
 └── api.py                          # 编程 API（reanimate(), lithoform()）
 ```
@@ -238,7 +246,9 @@ src/memosyne/
 
 ## Lithoformer 架构
 
-**入口**: `src/memosyne/lithoformer/cli/main.py`
+**入口**:
+- CLI: `src/memosyne/lithoformer/cli/main.py`
+- Textual TUI: `src/memosyne/lithoformer/tui/app.py`
 
 **分层调用流程**：
 1. **CLI** → 创建所有依赖（Provider, Adapters, Use Case）
@@ -250,7 +260,7 @@ src/memosyne/
 
 **关键文件**：
 - `lithoformer/cli/main.py` - CLI 入口，依赖注入
-- `lithoformer/application/use_cases.py` - `ParseQuizUseCase`，业务流程编排
+- `lithoformer/application/use_cases.py` - `ParseQuizUseCase`（批处理 `execute()` + 流式 `stream()`）
 - `lithoformer/application/ports.py` - `LLMPort`，端口接口
 - `lithoformer/infrastructure/llm_adapter.py` - `LithoformerLLMAdapter`，注入 prompts/schemas
 - `lithoformer/infrastructure/prompts.py` - `LITHOFORMER_SYSTEM_PROMPT`，业务逻辑
@@ -258,6 +268,12 @@ src/memosyne/
 - `lithoformer/infrastructure/formatters/quiz_formatter.py` - `QuizFormatter`，格式化输出
 - `lithoformer/domain/services.py` - 业务规则函数
 - `lithoformer/domain/models.py` - `QuizItem`, `QuizOptions`
+- `lithoformer/tui/app.py` - `LithoformerTUIApp`，简化的主入口
+- `lithoformer/tui/widgets/` - TUI 组件模块化结构
+  - `screens.py` - `MainScreen`（主屏幕，Detect→Start 流程）
+  - `filters.py` - 所有输入和选择组件
+  - `questions_table.py` - 响应式题目表格
+- `lithoformer/tui/css/lithoformer.tcss` - GitHub 深色主题样式
 
 **输入**: `data/input/lithoformer/*.md` - Markdown 格式测验文件
 **输出**: `data/output/lithoformer/ShouldBe.txt` - 标准化测验文本
@@ -555,5 +571,108 @@ python -m memosyne.reanimator.cli.main
 
 ---
 
-**最后更新**: 2025-10-14
-**文档版本**: v0.9.1a
+## Lithoformer TUI 重写 (v0.9.2)
+
+### 重写动机
+
+原 TUI 代码存在以下问题：
+- 单一巨型文件（874 行），难以维护
+- 缺乏组件封装和复用
+- 布局混乱，存在大量空白区域
+- 样式硬编码，缺乏设计系统
+
+### 新架构设计
+
+参考 **JiraTUI**（https://github.com/whyisdifficult/jiratui）最佳实践，完全重写：
+
+#### 模块化结构
+```
+tui/
+├── app.py                      # 简化的主入口（仅挂载主屏幕）
+├── constants.py                # 共用 ASCII Logo 等常量
+├── logging_utils.py            # Textual 日志 Handler
+├── css/
+│   └── lithoformer.tcss       # JiraTUI 风格暗色主题
+└── widgets/
+    ├── __init__.py            # 组件导出
+    ├── filters.py             # 所有输入和选择组件
+    ├── questions_table.py     # 响应式题目表格
+    └── screens.py             # MainScreen 主屏幕
+```
+
+#### 核心改进
+
+1. **组件化设计**
+   - 每个 UI 组件独立封装为类
+   - 支持响应式数据绑定（`reactive` 属性）
+   - 清晰的职责划分
+
+2. **现代化布局**
+   - 顶部 ASCII Logo，左表格 / 中表单 / 右文件树，底部日志 + 双进度条
+   - 单个操作键在 `Detect → START → RUNNING` 间切换，响应第一张需求草图
+
+3. **主题风格**
+   - 复刻 JiraTUI 暗色调，蓝色描边 + 高对比字体
+   - 统一按钮态（primary / error / warning / disabled）
+
+4. **事件处理优化**
+   - 使用 `@on` 装饰器
+   - `@property` 装饰器访问子组件
+   - 类型安全的组件引用
+   - 背景线程解析时通过 `asyncio.Queue` 推送事件
+
+5. **日志与状态**
+   - 自定义 `logging.Handler` 输出到 TextLog，格式 `HH:MM:SS | LEVEL | message`
+   - 日志保留最近 999 条，支持 `/clear`
+   - 单题 / 总进度条 + 运行时间估算 + Token 累计
+
+6. **代码质量提升**
+   - 从 874 行单文件 → 模块化结构（~500 行分布在多个文件）
+   - 更好的可测试性
+   - 更容易扩展和维护
+
+### 组件清单
+
+#### Filters (`widgets/filters.py`)
+- `InputPathInput` - 输入目录（可切换目录树根）
+- `OutputPathInput` - 输出路径输入
+- `ProviderSelectionInput` - LLM 厂商选择
+- `ModelSelectionInput` - 模型选择（支持 reactive）
+- `ModelInput` - 自定义模型输入
+- `TagInput`, `TitleInput`, `SequenceInput`, `BatchInput` - 元数据输入
+- `OutputFilenameInput` - 输出文件名
+- `ModelNoteInput` - 模型备注
+- `CommandInput` - 命令输入
+- `LithoformerDirectoryTree` - 文件树
+
+#### Questions Table (`widgets/questions_table.py`)
+- `QuestionRow` - 数据类
+- `QuestionsTable` - 响应式 DataTable
+  - 自动更新（reactive 属性）
+  - 状态颜色编码（Pending/In Progress/Done/ERROR）
+
+#### Main Screen (`widgets/screens.py`)
+- `MainScreen` - 主屏幕
+  - 属性访问器（@property）
+  - 事件处理器（@on）
+  - 异步工作流程（Detect 不触发 LLM，Start 才逐题调用）
+  - 线程安全日志 + 标准 logging 集成
+  - 自动字段推断：若用户手动覆盖则不会被 Detect 再次写回
+  - 仅展示 `.md` 文件的目录树，实时替换根目录
+
+### 启动方式（保持不变）
+```bash
+./run_lithoformer_tui.sh
+# 或
+PYTHONPATH=src python -m memosyne.lithoformer.tui.app
+```
+
+### 参考资料
+- JiraTUI: https://github.com/whyisdifficult/jiratui
+- Textual: https://textual.textualize.io/
+- 重写总结: 详见 `TUI_REWRITE_SUMMARY.md`
+
+---
+
+**最后更新**: 2025-10-15
+**文档版本**: v0.9.2

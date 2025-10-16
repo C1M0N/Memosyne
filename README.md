@@ -67,6 +67,7 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 - ✅ **编程 API** - 在代码中直接调用
 - ✅ **模块执行** - `python -m memosyne.reanimator.cli.main`
 - ✅ **便捷脚本** - `./run_reanimate.sh`, `./run_lithoform.sh`
+- ✅ **Textual TUI** - `python -m memosyne.lithoformer.tui.app`
 
 ### 📊 **完善的数据流**
 
@@ -129,6 +130,8 @@ python -m memosyne.lithoformer.cli.main
 
 # Lithoformer
 ./run_lithoform.sh
+# Lithoformer TUI
+./run_lithoformer_tui.sh
 ```
 
 ### 方式 3：编程 API
@@ -155,6 +158,28 @@ print(f"✅ 解析了 {result['item_count']} 道题")
 print(f"📁 输出: {result['output_path']}")
 print(f"📊 Token 使用: {result['token_usage']['total_tokens']}")
 ```
+
+### 方式 4：TUI 控制台
+
+```bash
+# 启动 Textual & Rich 构建的 Lithoformer TUI
+python -m memosyne.lithoformer.tui.app
+# 或使用便捷脚本
+./run_lithoformer_tui.sh
+```
+
+> 该界面提供文件树选择、Detect/Start 流程、逐题状态列表、实时日志与指令输入区，适合需要鼠标操作的可视化运行场景。
+
+---
+
+## 🖥️ Lithoformer TUI 概览
+
+- **单页布局**：顶部 ASCII Logo，左侧题目表格，中央配置面板，右侧目录树与操作键，底部日志 + 双进度条，整体配色继承 JiraTUI 风格。
+- **单键流程**：操作键在 `Detect → START → RUNNING` 之间动态切换；Detect 阶段仅做轻量推断（标题 / 序号 / 批次 / 输出文件名），不会调用 LLM。
+- **题目表格**：逐题展示 `Pending / In Progress / Done / ERROR` 状态、题型、字符数、输出字符数、耗时；失败题目标记为 `ERROR` 并在日志中记录原因，流程不中断。
+- **文件树**：仅枚举选定输入目录下的 `.md` 文件；选择文件后可以在表单中保留或覆盖自动推断的字段，目录路径可随时调整。
+- **日志与命令区**：挂接标准 `logging` 输出，高亮级别、展示时间戳，保留最近 999 条；命令行支持 `/clear` 清屏，右下角实时显示单题与总进度、耗时估计、Token 消耗。
+- **模型配置**：自动联动厂商/模型下拉与手动输入框，支持默认模型与自定义覆盖，备注字段可给同事留下提示。
 
 ---
 
