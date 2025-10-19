@@ -1,0 +1,310 @@
+/* Lithoformer TUI v2 - JiraTUI Style Compliant */
+
+/* Global Screen Styles */
+Screen {
+    background: $background;
+    color: $text;
+}
+
+/* ============================================================================
+   LOGO SECTION
+   ============================================================================ */
+
+#logo {
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 1 2;
+    color: $accent;
+    text-style: bold;
+}
+
+/* ============================================================================
+   INPUT FIELDS (All form inputs)
+   ============================================================================ */
+
+/* Base input style - mimics JiraTUI's input pattern */
+Input {
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* Required field variant */
+Input.required {
+    border: round red;
+}
+
+/* ============================================================================
+   SELECT DROPDOWNS
+   ============================================================================ */
+
+Select {
+    border: round $primary-lighten-3;
+    padding: 0 1;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* ============================================================================
+   INFO DISPLAYS (Read-only panels)
+   ============================================================================ */
+
+#info-bar {
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+#analysis-panel {
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 1 2;
+    scrollbar-size-vertical: 1;
+}
+
+#selected-file-display {
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+/* ============================================================================
+   DATA TABLE (Questions table)
+   ============================================================================ */
+
+#questions-table {
+    background: transparent;
+    scrollbar-size-vertical: 1;
+    border: round $primary-lighten-3;
+}
+
+/* ============================================================================
+   FILE TREE
+   ============================================================================ */
+
+#file-tree {
+    background: transparent;
+    border: round $primary;
+    scrollbar-size-vertical: 1;
+}
+
+/* ============================================================================
+   BUTTONS
+   ============================================================================ */
+
+#action-button {
+    width: 100%;
+    border: round $accent;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* Button variants - mimicking JiraTUI style */
+Button.-primary {
+    border: round $primary;
+    background: $surface;
+}
+
+Button.-error {
+    border: round $error;
+    background: $surface;
+}
+
+Button.-warning {
+    border: round $warning;
+    background: $surface;
+}
+
+Button:disabled {
+    border: round $surface-lighten-1;
+    color: $text-disabled;
+}
+
+/* ============================================================================
+   LOG VIEW
+   ============================================================================ */
+
+#log-view {
+    border: round $primary-lighten-3;
+    background: transparent;
+    scrollbar-size-vertical: 1;
+    padding: 1 1;
+}
+
+/* ============================================================================
+   PROGRESS BARS
+   ============================================================================ */
+
+#single-progress {
+    border: round $primary-lighten-3;
+    height: 1;
+    margin: 0 0;
+}
+
+#total-progress {
+    border: round $primary-lighten-3;
+    height: 1;
+    margin: 0 0;
+}
+
+/* ============================================================================
+   STATUS & STATS DISPLAYS
+   ============================================================================ */
+
+#status-message {
+    color: $accent;
+    text-style: bold;
+    padding: 0 1;
+}
+
+#stats-display {
+    color: $text;
+    padding: 0 1;
+}
+
+#progress-info {
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 1 1;
+}
+
+/* ============================================================================
+   LAYOUT CONTAINERS (Minimal styling, structure only)
+   ============================================================================ */
+
+/* Grid layout approach - using fractional widths */
+.col-left {
+    width: 19fr;  /* 760/40 units */
+}
+
+.col-middle {
+    width: 14fr;  /* 560/40 units */
+}
+
+.col-right {
+    width: 7fr;   /* 280/40 units */
+}
+
+/* Row height helpers */
+.row-logo {
+    height: 9;
+}
+
+.row-info {
+    height: 3;
+}
+
+.row-workspace {
+    height: 1fr;
+}
+
+.row-console {
+    height: 14;
+}
+
+.row-progress {
+    height: 5;
+}
+
+/* Horizontal groups */
+Horizontal {
+    background: transparent;
+}
+
+Vertical {
+    background: transparent;
+}
+
+/* ============================================================================
+   CUSTOM TITLE WIDGET (From JiraTUI)
+   ============================================================================ */
+
+CustomTitle {
+    layout: vertical;
+    height: auto;
+    align: center middle;
+}
+
+CustomTitle > Rule {
+    color: $primary;
+}
+
+CustomTitle > Rule.-horizontal {
+    height: 1;
+    margin: 0 0;
+    width: 1fr;
+    padding: 0 0;
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+.text-center {
+    content-align: center middle;
+}
+
+.text-muted {
+    color: $text-muted;
+}
+
+.text-bold {
+    text-style: bold;
+}
+
+.text-accent {
+    color: $accent;
+}
+
+.margin-bottom-1 {
+    margin-bottom: 1;
+}
+
+.padding-1 {
+    padding: 1;
+}
+
+/* ============================================================================
+   SPECIFIC LAYOUT SECTIONS (Based on layout.xml)
+   ============================================================================ */
+
+/* These IDs match the new component structure */
+#workspace {
+    layout: horizontal;
+    height: 1fr;
+}
+
+#bottom-section {
+    layout: horizontal;
+    height: auto;
+}
+
+#form-area {
+    layout: vertical;
+    background: transparent;
+}
+
+#tree-area {
+    layout: vertical;
+    background: transparent;
+}
+
+#console-area {
+    layout: vertical;
+    background: transparent;
+}
+
+#progress-area {
+    layout: vertical;
+    background: transparent;
+}

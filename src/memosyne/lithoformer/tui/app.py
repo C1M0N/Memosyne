@@ -12,8 +12,8 @@ from .widgets.screens import MainScreen
 class LithoformerTUIApp(App):
     """Lithoformer TUI Application."""
 
-    CSS_PATH = "css/lithoformer.tcss"
-    TITLE = "Lithoformer TUI"
+    CSS_PATH = "css/lithoformer_layout.tcss"  # 新布局
+    TITLE = "Lithoformer TUI - Layout v2"
 
     DEFAULT_THEME = 'textual-dark'
     

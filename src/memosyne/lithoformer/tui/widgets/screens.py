@@ -193,100 +193,75 @@ class MainScreen(Screen):
     # endregion -------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
-        """Compose the main screen layout."""
-        yield Static(ASCII_LOGO, id="logo-panel")
+        """Compose the main screen layout (完全基于 layout.xml)."""
+        # 主容器：左列 + 右侧区域
+        with Horizontal(id="main-container"):
+            # 左列 (0-760px): LOGO + 信息区 + 题目列表
+            with Vertical(id="left-col"):
+                yield Static(ASCII_LOGO, id="logo-panel")
 
-        with Horizontal(id="meta-row"):
-            yield Static(self._build_date_text(), id="meta-date")
-            yield Static(self._build_time_text(), id="meta-time")
-            yield Static(f"版本号：{self._get_version()}", id="meta-version")
-            yield Static("标题：—", id="meta-title")
-            yield Static("文件：—", id="meta-file")
+                info_panel = Static("[dim]未选择文件[/]", id="info-panel")
+                info_panel.border_title = "信息区"
+                yield info_panel
 
-        questions_table = QuestionsTable()
-        table_panel = Container(questions_table, id="table-wrapper")
-        table_panel.border_title = "题目列表"
-        table_panel.border_subtitle = "[dodger_blue2]数据表[/]"
+                yield QuestionsTable()
 
-        analysis_panel = Static("[dim]空[/]", id="analysis-panel")
-        analysis_panel.border_title = "解析摘要"
-        analysis_panel.border_subtitle = "[dodger_blue2]预留区域[/]"
+            # 右侧区域 (760-1600px): 包含中列、右列和控制台
+            with Vertical(id="right-area"):
+                # 顶部：中列 + 右列
+                with Horizontal(id="top-section"):
+                    # 中列 (760-1320px): 所有配置输入
+                    with Vertical(id="middle-col"):
+                        yield InputPathInput(value=str(self.settings.lithoformer_input_dir))
+                        yield OutputPathInput(value=str(self.settings.lithoformer_output_dir))
 
-        form_column = Vertical(
-            InputPathInput(value=str(self.settings.lithoformer_input_dir)),
-            OutputPathInput(value=str(self.settings.lithoformer_output_dir)),
-            ProviderSelectionInput(value=self.settings.default_llm_provider),
-            ModelSelectionInput(),
-            ModelInput(),
-            TagInput(),
-            TitleInput(),
-            SequenceInput(),
-            BatchInput(),
-            OutputFilenameInput(),
-            ModelNoteInput(value=""),
-            analysis_panel,
-            id="form-column",
-        )
-        form_column.border_title = "运行配置"
-        form_column.border_subtitle = "[dodger_blue2]输入/自动推断[/]"
+                        with Horizontal(id="provider-model-row"):
+                            yield ProviderSelectionInput(value=self.settings.default_llm_provider)
+                            yield ModelSelectionInput()
 
-        selected_file_display = Static("当前未选择文件", id="selected-file-display")
-        selected_file_display.border_title = "当前文件"
-        selected_file_display.border_subtitle = "[dodger_blue2]自动推断[/]"
+                        yield ModelInput()
+                        yield TitleInput()
 
-        action_button = Button("Detect", id="action-button", variant="primary")
-        action_wrapper = Container(action_button, id="action-wrapper")
-        action_wrapper.border_title = "操作"
-        action_wrapper.border_subtitle = "[dodger_blue2]按钮[/]"
+                        with Horizontal(id="seq-batch-row"):
+                            yield SequenceInput()
+                            yield BatchInput()
 
-        tree_column = Vertical(
-            self._file_tree,
-            selected_file_display,
-            action_wrapper,
-            id="tree-column",
-        )
-        tree_column.border_title = "文件选择"
+                        yield OutputFilenameInput()
+                        yield TagInput()  # 这是"标签"（副标题）
+                        yield ModelNoteInput(value="")  # 这是"给模型的备注"
 
-        with Horizontal(id="workspace"):
-            yield table_panel
-            with Horizontal(id="side-wrapper"):
-                yield form_column
-                yield tree_column
+                    # 右列 (1320-1600px): 文件树 + 按钮
+                    with Vertical(id="right-col"):
+                        yield self._file_tree
 
-        log_view = RichLog(
-            id="log-view",
-            highlight=True,
-            markup=True,
-        )
-        log_view.border_title = "日志"
-        log_view.border_subtitle = "[dodger_blue2]RichLog[/]"
-        if hasattr(log_view, "max_lines"):
-            log_view.max_lines = 999
+                        action_button = Button("Detect", id="action-button", variant="primary")
+                        yield action_button
 
-        log_panel = Vertical(
-            Static("Log", id="log-title"),
-            log_view,
-            id="log-panel",
-        )
-        log_panel.border_title = "日志输出"
-        log_panel.border_subtitle = "[dodger_blue2]RichLog[/]"
+                # 控制台区 (横跨整个右侧区域，760-1600px)
+                log_view = RichLog(id="log-view", highlight=True, markup=True)
+                log_view.border_title = "控制台"
+                if hasattr(log_view, "max_lines"):
+                    log_view.max_lines = 999
+                yield log_view
 
-        command_panel = Vertical(
-            Static("单题进度", classes="progress-label"),
-            ProgressBar(id="single-progress", total=1),
-            Static("总进度", classes="progress-label"),
-            ProgressBar(id="total-progress", total=1),
-            CommandInput(),
-            Static("状态：待机", id="status-message"),
-            Static("完成：0/0 | 耗时：00:00 | 估计剩余：--:-- | Tokens：0", id="stats-display"),
-            id="command-panel",
-        )
-        command_panel.border_title = "运行状态"
-        command_panel.border_subtitle = "[dodger_blue2]统计指标[/]"
+                yield CommandInput()
 
+        # 底部：进度条区
         with Horizontal(id="bottom-row"):
-            yield log_panel
-            yield command_panel
+            # 左：进度条
+            with Vertical(id="progress-col"):
+                yield ProgressBar(id="single-progress", total=1)
+                yield ProgressBar(id="total-progress", total=1)
+
+            # 右：进度信息
+            with Vertical(id="stats-col"):
+                yield Static("状态：待机", id="status-message")
+                yield Static("完成：0/0 | 耗时：00:00 | 估计剩余：--:-- | Tokens：0", id="stats-display")
+
+                # 解析摘要放在这里
+                analysis_panel = Static("[dim]空[/]", id="analysis-panel")
+                analysis_panel.border_title = "解析摘要"
+                yield analysis_panel
 
     # region lifecycle ------------------------------------------------------------
     async def on_mount(self) -> None:
@@ -841,24 +816,26 @@ class MainScreen(Screen):
 
     async def _swap_directory_tree(self, path: Path) -> None:
         """Replace the directory tree with a new root path."""
-        container = self.query_one("#tree-column", Vertical)
+        container = self.query_one("#right-col", Vertical)
         removal = self._file_tree.remove()
         if inspect.isawaitable(removal):
             await removal
         self._file_tree = LithoformerDirectoryTree(path)
-        mount_result = container.mount(self._file_tree, before=self.query_one("#selected-file-display", Static))
+        mount_result = container.mount(self._file_tree)
         if inspect.isawaitable(mount_result):
             await mount_result
 
     def _set_meta_title(self, title: str) -> None:
-        safe_title = escape(title) if title else "—"
-        self.query_one("#meta-title", Static).update(f"标题：{safe_title}")
+        # Meta title removed in new layout
+        pass
 
     def _update_meta_file(self, path: Path) -> None:
-        self.query_one("#meta-file", Static).update(f"文件：{escape(path.name)}")
+        # Meta file removed in new layout
+        pass
 
     def _update_selected_file_display(self, path: Path) -> None:
-        self.query_one("#selected-file-display", Static).update(escape(str(path)))
+        # Selected file display removed in new layout
+        pass
 
     # endregion ------------------------------------------------------------------
 

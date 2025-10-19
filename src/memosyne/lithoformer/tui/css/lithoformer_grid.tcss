@@ -1,0 +1,337 @@
+/* Lithoformer TUI - Grid Layout (based on layout.xml 1600×900) */
+/* Grid: 40 columns × 23 rows (40px per unit) */
+
+/* ============================================================================
+   GLOBAL LAYOUT
+   ============================================================================ */
+
+Screen {
+    layout: grid;
+    grid-size: 40 23;
+    grid-gutter: 0;
+    background: $background;
+    color: $text;
+}
+
+/* ============================================================================
+   COMPONENT POSITIONING (Based on layout.xml coordinates)
+   ============================================================================ */
+
+/* LOGO: x=0, y=0, w=760, h=180 → col 1-19, row 1-5 */
+#logo {
+    column-span: 19;
+    row-span: 5;
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 1 2;
+    color: $accent;
+    text-style: bold;
+}
+
+/* INPUT PATH: x=760, y=0, w=560, h=60 → col 20-33, row 1-2 */
+#input-directory {
+    column-span: 14;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* OUTPUT PATH: x=760, y=60, w=560, h=60 → col 20-33, row 3-4 */
+#output-directory {
+    column-span: 14;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* PROVIDER SELECT: x=760, y=120, w=200, h=60 → col 20-24, row 5-6 */
+#provider-select {
+    column-span: 5;
+    row-span: 2;
+    border: round $primary-lighten-3;
+    padding: 0 1;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* MODEL SELECT: x=960, y=120, w=360, h=60 → col 25-33, row 5-6 */
+#model-select {
+    column-span: 9;
+    row-span: 2;
+    border: round $primary-lighten-3;
+    padding: 0 1;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* MODEL INPUT: x=760, y=180, w=560, h=60 → col 20-33, row 7-8 */
+#model-input {
+    column-span: 14;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* INFO BAR: x=0, y=180, w=760, h=60 → col 1-19, row 7-8 */
+#info-bar {
+    column-span: 19;
+    row-span: 2;
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+/* QUESTIONS TABLE: x=0, y=240, w=760, h=560 → col 1-19, row 9-22 */
+#questions-table {
+    column-span: 19;
+    row-span: 14;
+    background: transparent;
+    scrollbar-size-vertical: 1;
+    border: round $primary-lighten-3;
+}
+
+/* TITLE INPUT: x=760, y=240, w=560, h=60 → col 20-33, row 9-10 */
+#title-input {
+    column-span: 14;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* SEQUENCE INPUT: x=760, y=300, w=200, h=60 → col 20-24, row 11-12 */
+#sequence-input {
+    column-span: 5;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* BATCH INPUT: x=960, y=300, w=360, h=60 → col 25-33, row 11-12 */
+#batch-input {
+    column-span: 9;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* OUTPUT FILENAME: x=760, y=360, w=560, h=60 → col 20-33, row 13-14 */
+#output-filename-input {
+    column-span: 14;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* MODEL NOTE (给模型的备注): x=760, y=420, w=560, h=60 → col 20-33, row 15-16 */
+#model-note-input {
+    column-span: 14;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* FILE TREE: x=1320, y=0, w=280, h=390 → col 34-40, row 1-10 */
+#file-tree {
+    column-span: 7;
+    row-span: 10;
+    background: transparent;
+    border: round $primary;
+    scrollbar-size-vertical: 1;
+}
+
+/* SELECTED FILE DISPLAY: (part of file tree area, adjusting) */
+#selected-file-display {
+    column-span: 7;
+    row-span: 2;
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+/* ACTION BUTTON: x=1320, y=390, w=280, h=90 → col 34-40, row 11-12 */
+#action-button {
+    column-span: 7;
+    row-span: 3;
+    width: 100%;
+    border: round $accent;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* ANALYSIS PANEL: (positioning TBD, flexible placement) */
+#analysis-panel {
+    column-span: 14;
+    row-span: 3;
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 1 1;
+    scrollbar-size-vertical: 1;
+}
+
+/* CONSOLE (LOG VIEW): x=760, y=480, w=840, h=280 → col 20-40, row 17-24 */
+#log-view {
+    column-span: 21;
+    row-span: 7;
+    border: round $primary-lighten-3;
+    background: transparent;
+    scrollbar-size-vertical: 1;
+    padding: 1 1;
+}
+
+/* COMMAND INPUT: x=760, y=760, w=840, h=40 → col 20-40, row 20 (adjusted) */
+#command-input {
+    column-span: 21;
+    row-span: 1;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}
+
+/* SINGLE PROGRESS: x=0, y=800, w=1120, h=40 → col 1-28, row 21 */
+#single-progress {
+    column-span: 28;
+    row-span: 1;
+    border: round $primary-lighten-3;
+    height: 1;
+    margin: 0 0;
+}
+
+/* TOTAL PROGRESS: x=0, y=840, w=1120, h=60 → col 1-28, row 22-23 */
+#total-progress {
+    column-span: 28;
+    row-span: 2;
+    border: round $primary-lighten-3;
+    height: 1;
+    margin: 0 0;
+}
+
+/* PROGRESS INFO: x=1120, y=800, w=480, h=100 → col 29-40, row 21-23 */
+#progress-info {
+    column-span: 12;
+    row-span: 3;
+    border: round $primary-lighten-3;
+    background: transparent;
+    padding: 1 1;
+}
+
+/* STATUS MESSAGE (inside progress info area) */
+#status-message {
+    color: $accent;
+    text-style: bold;
+    padding: 0 1;
+}
+
+/* STATS DISPLAY (inside progress info area) */
+#stats-display {
+    color: $text;
+    padding: 0 1;
+}
+
+/* ============================================================================
+   BUTTON VARIANTS (JiraTUI style)
+   ============================================================================ */
+
+Button.-primary {
+    border: round $primary;
+    background: $surface;
+}
+
+Button.-error {
+    border: round $error;
+    background: $surface;
+}
+
+Button.-warning {
+    border: round $warning;
+    background: $surface;
+}
+
+Button:disabled {
+    border: round $surface-lighten-1;
+    color: $text-disabled;
+}
+
+/* ============================================================================
+   TAG INPUT (Special case - maps to "给模型的备注")
+   ============================================================================ */
+
+#tag-input {
+    column-span: 14;
+    row-span: 2;
+    box-sizing: content-box;
+    height: 1;
+    border: round $primary-lighten-3;
+    margin: 0 0;
+    padding: 0 1;
+    background: $background;
+    &:focus {
+        border: round $accent-lighten-3;
+    }
+}

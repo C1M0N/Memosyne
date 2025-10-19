@@ -1,0 +1,247 @@
+/* Lithoformer TUI - Based on layout.xml (1600×900) - Fixed */
+
+Screen {
+    background: #050c15;
+    color: #c9d6e8;
+    layout: vertical;
+}
+
+/* ==================================================================
+   MAIN CONTAINER - 左列 + 右侧区域
+   ================================================================== */
+
+#main-container {
+    layout: horizontal;
+    height: 1fr;
+}
+
+/* 左列: LOGO + 信息区 + 题目列表 (760px / 1600px ≈ 47.5%) */
+#left-col {
+    width: 19fr;  /* 760/40 */
+    layout: vertical;
+}
+
+/* 右侧区域: 中列 + 右列 + 控制台 (840px / 1600px ≈ 52.5%) */
+#right-area {
+    width: 21fr;  /* 840/40 */
+    layout: vertical;
+}
+
+/* 顶部区域：中列和右列的水平容器 */
+#top-section {
+    layout: horizontal;
+    height: auto;
+}
+
+/* 中列: 配置输入 (560px / 840px ≈ 66.7%) */
+#middle-col {
+    width: 2fr;  /* 560/280 = 2 */
+    layout: vertical;
+}
+
+/* 右列: 文件树 + 按钮 (280px / 840px ≈ 33.3%) */
+#right-col {
+    width: 1fr;  /* 280/280 = 1 */
+    layout: vertical;
+}
+
+/* ==================================================================
+   LEFT COLUMN
+   ================================================================== */
+
+#logo-panel {
+    height: 9;  /* ~180px */
+    padding: 1;
+    color: #4aa8ff;
+    background: #0d141f;
+    border: round #1f4b8f;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#info-panel {
+    height: 3;  /* ~60px - 固定高度 */
+    border: round #1f4b8f;
+    background: #0d141f;
+    padding: 0 1;
+    color: #9cb3ce;
+    margin-bottom: 1;
+}
+
+#questions-table {
+    height: 28;  /* ~560px - 固定高度！ */
+    min-height: 28;  /* 确保即使为空也保持大小 */
+    border: round #1f4b8f;
+    background: #070d16;
+    scrollbar-size-vertical: 1;
+}
+
+/* ==================================================================
+   MIDDLE COLUMN
+   ================================================================== */
+
+#middle-col Input,
+#middle-col Select {
+    border: round #1f4b8f;
+    background: #070d16;
+    color: #d7e3f4;
+    height: 3;
+    padding: 0 1;
+    margin-bottom: 1;
+    &:focus {
+        border: round #4aa8ff;
+    }
+}
+
+#provider-model-row {
+    layout: horizontal;
+    height: 3;
+}
+
+#provider-model-row Select {
+    margin-bottom: 1;
+}
+
+#seq-batch-row {
+    layout: horizontal;
+    height: 3;
+}
+
+#seq-batch-row Input {
+    margin-bottom: 1;
+}
+
+/* 控制台区域 */
+#log-view {
+    height: 14;  /* ~280px - 固定高度 */
+    border: round #1f4b8f;
+    background: #070d16;
+    scrollbar-size-vertical: 1;
+    padding: 1;
+    margin-top: 1;
+}
+
+#command-input {
+    border: round #1f4b8f;
+    background: #070d16;
+    color: #d7e3f4;
+    height: 2;
+    padding: 0 1;
+    margin-top: 1;
+    &:focus {
+        border: round #4aa8ff;
+    }
+}
+
+/* ==================================================================
+   RIGHT COLUMN
+   ================================================================== */
+
+#file-tree {
+    height: 19;  /* ~380px - 很长！ */
+    min-height: 19;
+    border: round #1f4b8f;
+    background: #070d16;
+    scrollbar-size-vertical: 1;
+    margin-bottom: 1;
+}
+
+#action-button {
+    width: 100%;
+    height: 5;  /* ~100px */
+    text-style: bold;
+}
+
+/* ==================================================================
+   BOTTOM ROW - Progress bars + Stats
+   ================================================================== */
+
+#bottom-row {
+    layout: horizontal;
+    height: 5;  /* ~100px */
+}
+
+#progress-col {
+    width: 28fr;  /* 1120/40 */
+    layout: vertical;
+}
+
+#single-progress,
+#total-progress {
+    height: 2;
+    border: round #1f4b8f;
+    background: #070d16;
+    margin-bottom: 1;
+}
+
+#stats-col {
+    width: 12fr;  /* 480/40 */
+    layout: vertical;
+    border: round #1f4b8f;
+    background: #0d141f;
+    padding: 1;
+}
+
+#status-message {
+    color: #4aa8ff;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#stats-display {
+    color: #c9d6e8;
+    margin-bottom: 1;
+}
+
+#analysis-panel {
+    height: 1fr;
+    border: round #1f4b8f;
+    background: #070d16;
+    color: #a3bbd6;
+    padding: 1;
+    overflow-y: auto;
+}
+
+/* ==================================================================
+   BUTTON STATES - 重要！
+   ================================================================== */
+
+Button.-primary {
+    border: wide #2b61a7;  /* 蓝色 - Detect */
+    color: #bcd8ff;
+    background: #14253a;
+}
+
+Button.-error {
+    border: wide #ff4b4b;  /* 红色 - Start */
+    color: #ffd8d8;
+    background: #3a1c1c;
+}
+
+Button.-warning {
+    border: wide #f1a208;  /* 黄色 - Running */
+    color: #ffe4b2;
+    background: #3f2a12;
+}
+
+Button:disabled {
+    border: wide #29354b;
+    color: #5f6f81;
+    background: #0d141f;
+}
+
+/* ==================================================================
+   GENERAL STYLES
+   ================================================================== */
+
+Input {
+    border-title-color: #69b3ff;
+}
+
+Select {
+    border-title-color: #69b3ff;
+}
+
+Static {
+    border-title-color: #69b3ff;
+}
