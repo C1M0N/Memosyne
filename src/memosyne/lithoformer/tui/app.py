@@ -15,6 +15,8 @@ class LithoformerTUIApp(App):
     CSS_PATH = "css/lithoformer.tcss"
     TITLE = "Lithoformer TUI"
 
+    DEFAULT_THEME = 'textual-dark'
+    
     def __init__(self):
         super().__init__()
         self._setup_logging()

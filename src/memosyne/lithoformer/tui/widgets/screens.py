@@ -389,6 +389,10 @@ class MainScreen(Screen):
             self.log_view.clear()
             self._set_input_value(self.command_input, "")
             self.logger.info("日志已清空")
+        elif command == "/exit":
+            self.logger.info("收到退出指令，正在关闭应用…")
+            self._set_input_value(self.command_input, "")
+            await self.app.action_quit()
         elif command:
             self.logger.warning("未知命令：%s", command)
             self._set_input_value(self.command_input, "")

@@ -56,7 +56,7 @@ Screen {
 #questions-table {
     height: 1fr;
     background: #070d16;
-    border: round #223f6a;
+    border: round $primary-lighten-3;
     scrollbar-size-vertical: 1;
 }
 
