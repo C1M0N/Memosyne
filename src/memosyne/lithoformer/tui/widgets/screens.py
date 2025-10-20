@@ -22,6 +22,7 @@ from textual.widgets import Button, Input, ProgressBar, RichLog, Static
 
 from ....core.models import TokenUsage
 from ....shared.config import get_settings
+from .... import __version__
 from ....shared.infrastructure.llm import AnthropicProvider, OpenAIProvider
 from ....shared.utils import (
     BatchIDGenerator,
@@ -57,6 +58,7 @@ from .filters import (
     TitleInput,
 )
 from .questions_table import QuestionRow, QuestionsTable
+from .custom_progress import CustomProgressBar
 
 
 @dataclass(slots=True)
@@ -171,10 +173,6 @@ class MainScreen(Screen):
         return self.query_one(CommandInput)
 
     @property
-    def analysis_panel(self) -> Static:
-        return self.query_one("#analysis-panel", Static)
-
-    @property
     def log_view(self) -> RichLog:
         return self.query_one(RichLog)
 
@@ -183,27 +181,25 @@ class MainScreen(Screen):
         return self.query_one("#action-button", Button)
 
     @property
-    def single_progress(self) -> ProgressBar:
-        return self.query_one("#single-progress", ProgressBar)
-
-    @property
-    def total_progress(self) -> ProgressBar:
-        return self.query_one("#total-progress", ProgressBar)
+    def total_progress(self) -> CustomProgressBar:
+        return self.query_one("#total-progress", CustomProgressBar)
 
     # endregion -------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
         """Compose the main screen layout (完全基于 layout.xml)."""
+        # 获取当前日期和时间
+        now = datetime.now()
+        date_str = now.strftime("%Y-%m-%d")
+        time_str = now.strftime("%H:%M:%S")
+        info_text = f"[b]Memosyne v{__version__}[/] | {date_str} {time_str}"
+
         # 主容器：左列 + 右侧区域
         with Horizontal(id="main-container"):
             # 左列 (0-760px): LOGO + 信息区 + 题目列表
             with Vertical(id="left-col"):
                 yield Static(ASCII_LOGO, id="logo-panel")
-
-                info_panel = Static("[dim]未选择文件[/]", id="info-panel")
-                info_panel.border_title = "信息区"
-                yield info_panel
-
+                yield Static(info_text, id="info-panel")
                 yield QuestionsTable()
 
             # 右侧区域 (760-1600px): 包含中列、右列和控制台
@@ -227,15 +223,13 @@ class MainScreen(Screen):
                             yield BatchInput()
 
                         yield OutputFilenameInput()
-                        yield TagInput()  # 这是"标签"（副标题）
-                        yield ModelNoteInput(value="")  # 这是"给模型的备注"
+                        yield TagInput()
+                        yield ModelNoteInput(value="")
 
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):
                         yield self._file_tree
-
-                        action_button = Button("Detect", id="action-button", variant="primary")
-                        yield action_button
+                        yield Button("Detect", id="action-button", variant="primary")
 
                 # 控制台区 (横跨整个右侧区域，760-1600px)
                 log_view = RichLog(id="log-view", highlight=True, markup=True)
@@ -246,22 +240,8 @@ class MainScreen(Screen):
 
                 yield CommandInput()
 
-        # 底部：进度条区
-        with Horizontal(id="bottom-row"):
-            # 左：进度条
-            with Vertical(id="progress-col"):
-                yield ProgressBar(id="single-progress", total=1)
-                yield ProgressBar(id="total-progress", total=1)
-
-            # 右：进度信息
-            with Vertical(id="stats-col"):
-                yield Static("状态：待机", id="status-message")
-                yield Static("完成：0/0 | 耗时：00:00 | 估计剩余：--:-- | Tokens：0", id="stats-display")
-
-                # 解析摘要放在这里
-                analysis_panel = Static("[dim]空[/]", id="analysis-panel")
-                analysis_panel.border_title = "解析摘要"
-                yield analysis_panel
+        # 底部：进度条区（使用新的自定义进度条）
+        yield CustomProgressBar(total=1, id="total-progress")
 
     # region lifecycle ------------------------------------------------------------
     async def on_mount(self) -> None:
@@ -654,25 +634,25 @@ class MainScreen(Screen):
         self._update_analysis_summary(None)
 
     def _update_analysis_summary(self, detection: DetectionResult | None) -> None:
-        """Render a compact summary of the detection outcome."""
-        panel = self.analysis_panel
+        """Render a compact summary of the detection outcome (deprecated)."""
+        # analysis_panel 已被移除，解析摘要现在通过日志显示
         if detection is None:
-            panel.update("[dim]空[/]")
             return
 
         provider_label = detection.provider.title() if detection.provider else "—"
         summary_lines = [
-            f"[bold cyan]文件[/] {escape(detection.file_path.name)}",
-            f"[bold cyan]题目数[/] {len(detection.questions)}",
-            f"[bold cyan]厂商[/] {escape(provider_label)}",
-            f"[bold cyan]主标题[/] {escape(detection.title_main or '—')}",
-            f"[bold cyan]副标题[/] {escape(detection.title_sub or '—')}",
-            f"[bold cyan]模型[/] {escape(detection.model_id)}",
-            f"[bold cyan]批次号[/] {escape(detection.batch_id)}",
-            f"[bold cyan]输出文件[/] {escape(detection.output_filename)}",
-            f"[bold cyan]检测时间[/] {detection.detected_at.strftime('%H:%M:%S')}",
+            f"文件: {detection.file_path.name}",
+            f"题目数: {len(detection.questions)}",
+            f"厂商: {provider_label}",
+            f"主标题: {detection.title_main or '—'}",
+            f"副标题: {detection.title_sub or '—'}",
+            f"模型: {detection.model_id}",
+            f"批次号: {detection.batch_id}",
+            f"输出文件: {detection.output_filename}",
+            f"检测时间: {detection.detected_at.strftime('%H:%M:%S')}",
         ]
-        panel.update("\n".join(summary_lines))
+        # 输出到日志
+        self.logger.info("检测摘要:\n" + "\n".join(summary_lines))
 
     # endregion ------------------------------------------------------------------
 
@@ -752,45 +732,42 @@ class MainScreen(Screen):
             button.loading = True
 
     def _reset_progress_bars(self, total: int = 0) -> None:
-        """Reset both progress bars."""
-        single = self.single_progress
-        single.total = 1
-        single.progress = 0
-
-        total_bar = self.total_progress
-        total_bar.total = max(total, 1)
-        total_bar.progress = 0
+        """Reset progress bar."""
+        self.total_progress.reset()
+        if total > 0:
+            self.total_progress._total = total
 
     def _update_single_progress(self, *, reset: bool = False, done: bool = False) -> None:
-        """Update the per-question progress indicator."""
-        bar = self.single_progress
-        if reset:
-            bar.progress = 0
-        if done:
-            bar.progress = bar.total
+        """Deprecated: Single progress bar no longer exists."""
+        pass
 
     def _update_total_progress(self, completed: int, total: int) -> None:
         """Update the total progress indicator."""
-        bar = self.total_progress
-        bar.total = max(total, 1)
-        bar.progress = min(completed, bar.total)
+        elapsed = (perf_counter() - self._run_start_time) if self._run_start_time else 0.0
+        remaining = self._estimate_remaining_time(elapsed, completed, total)
+
+        self.total_progress.update_progress(
+            current=completed,
+            total=total,
+            elapsed_time=self._format_seconds(elapsed),
+            remaining_time=remaining,
+            tokens=self._total_tokens
+        )
 
     def _set_status(self, text: str) -> None:
-        """Update status message."""
-        self.query_one("#status-message", Static).update(text)
+        """Update status message (deprecated: status is shown in progress bar)."""
+        # 状态信息现在显示在进度条中，这里只记录日志
+        pass
 
     def _refresh_stats(self, total: int) -> None:
         """Refresh statistics display based on current counters."""
-        elapsed = (perf_counter() - self._run_start_time) if self._run_start_time else 0.0
-        remaining = self._estimate_remaining_time(elapsed, self._processed_count, total)
-        self._set_stats_text(self._processed_count, total, elapsed, remaining, self._total_tokens)
+        # 统计信息现在在 _update_total_progress 中更新
+        pass
 
     def _set_stats_text(self, completed: int, total: int, elapsed: float, remaining: str, tokens: int) -> None:
-        """Render the stats text."""
-        self.query_one("#stats-display", Static).update(
-            f"完成：{completed}/{total} | 耗时：{self._format_seconds(elapsed)} | "
-            f"估计剩余：{remaining} | Tokens：{tokens:,}"
-        )
+        """Render the stats text (deprecated: stats are shown in progress bar)."""
+        # 统计信息现在显示在进度条中
+        pass
 
     def _write_log(self, markup: str) -> None:
         """Thread-safe log sink for the custom logging handler."""

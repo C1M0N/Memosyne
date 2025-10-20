@@ -48,6 +48,11 @@ class QuestionsTable(DataTable):
         self.add_column("输出字符数", key="output_chars", width=14)
         self.add_column("所用时间", key="elapsed", width=12)
 
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        """禁用列标题点击排序功能。"""
+        event.prevent_default()
+        event.stop()
+
     def clear(self) -> None:  # type: ignore[override]
         """Clear the table rows and reset the cursor."""
         super().clear()

@@ -7,7 +7,8 @@ This document captures shared memory and working agreements for AI coding agents
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v0.10.1a** (当前) - Lithoformer 输出升级为逐行双语，Schema/Formatter/TUI/CLI 全链路支持批次号与题目编码
+- **v0.10.3** (当前) - Lithoformer TUI 布局完全重构：基于layout.xml三列布局，自定义进度条，解决所有用户反馈的布局问题
+- **v0.10.1a** - Lithoformer 输出升级为逐行双语，Schema/Formatter/TUI/CLI 全链路支持批次号与题目编码
 - **v0.9.3** - 首次引入双语输出管线，Formatter 与 CLI/TUI 联动
 - **v0.9.2** - Lithoformer TUI 完全重写，基于 JiraTUI 最佳实践
 - **v0.9.1a** - 数据更新，新增测验文件

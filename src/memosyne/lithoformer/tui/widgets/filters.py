@@ -23,8 +23,6 @@ class InputPathInput(Input):
             placeholder="请选择或输入包含测验 Markdown 的目录",
         )
         self.border_title = "输入路径"
-        self.border_subtitle = INPUT_SUBTITLE
-
 
 class OutputPathInput(Input):
     """Input widget for specifying the output directory."""
@@ -36,8 +34,6 @@ class OutputPathInput(Input):
             placeholder="解析结果输出目录",
         )
         self.border_title = "输出路径"
-        self.border_subtitle = INPUT_SUBTITLE
-
 
 class ProviderSelectionInput(Select):
     """Selection widget for choosing the LLM provider."""
@@ -58,8 +54,6 @@ class ProviderSelectionInput(Select):
             classes="tight-select",
         )
         self.border_title = "厂商选择"
-        self.border_subtitle = "[dodger_blue2]下拉菜单[/]"
-
 
 class ModelSelectionInput(Select):
     """Selection widget for choosing a specific model."""
@@ -78,7 +72,6 @@ class ModelSelectionInput(Select):
             classes="tight-select",
         )
         self.border_title = "模型选择"
-        self.border_subtitle = "[dodger_blue2]下拉菜单[/]"
 
     def watch_models(self, models: list[tuple[str, str]] | None = None) -> None:
         """Reload the option list when the available models change."""
@@ -97,8 +90,6 @@ class ModelInput(Input):
             placeholder="可手动覆盖具体模型标识",
         )
         self.border_title = "使用模型"
-        self.border_subtitle = AUTO_SUBTITLE
-
 
 class TagInput(Input):
     """Input widget for specifying tags."""
@@ -110,8 +101,6 @@ class TagInput(Input):
             placeholder="自动依据检测结果填写，可手动覆盖",
         )
         self.border_title = "标签"
-        self.border_subtitle = AUTO_SUBTITLE
-
 
 class TitleInput(Input):
     """Input widget for specifying the title."""
@@ -123,8 +112,6 @@ class TitleInput(Input):
             placeholder="主标题",
         )
         self.border_title = "标题"
-        self.border_subtitle = AUTO_SUBTITLE
-
 
 class SequenceInput(Input):
     """Input widget for specifying sequence number."""
@@ -136,8 +123,6 @@ class SequenceInput(Input):
             placeholder="序号，例如 23",
         )
         self.border_title = "序号"
-        self.border_subtitle = AUTO_SUBTITLE
-
 
 class BatchInput(Input):
     """Input widget for specifying batch ID."""
@@ -149,8 +134,6 @@ class BatchInput(Input):
             placeholder="批次号自动生成，可覆盖",
         )
         self.border_title = "批次号"
-        self.border_subtitle = AUTO_SUBTITLE
-
 
 class OutputFilenameInput(Input):
     """Input widget for specifying output filename."""
@@ -162,8 +145,6 @@ class OutputFilenameInput(Input):
             placeholder="输出文件名（含扩展名）",
         )
         self.border_title = "输出文件名"
-        self.border_subtitle = AUTO_SUBTITLE
-
 
 class ModelNoteInput(Input):
     """Input widget for notes to pass to the model."""
@@ -175,8 +156,6 @@ class ModelNoteInput(Input):
             placeholder="可传给模型的额外提醒（可选）",
         )
         self.border_title = "给模型的备注"
-        self.border_subtitle = INPUT_SUBTITLE
-
 
 class CommandInput(Input):
     """Input widget for commands."""
@@ -186,9 +165,7 @@ class CommandInput(Input):
             id="command-input",
             placeholder="/clear 清空日志",
         )
-        self.border_title = "指令输入区"
-        self.border_subtitle = INPUT_SUBTITLE
-
+        self.border_title = "指令输入"
 
 class LithoformerDirectoryTree(DirectoryTree):
     """Directory tree widget for file selection (Markdown only)."""
@@ -196,8 +173,6 @@ class LithoformerDirectoryTree(DirectoryTree):
     def __init__(self, root: Path):
         super().__init__(root, id="file-tree")
         self.border_title = "文件选择"
-        self.border_subtitle = "[dodger_blue2]DirectoryTree[/]"
-
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:  # noqa: D401 - textual override
         """Keep directories and Markdown files only."""
         for path in paths:
