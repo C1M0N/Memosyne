@@ -20,24 +20,4 @@ else
 fi
 
 export PYTHONPATH=src
-CMD=( "$PY_BIN" -m memosyne.lithoformer.tui.app "$@" )
-
-if command -v osascript >/dev/null 2>&1; then
-  COMMAND="$(printf 'cd %q && export PYTHONPATH=%q && stty columns 200 rows 55 && %s' "$PWD" "src" "$(printf '%q ' "${CMD[@]}")")"
-  COMMAND="${COMMAND% }"
-  osascript - "$COMMAND" <<'EOF'
-on run argv
-  set shellCommand to item 1 of argv
-  tell application "Terminal"
-    activate
-    set newTab to do script shellCommand
-    delay 0.2
-    try
-      set bounds of front window to {100, 100, 1700, 1000}
-    end try
-  end tell
-end run
-EOF
-else
-  "${CMD[@]}"
-fi
+"$PY_BIN" -m memosyne.lithoformer.tui.app "$@"

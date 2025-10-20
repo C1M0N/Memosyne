@@ -139,6 +139,10 @@ Screen {
 
 #right-col {
     height: 1fr;
+    layout: vertical;
+    padding: 0;
+    row-gap: 0;
+    content-align: top left;
 }
 
 #file-tree {
@@ -147,34 +151,26 @@ Screen {
     border-title-color: #69b3ff;
     background: #070d16;
     scrollbar-size-vertical: 1;
-}
-
-#selected-file-display {
-    border: round #1f4b8f;
-    border-title-color: #69b3ff;
-    background: #070d16;
-    color: #8ca7c5;
-    padding: 0 1;
-    height: 3;
-    text-overflow: ellipsis;
-    align-vertical: middle;
-    margin-bottom: 1;
+    margin: 0;
 }
 
 #action-wrapper {
-    height: 5;
+    height: auto;
+    min-height: 5;
     border: round #1f4b8f;
     border-title-color: #69b3ff;
     background: #070d16;
     align-horizontal: center;
     align-vertical: middle;
-    padding: 0 1;
+    padding: 0;
+    margin: 0;
 }
 
 #action-button {
     width: 100%;
-    height: 3;
+    height: 4;
     text-style: bold;
+    margin: 0;
 }
 
 Button.-primary {
