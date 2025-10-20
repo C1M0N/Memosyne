@@ -133,13 +133,20 @@ Screen {
     margin-left: 1;
 }
 
+#middle-col {
+    height: 1fr;
+}
+
+#right-col {
+    height: 1fr;
+}
+
 #file-tree {
     height: 1fr;
     border: tall #1f4b8f;
     border-title-color: #69b3ff;
     background: #070d16;
     scrollbar-size-vertical: 1;
-    margin-bottom: 1;
 }
 
 #selected-file-display {
