@@ -40,7 +40,7 @@ class CustomProgressBar(Widget):
     CustomProgressBar > #progress-percentage {
         height: 1;
         color: $accent;
-        content-align: center middle;
+        content-align: left middle;
         text-style: bold;
     }
     """
@@ -131,15 +131,10 @@ class CustomProgressBar(Widget):
         # 第三行：百分比（跟随进度条移动）
         percentage_text = f"{percentage:.0f}%"
 
-        # 计算百分比应该在的位置（在进度条的填充部分的末尾）
-        # 当填充为0时，百分比应该在开头（position=0）
-        # 当填充>0时，百分比在填充末尾+1（因为有'|'字符）
-        if filled == 0:
-            pct_position = 0
-        else:
-            pct_position = filled + 1
-        # 确保百分比文本不会超出边界
-        pct_position = min(pct_position, bar_width - len(percentage_text) + 1)
+        # 计算百分比位置：上面有几个#号，下面就空几个空格
+        # bar_line: |################                        | 4/10
+        # pct_line: ################40%（#号数量=空格数量）
+        pct_position = filled
         pct_line = " " * pct_position + percentage_text
 
         # 更新 widgets

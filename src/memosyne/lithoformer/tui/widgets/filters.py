@@ -51,9 +51,12 @@ class ProviderSelectionInput(Select):
             prompt="选择厂商",
             name="provider",
             tooltip="LLM 厂商",
-            classes="tight-select",
+            type_to_search=True,
+            compact=True,
+            classes="tight-select jira-selector",
         )
         self.border_title = "厂商选择"
+        self.border_subtitle = "(p)"
 
 class ModelSelectionInput(Select):
     """Selection widget for choosing a specific model."""
@@ -69,9 +72,12 @@ class ModelSelectionInput(Select):
             prompt="选择模型",
             name="model-select",
             tooltip="从配置提供的模型中选择",
-            classes="tight-select",
+            type_to_search=True,
+            compact=True,
+            classes="tight-select jira-selector",
         )
         self.border_title = "模型选择"
+        self.border_subtitle = "(m)"
 
     def watch_models(self, models: list[tuple[str, str]] | None = None) -> None:
         """Reload the option list when the available models change."""

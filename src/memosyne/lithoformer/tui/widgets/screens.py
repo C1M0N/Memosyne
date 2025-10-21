@@ -229,9 +229,7 @@ class MainScreen(Screen):
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):
                         yield self._file_tree
-                        action_button = Button("Detect", id="action-button", variant="primary")
-                        action_wrapper = Container(action_button, id="action-wrapper")
-                        yield action_wrapper
+                        yield Button("Detect", id="action-button", variant="primary")
 
                 # 控制台区 (横跨整个右侧区域，760-1600px)
                 log_view = RichLog(id="log-view", highlight=True, markup=True)

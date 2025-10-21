@@ -4,4 +4,3 @@
 cd "$(dirname "$0")"
 export PYTHONPATH=src
 python -m memosyne.lithoformer.cli.main "$@"
-
