@@ -423,6 +423,13 @@ class MainScreen(Screen):
         if not self._validate_before_start():
             return
 
+        # 在Start开始时就记录备注值，帮助调试
+        current_note = self.tag_input.value.strip()
+        if current_note:
+            self.logger.info("START开始 - 当前备注框内容：%s", current_note)
+        else:
+            self.logger.info("START开始 - 备注框为空")
+
         detection = self._detection
 
         try:
@@ -464,6 +471,31 @@ class MainScreen(Screen):
             total_questions = len(detection.questions)
             running_tokens = TokenUsage()
 
+            # 从title_input读取用户可能修改过的标题
+            title_from_input = self.title_input.value.strip()
+            if title_from_input:
+                # 将\\n转换为真正的\n
+                title_from_input = title_from_input.replace("\\n", "\n")
+                # 分割为main和sub
+                title_lines = [line.strip() for line in title_from_input.split("\n") if line.strip()]
+                if len(title_lines) >= 2:
+                    final_title_main = title_lines[0]
+                    final_title_sub = "\n".join(title_lines[1:])
+                elif len(title_lines) == 1:
+                    final_title_main = title_lines[0]
+                    final_title_sub = ""
+                else:
+                    final_title_main = detection.title_main
+                    final_title_sub = detection.title_sub
+            else:
+                final_title_main = detection.title_main
+                final_title_sub = detection.title_sub
+
+            # 读取备注（用户自定义的额外说明，会附加到user prompt）
+            user_note = self.tag_input.value.strip()
+            if user_note:
+                self.logger.info("读取到用户备注：%s", user_note)
+
             for index, block in enumerate(detection.blocks, start=1):
                 self._mark_row_in_progress(index)
                 self._set_status(f"状态：解析第 {index}/{total_questions} 题…")
@@ -477,6 +509,7 @@ class MainScreen(Screen):
                         index,
                         total_questions,
                         running_tokens,
+                        note=user_note,
                         show_spinner=False,
                     )
                 except Exception as exc:  # pragma: no cover - defensive
@@ -486,7 +519,7 @@ class MainScreen(Screen):
                     self._set_action_state("detect")
                     return
 
-                self._apply_event_to_row(event, formatter, detection.title_main, detection.title_sub)
+                self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
                 if event.status == "success" and event.item:
                     items.append(event.item)
 
@@ -502,10 +535,12 @@ class MainScreen(Screen):
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = unique_path(output_dir / detection.output_filename)
                 sequence_source = self.sequence_input.value.strip() or detection.sequence
+
+                # 使用之前解析好的final_title_main和final_title_sub
                 output_text = formatter.format(
                     items,
-                    detection.title_main,
-                    detection.title_sub,
+                    final_title_main,
+                    final_title_sub,
                     batch_code=detection.batch_id,
                     question_start=infer_question_seed(sequence_source),
                 )
@@ -608,14 +643,26 @@ class MainScreen(Screen):
 
         self._set_meta_title(detection.title_main or "—")
 
-        self._set_auto_field(self.tag_input, detection.title_sub or "")
-        self._set_auto_field(self.title_input, detection.title_main or "")
+        # 组合完整标题：title_main + \n + title_sub
+        title_parts = []
+        if detection.title_main:
+            title_parts.append(detection.title_main)
+        if detection.title_sub:
+            title_parts.append(detection.title_sub)
+        full_title = "\\n".join(title_parts)  # 使用 \\n 作为换行标记
+
+        self._set_auto_field(self.title_input, full_title)
+        # 备注字段默认为空（不再填入title_sub）
+        # self._set_auto_field(self.tag_input, "")  # 不需要设置，保持用户输入
         self._set_auto_field(self.sequence_input, detection.sequence or "")
         self._set_auto_field(self.batch_input, detection.batch_id)
         self._set_auto_field(self.output_filename_input, detection.output_filename)
 
         if detection.model_code:
             self._set_auto_field(self.model_input, detection.model_code)
+            # 如果model_code在下拉列表中，也更新下拉选择
+            if detection.model_code in self._model_option_values:
+                self.model_select.value = detection.model_code
 
         self._update_analysis_summary(detection)
 
@@ -632,6 +679,10 @@ class MainScreen(Screen):
         self.action_mode = "detect"
         self._set_action_state("detect")
         self._update_analysis_summary(None)
+
+        # 清理手动覆盖标记和自动值缓存，让新文件可以正确更新字段
+        self._manual_overrides.clear()
+        self._auto_values.clear()
 
     def _update_analysis_summary(self, detection: DetectionResult | None) -> None:
         """Render a compact summary of the detection outcome (deprecated)."""

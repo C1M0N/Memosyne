@@ -98,15 +98,15 @@ class ModelInput(Input):
         self.border_title = "使用模型"
 
 class TagInput(Input):
-    """Input widget for specifying tags."""
+    """Input widget for model notes (备注)."""
 
     def __init__(self, value: str | None = None):
         super().__init__(
             id="tag-input",
             value=value or "",
-            placeholder="自动依据检测结果填写，可手动覆盖",
+            placeholder="默认为空，填写内容会附加到user prompt后面",
         )
-        self.border_title = "标签"
+        self.border_title = "备注"
 
 class TitleInput(Input):
     """Input widget for specifying the title."""
@@ -115,7 +115,7 @@ class TitleInput(Input):
         super().__init__(
             id="title-input",
             value=value or "",
-            placeholder="主标题",
+            placeholder="使用\\n表示换行，\\n前加粗，后不加粗",
         )
         self.border_title = "标题"
 

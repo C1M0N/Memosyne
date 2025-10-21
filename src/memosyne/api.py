@@ -212,8 +212,12 @@ def lithoform(
         output_txt: 输出 TXT 文件路径（默认自动生成到 data/output/lithoformer/）
         model: 模型 ID（默认 gpt-4o-mini）
         provider: LLM 提供商（openai 或 anthropic）
-        title_main: 主标题（None 则自动从文件名推断）
-        title_sub: 副标题（None 则自动从文件名推断）
+        title_main: 主标题（None 则自动从MD文件内容推断）
+                    可包含多行，用\n分隔，每行会被单独加粗
+                    自动推断规则：提取所有"# "开头的行（去掉"# "）
+        title_sub: 副标题（None 则自动从MD文件内容推断）
+                   可包含多行，用\n分隔，每行不加粗
+                   自动推断规则：提取所有非"# "开头的非空行
         temperature: 温度参数（None 使用模型默认值）
         show_progress: 是否显示进度条
 

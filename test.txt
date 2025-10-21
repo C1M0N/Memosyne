@@ -64,3 +64,60 @@
 
 请仔细修改，不要老是出同样的问题
 我给你看图，以证明我说的问题存在
+
+
+
+好的 接下来改一个重要的逻辑问题 这个lithoformer中标签和标题这两个概念之前的版本的理解是错误的
+实际上标题是指md文件里题目之前的所有字符 以157.md为例  
+
+Test Bank: Chapter 4
+The Chemistry of Behavior: Neurotransmitters and Neuropharmacology
+
+这些都是标题
+行开头有"# "的是要加粗的
+没有的是不用加粗的 换行也要保留
+你理解了么
+
+251020F002-157-o4om.txt是错误的
+251020F002-157-o4om-correct.txt这个是我给你写的正确版
+请更改
+
+然后标签应该默认是空着的 不叫标签 叫备注 这里写的东西是加在user prompt后面的
+至于在TUI中的显示 因为标题这个元件是个单行文本 请用\n来显示换行 
+同样的要是用户选择不用自动判断的标题 也应该识别出\n之前的是要加粗的主标题之后是不用加粗的副标题
+
+你理解了么 问我点问题再改 因为这不是只是TUI的更改是重要逻辑更改 到时候TUI CLI和 API中的这个功能都要对应修改
+
+1 对的
+2 对的
+对的
+3 对的
+4 对 请先阅读完整代码 readme 和AGENTS.md 然后再改
+
+不好意思刚才251020F002-157-o4om-correct.txt改完没保存  现在有正确输出的样子了你再确认一下
+
+ultrathink
+三个问题
+1. 模型选择完以后虽然确实模型选择好了 但是模型选择那里还是显示选择模型
+2. 运行完一次后继续选其他文件继续运行时 序号和批次号还有输出文件名的显示全是错误的 但是输出是对的
+3. 只要不是第一次运行 备注里的备注就不会被正常识别
+
+请你好好想想怎么解决这些问题
+
+
+251020O001-0-o4om.txt
+251020Q001-0-oo3o.txt
+这两个输出都有问题
+第一个在题干里翻译了选项
+第二个把question当作了题目的一部份 请在修改代码以及prompt 避免llm再犯一样的错误
+
+另外请你检查备注是否被正确传入 因为这两个我都备注了：每道题题干里藏个销量emoji 但是都没有在输出中体现
+
+
+22:12:51 • INFO memosyne. lithoformer.tui ：：检测完成，共1题
+22:13:09 INFO memosyne. lithoformer.tui :: 已划换厂商为 gpt-5
+22:13:09 INFO memosyne. lithoformer.tui : : 已划换商为 openai
+22:13:12 INFO memosyne. lithoformer.tui : : START开始 当前备注框內容：在题目里放一个笑脸eMOJi
+22:13:12 INFO memosyne. lithoformer.tui ：： 读取到用户备注：在题目里放一个笑脸emoJt
+22:17:08 ERFUF menosyne. lithoformer.tui 题目 #Unlike fear, panic ---解析失败 ：调用 OpenAl 时发生意外错误：解析 LLM 响应失败：Expeoting'.'delimiter: 1ine 5312 column 4 （char 38126）
+22:17:08 INFO memosyne. lithoformer.tui ：：解析完成：251020月001-0-04om.txt（成功@/1:Tokens @）

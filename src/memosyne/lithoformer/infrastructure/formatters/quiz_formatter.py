@@ -93,6 +93,38 @@ def _normalize_sequence(text: str) -> str:
     return ",".join(c.upper() for c in letters)
 
 
+def _format_title_html(title_main: str, title_sub: str) -> str:
+    """
+    格式化标题为HTML
+
+    规则：
+    - title_main的每行单独加粗，用<br>连接
+    - title_sub的每行不加粗，用<br>连接
+
+    Example:
+        >>> _format_title_html("Test Bank: Chapter 4", "The Chemistry of Behavior")
+        '<b>Test Bank: Chapter 4</b><br>The Chemistry of Behavior'
+
+        >>> _format_title_html("Line1\\nLine2", "Sub1\\nSub2")
+        '<b>Line1</b><br><b>Line2</b><br>Sub1<br>Sub2'
+    """
+    parts = []
+
+    # 处理主标题（每行加粗）
+    if title_main:
+        main_lines = [line.strip() for line in title_main.split("\n") if line.strip()]
+        for line in main_lines:
+            parts.append(f"<b>{line}</b>")
+
+    # 处理副标题（不加粗）
+    if title_sub:
+        sub_lines = [line.strip() for line in title_sub.split("\n") if line.strip()]
+        parts.extend(sub_lines)
+
+    # 用<br>连接所有部分
+    return "<br>".join(parts) if parts else ""
+
+
 def _replace_cloze(stem: str, answers: list[str]) -> str:
     """优先替 {{...}}，否则替 ____"""
     if not answers:
@@ -322,7 +354,7 @@ class QuizFormatter:
             格式化后的文本（ShouldBe.txt 格式）
         """
         blocks = []
-        head = f"<b>{title_main}:<br>{title_sub}</b>"
+        head = _format_title_html(title_main, title_sub)
         base_number = question_start or 0
 
         for idx, item in enumerate(items, start=1):

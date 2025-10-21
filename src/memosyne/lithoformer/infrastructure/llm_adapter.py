@@ -35,7 +35,7 @@ class LithoformerLLMAdapter:
         解析并分析单个题目（实现 LLMPort.parse_question）
 
         Args:
-            payload: 包含 context/question/answer 的字典
+            payload: 包含 context/question/answer/note 的字典
 
         Returns:
             (question_dict, token_usage_dict)
@@ -47,6 +47,7 @@ class LithoformerLLMAdapter:
             context = (payload.get("context") or "").strip()
             question = (payload.get("question") or "").strip()
             answer = (payload.get("answer") or "").strip()
+            note = (payload.get("note") or "").strip()
 
             if not question:
                 raise LLMError("题目内容为空，无法解析")
@@ -56,6 +57,10 @@ class LithoformerLLMAdapter:
                 question=question,
                 answer=answer,
             )
+
+            # 如果有备注，附加到user prompt后面
+            if note:
+                user_prompt += f"\n\n备注：{note}"
 
             # 调用底层 LLM Provider 的通用方法
             llm_response, token_usage = self.provider.complete_structured(

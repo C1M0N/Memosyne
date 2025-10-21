@@ -150,12 +150,21 @@ class ParseQuizUseCase:
         total_count: int,
         total_tokens: TokenUsage,
         *,
+        note: str = "",
         show_spinner: bool = False,
     ) -> tuple[QuizProcessingEvent, TokenUsage]:
         """
         处理单个题目块，返回事件和累积 Token。
 
         提供给 TUI 等外部组件复用，以便插入自定义的进度控制。
+
+        Args:
+            block: 题目块字典（context, question, answer）
+            index: 题目索引
+            total_count: 总题目数
+            total_tokens: 累积的token使用量
+            note: 用户备注，会附加到user prompt后面
+            show_spinner: 是否显示进度条
         """
         start_time = perf_counter()
         status: Literal["success", "invalid", "error"]
@@ -173,6 +182,7 @@ class ParseQuizUseCase:
                         "context": block.get("context", ""),
                         "question": block.get("question", ""),
                         "answer": block.get("answer", ""),
+                        "note": note,
                         "index": str(index),
                     }
                 )

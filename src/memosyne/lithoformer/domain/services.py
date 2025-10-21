@@ -112,108 +112,57 @@ def filter_valid_items(items: list[QuizItem]) -> list[QuizItem]:
 
 def infer_titles_from_markdown(markdown: str) -> tuple[str, str]:
     """
-    Infer titles from Markdown content
+    从Markdown内容中提取标题
+
+    提取规则：
+    - 标题 = 从文件开头到第一个题目（## 数字）之前的所有内容
+    - title_main: 所有以"# "开头的行（去掉"# "），用换行符连接
+    - title_sub: 所有不以"# "开头的非空行，用换行符连接
 
     Args:
-        markdown: Markdown text
+        markdown: Markdown文本
 
     Returns:
         (title_main, title_sub)
 
     Example:
-        >>> md = "# Concept Clip:\\nAnxiety"
+        >>> md = "# Test Bank: Chapter 4\\nThe Chemistry of Behavior\\n\\n## 21\\n..."
         >>> infer_titles_from_markdown(md)
-        ('Concept Clip', 'Anxiety')
+        ('Test Bank: Chapter 4', 'The Chemistry of Behavior')
     """
-    lines = [line.strip() for line in markdown.splitlines()]
-    main = ""
-    sub = ""
+    lines = markdown.splitlines()
+    title_main_lines: list[str] = []
+    title_sub_lines: list[str] = []
 
-    for idx, line in enumerate(lines):
-        if not line:
-            continue
-        if not line.startswith("#"):
-            continue
+    # 提取从开头到第一个题目（## 数字）之前的所有内容
+    for line in lines:
+        stripped = line.strip()
 
-        # Only handle level-1 headings (# ...)
-        if not line.startswith("# "):
-            continue
-
-        content = line.lstrip("#").strip()
-        if not content:
-            continue
-
-        # Normalise colon variants
-        normalized = content.replace("：", ":")
-        if ":" in normalized:
-            left, right = normalized.split(":", 1)
-            left = left.strip()
-            right = right.strip()
-            if left:
-                main = left
-            else:
-                main = normalized.rstrip(":").strip()
-            if right:
-                sub = right
-        else:
-            main = normalized.rstrip(":").strip()
-
-        if not sub:
-            # Look ahead for the next non-empty line that isn't a heading
-            for follow_line in lines[idx + 1:]:
-                if not follow_line:
-                    continue
-                if follow_line.startswith("#"):
-                    break
-                sub = follow_line.strip()
-                break
-
-        if main:
-            return main, sub
-
-    # 尝试从题目前的自由文本中获取标题（兼容无 # 标题的旧数据）
-    preface: list[str] = []
-    saw_context = False
-    for raw_line in markdown.splitlines():
-        stripped_right = raw_line.rstrip()
-        stripped = stripped_right.strip()
-        upper = stripped.upper()
-        if upper.startswith("```QUESTION") or upper.startswith("```ANSWER"):
-            break
+        # 遇到题目标记，停止
         if NUMBER_HEADING.match(stripped):
             break
-        if stripped.startswith("#"):
-            stripped = stripped.lstrip("#").strip()
-            stripped_right = stripped
-            if not stripped:
-                continue
-        saw_context = True
-        preface.append(stripped_right if stripped_right else stripped)
+        if stripped.upper().startswith("```QUESTION") or stripped.upper().startswith("```ANSWER"):
+            break
 
-    if saw_context and preface:
-        cleaned = [line.strip() for line in preface if line.strip()]
-        if cleaned:
-            first = cleaned[0]
-            rest = cleaned[1:]
-            normalized = first.replace(":", "：")
-            if "：" in normalized:
-                left, right = normalized.split("：", 1)
-                left = left.strip()
-                right = right.strip()
-                if left:
-                    main = left
-                if right:
-                    sub = right
-                elif rest:
-                    sub = rest[0]
-            else:
-                main = first.strip()
-                if rest:
-                    sub = rest[0]
-            if main:
-                return main, sub
+        # 空行跳过
+        if not stripped:
+            continue
 
-    return "", ""
+        # 以 "# " 开头的行 → 加入 title_main
+        if stripped.startswith("# "):
+            # 去掉 "# " 前缀
+            content = stripped[2:].strip()
+            if content:
+                title_main_lines.append(content)
+        else:
+            # 非 "# " 开头的行 → 加入 title_sub
+            title_sub_lines.append(stripped)
+
+    # 用换行符连接
+    title_main = "\n".join(title_main_lines)
+    title_sub = "\n".join(title_sub_lines)
+
+    return title_main, title_sub
 
 
 def infer_question_seed(value: str | Path) -> int:
