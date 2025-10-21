@@ -6,7 +6,7 @@ Usage:
     python -m memosyne.lithoformer.cli.main
 
     Or use the convenience script:
-    ./run_lithoform.sh
+    ./scripts/LfC.sh
 """
 from pathlib import Path
 

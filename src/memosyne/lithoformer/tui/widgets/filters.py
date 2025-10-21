@@ -152,17 +152,6 @@ class OutputFilenameInput(Input):
         )
         self.border_title = "输出文件名"
 
-class ModelNoteInput(Input):
-    """Input widget for notes to pass to the model."""
-
-    def __init__(self, value: str | None = None):
-        super().__init__(
-            id="model-note-input",
-            value=value or "",
-            placeholder="可传给模型的额外提醒（可选）",
-        )
-        self.border_title = "给模型的备注"
-
 class CommandInput(Input):
     """Input widget for commands."""
 

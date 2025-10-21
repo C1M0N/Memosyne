@@ -25,13 +25,21 @@ Screen {
 #right-area {
     width: 21fr;  /* 840/40 */
     layout: vertical;
+    padding: 0;
+    margin: 0;
+}
+
+/* 消除 right-area 内部所有子元素之间的间距 */
+#right-area > * {
+    margin: 0;
 }
 
 /* 顶部区域：中列和右列的水平容器 */
 #top-section {
     layout: horizontal;
-    height: 24;  /* ~480px - 固定高度以便控制台有空间显示 */
+    height: 28;  /* ~560px - 完整显示所有输入控件包括备注 */
     padding: 0;
+    margin: 0 0 -2 0 !important;  /* 底部负边距，向下拉伸覆盖空行 */
 }
 
 /* 中列: 配置输入 (560px / 840px ≈ 66.7%) */
@@ -185,7 +193,7 @@ Select OptionList > .option-list--option-selected {
     background: #070d16;
     scrollbar-size-vertical: 1;
     padding: 1;
-    margin-top: 0;
+    margin: -4 0 0 0 !important;  /* 使用更大的负上边距向上移动4行，消除空行 */
 }
 
 #command-input {
@@ -194,7 +202,7 @@ Select OptionList > .option-list--option-selected {
     color: #d7e3f4;
     height: 3;  /* 增加高度，确保能看到输入 */
     padding: 0 1;
-    margin-top: 0;
+    margin: 0;  /* 去掉所有边距 */
     &:focus {
         border: round #4aa8ff;
     }
@@ -205,7 +213,7 @@ Select OptionList > .option-list--option-selected {
    ================================================================== */
 
 #file-tree {
-    height: 21;
+    height: 23;  /* Tabs减少1行后，文件树相应减少，底部与输出文件名对齐 */
     border: round #1f4b8f;
     background: #070d16;
     scrollbar-size-vertical: 1;
@@ -217,7 +225,7 @@ Select OptionList > .option-list--option-selected {
     width: 100%;
     height: 3;
     text-style: bold;
-    margin: 0;
+    margin: -2 0 0 0;  /* 向上移动2行，与备注对齐 */
 }
 
 /* ==================================================================
@@ -228,7 +236,7 @@ Select OptionList > .option-list--option-selected {
     height: 5;  /* 3行：信息行 + 进度条行 + 百分比行 */
     border: round #1f4b8f;
     background: #0d141f;
-    margin: 1 0 0 0;
+    margin: 0;  /* 去掉上边距，紧贴控制台 */
 }
 
 /* ==================================================================
@@ -275,4 +283,92 @@ Select {
 
 Static {
     border-title-color: #69b3ff;
+}
+
+/* ==================================================================
+   TABBED CONTENT - jiraTUI 风格选项卡
+   ================================================================== */
+
+#main-tabs {
+    height: 1fr;
+    background: #070d16;
+}
+
+/* Tabs 栏 - 类似 jiraTUI 的选项卡行 */
+#main-tabs > Tabs {
+    height: 2;  /* 减少高度，消除空行 */
+    background: #0d141f;
+    border: none;  /* 去掉底部蓝线 */
+    margin: 0;
+    padding: 0;
+}
+
+/* Tab 选项卡按钮 - 默认状态，参考 jiraTUI 简洁风格 */
+#main-tabs Tab {
+    background: transparent;  /* 透明背景，不是全蓝 */
+    color: #9cb3ce;  /* 灰色文字 */
+    text-style: none;
+    border: none;
+    padding: 0 2;
+    margin: 0 1 0 0;
+}
+
+/* Tab 悬停状态 */
+#main-tabs Tab:hover {
+    background: #14253a;
+    color: #ffffff;
+}
+
+/* Tab 激活状态 - 下划线高亮，不是全蓝背景 */
+#main-tabs Tab.-active {
+    background: transparent !important;  /* 激活时背景也是透明的 */
+    color: #4aa8ff !important;  /* 蓝色文字 */
+    text-style: bold;
+    border-bottom: solid #4aa8ff;  /* 底部蓝色下划线 */
+}
+
+/* Tab 激活且悬停状态 */
+#main-tabs Tab.-active:hover {
+    background: #14253a !important;
+    color: #ffffff !important;
+}
+
+/* Tab 激活且获得焦点时 */
+#main-tabs Tab.-active:focus {
+    background: transparent !important;
+    color: #4aa8ff !important;
+}
+
+/* Tab 获得焦点时（未激活） */
+#main-tabs Tab:focus {
+    background: #14253a;
+    color: #ffffff;
+}
+
+/* TabPane 内容区域 */
+#main-tabs ContentSwitcher {
+    height: 1fr;
+    background: #070d16;
+    margin: 0;
+    padding: 0;
+}
+
+#main-tabs TabPane {
+    height: 1fr;
+    padding: 0;
+    margin: 0;
+    background: #070d16;
+}
+
+/* 预览区域 TextArea */
+#preview-area {
+    height: 1fr;
+    border: round #1f4b8f;
+    background: #0d141f;
+    color: #d7e3f4;
+    padding: 1;
+}
+
+#preview-area:focus {
+    border: round #4aa8ff;
 }

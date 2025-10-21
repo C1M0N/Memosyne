@@ -18,7 +18,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
-from textual.widgets import Button, Input, ProgressBar, RichLog, Static
+from textual.widgets import Button, Input, ProgressBar, RichLog, Static, TabbedContent, TabPane, TextArea
 
 from ....core.models import TokenUsage
 from ....shared.config import get_settings
@@ -48,7 +48,6 @@ from .filters import (
     InputPathInput,
     LithoformerDirectoryTree,
     ModelInput,
-    ModelNoteInput,
     ModelSelectionInput,
     OutputFilenameInput,
     OutputPathInput,
@@ -165,10 +164,6 @@ class MainScreen(Screen):
         return self.query_one(OutputFilenameInput)
 
     @property
-    def model_note_input(self) -> ModelNoteInput:
-        return self.query_one(ModelNoteInput)
-
-    @property
     def command_input(self) -> CommandInput:
         return self.query_one(CommandInput)
 
@@ -183,6 +178,10 @@ class MainScreen(Screen):
     @property
     def total_progress(self) -> CustomProgressBar:
         return self.query_one("#total-progress", CustomProgressBar)
+
+    @property
+    def preview_area(self) -> TextArea:
+        return self.query_one("#preview-area", TextArea)
 
     # endregion -------------------------------------------------------------------
 
@@ -206,25 +205,33 @@ class MainScreen(Screen):
             with Vertical(id="right-area"):
                 # 顶部：中列 + 右列
                 with Horizontal(id="top-section"):
-                    # 中列 (760-1320px): 所有配置输入
+                    # 中列 (760-1320px): 选项卡式内容区
                     with Vertical(id="middle-col"):
-                        yield InputPathInput(value=str(self.settings.lithoformer_input_dir))
-                        yield OutputPathInput(value=str(self.settings.lithoformer_output_dir))
+                        with TabbedContent(id="main-tabs"):
+                            # 第一个选项卡：输入配置
+                            with TabPane(title="输入", id="tab-inputs"):
+                                yield InputPathInput(value=str(self.settings.lithoformer_input_dir))
+                                yield OutputPathInput(value=str(self.settings.lithoformer_output_dir))
 
-                        with Horizontal(id="provider-model-row"):
-                            yield ProviderSelectionInput(value=self.settings.default_llm_provider)
-                            yield ModelSelectionInput()
+                                with Horizontal(id="provider-model-row"):
+                                    yield ProviderSelectionInput(value=self.settings.default_llm_provider)
+                                    yield ModelSelectionInput()
 
-                        yield ModelInput()
-                        yield TitleInput()
+                                yield ModelInput()
+                                yield TitleInput()
 
-                        with Horizontal(id="seq-batch-row"):
-                            yield SequenceInput()
-                            yield BatchInput()
+                                with Horizontal(id="seq-batch-row"):
+                                    yield SequenceInput()
+                                    yield BatchInput()
 
-                        yield OutputFilenameInput()
-                        yield TagInput()
-                        yield ModelNoteInput(value="")
+                                yield OutputFilenameInput()
+                                yield TagInput()
+
+                            # 第二个选项卡：预览展示
+                            with TabPane(title="预览", id="tab-preview"):
+                                preview = TextArea(id="preview-area", read_only=True)
+                                preview.border_title = "检测结果预览"
+                                yield preview
 
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):

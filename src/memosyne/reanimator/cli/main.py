@@ -8,7 +8,7 @@ Usage:
     python -m memosyne.reanimator.cli.main
 
     Or use the convenience script:
-    ./run_reanimate.sh
+    ./scripts/run_reanimate.sh
 
 Architecture:
 - CLI layer: User interaction and dependency injection

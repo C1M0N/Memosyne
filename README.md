@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.10.1a-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.10.5a-orange.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-DDD%20%2B%20Hexagonal-purple.svg)]()
 
 *领域驱动设计、类型安全、生产就绪的 LLM 工作流工具*
@@ -20,6 +20,8 @@
 ## 📖 简介
 
 Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术语处理和 Quiz 解析工具包，提供两个核心功能：
+
+> 📓 最新更新记录请查看 [CHANGELOG](CHANGELOG.md)，详细的 TUI 迭代日志整理自 `TUI_design_note/`。
 
 ### 🔤 **Reanimator - 术语重生器**
 将术语列表（英文单词 + 中文释义）扩展为完整的记忆卡片信息：
@@ -67,7 +69,7 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 - ✅ **交互式 CLI** - 向导式操作
 - ✅ **编程 API** - 在代码中直接调用
 - ✅ **模块执行** - `python -m memosyne.reanimator.cli.main`
-- ✅ **便捷脚本** - `./run_reanimate.sh`, `./run_lithoform.sh`
+- ✅ **便捷脚本** - `./scripts/run_reanimate.sh`, `./scripts/LfC.sh`, `./scripts/LfT.sh`
 - ✅ **Textual TUI** - `python -m memosyne.lithoformer.tui.app`
 
 ### 📊 **完善的数据流**
@@ -129,12 +131,13 @@ python -m memosyne.lithoformer.cli.main
 
 ```bash
 # Reanimator
-./run_reanimate.sh
+./scripts/run_reanimate.sh
 
-# Lithoformer
-./run_lithoform.sh
+# Lithoformer CLI
+./scripts/LfC.sh
+
 # Lithoformer TUI
-./run_lithoformer_tui.sh
+./scripts/LfT.sh
 ```
 
 ### 方式 3：编程 API
@@ -168,7 +171,7 @@ print(f"📊 Token 使用: {result['token_usage']['total_tokens']}")
 # 启动 Textual & Rich 构建的 Lithoformer TUI
 python -m memosyne.lithoformer.tui.app
 # 或使用便捷脚本
-./run_lithoformer_tui.sh
+./scripts/LfT.sh
 ```
 
 > 该界面提供文件树选择、Detect/Start 流程、逐题状态列表、实时日志与指令输入区，适合需要鼠标操作的可视化运行场景。
@@ -177,13 +180,30 @@ python -m memosyne.lithoformer.tui.app
 
 ## 🖥️ Lithoformer TUI 概览
 
-- **单页布局**：顶部 ASCII Logo，左侧题目表格，中央配置面板，右侧目录树与操作键，底部日志 + 双进度条，整体配色继承 JiraTUI 风格。
-- **单键流程**：操作键在 `Detect → START → RUNNING` 之间动态切换；Detect 阶段仅做轻量推断（标题 / 序号 / 批次 / 输出文件名），不会调用 LLM。
-- **题目表格**：逐题展示 `Pending / In Progress / Done / ERROR` 状态、题型、字符数、输出字符数、耗时；失败题目标记为 `ERROR` 并在日志中记录原因，流程不中断。
-- **文件树**：仅枚举选定输入目录下的 `.md` 文件；选择文件后可以在表单中保留或覆盖自动推断的字段，目录路径可随时调整。
-- **日志与命令区**：挂接标准 `logging` 输出，高亮级别、展示时间戳，保留最近 999 条；命令行支持 `/clear` 清屏，右下角实时显示单题与总进度、耗时估计、Token 消耗。
-- **模型配置**：自动联动厂商/模型下拉与手动输入框，支持默认模型与自定义覆盖，备注字段可给同事留下提示。
-- **输出格式**：解析完成后自动写出逐行中英双语的 ShouldBe.txt，并在日志中汇报批次号与 `L` 编码范围，便于追踪与验收。
+### Layout v2 Highlights (v0.10.3–v0.10.5a)
+
+- 三列固定布局（760 / 560 / 280）直接对应 `layout.xml`，所有控件独立挂载，无容器嵌套，复刻 JiraTUI 的信息密度。
+- 全量迁移至 `lithoformer_layout.tcss`，统一 round 边框、焦点状态与 Select 箭头配色，去除多余的 “输入/自动推断” 子标题。
+- 自定义 `CustomProgressBar` 显示运行时间、预估剩余、Token 总数，并根据终端宽度动态调整进度条长度与百分比位置。
+- Provider / Model 下拉支持搜索与自动填值；序号与批次号共享一行；Detect/Start 按钮固定在目录树下方。
+- `RichLog` 标题明确为 “控制台”，命令输入高度提升至 3，并支持 `/clear`、`/exit` 指令，保留最近 999 条日志。
+
+### 核心组件
+
+- `MainScreen` — 负责 Detect → Start 状态机、异步任务、自动填值与手动覆盖跟踪。
+- `CustomProgressBar` — 三行进度展示组件（运行时间 / 进度条 / 百分比随条移动）。
+- `QuestionsTable` — 固定宽高的题目表格，禁用表头排序，状态色编码。
+- `filters.py` — 13 个独立输入组件（路径、厂商、模型、标题、序号、批次、输出文件名、备注等），`TitleInput` 使用 `\n` 表示换行（首行自动加粗），`TagInput`（显示为“备注”）的内容会追加到 LLM user prompt。
+- `logging_utils.py` — Textual 原生日志 handler，与 RichLog 及命令输入联动。
+
+### 操作体验
+
+- **单键流程**：操作键在 `Detect → START → RUNNING` 之间循环；Detect 阶段仅做 Markdown 分析（标题 / 序号 / 批次 / 输出文件名），不会调用 LLM。
+- **题目表格**：逐题展示 `Pending / In Progress / Done / ERROR` 状态、题型、字符数、输出字符数、耗时；失败题目标记为 `ERROR` 并在日志中记录原因。
+- **文件树**：仅枚举选定输入目录下的 `.md` 文件；选中文件后可保留或覆盖自动推断字段，目录路径随时可切换。
+- **输出管线**：解析完成后写出逐行中英双语的 ShouldBe.txt，并在日志中汇报批次号与 `L` 编码范围，便于追踪与验收。
+
+> 详尽的重构背景、设计决策与测试记录见 `REFACTOR_REPORT.md` 与 `TUI_design_note/` 系列文档。
 
 ---
 
@@ -251,7 +271,7 @@ LOG_FORMAT=console
 
 ### 架构概览
 
-Memosyne v0.10.1a 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
+Memosyne v0.10.5a 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
 
 #### 核心架构模式
 
@@ -430,7 +450,12 @@ db/
 
 ## 🗂️ 版本历史（自 v0.9.0）
 
-- **v0.10.1a** — Lithoformer 输出升级为逐行双语；Schema 新增翻译字段，CLI/API/TUI 自动附带批次号与题目 `L` 编码；QuizFormatter 实现原文与译文交织。
+> 更完整的更新记录见 [CHANGELOG](CHANGELOG.md)。
+
+- **v0.10.5a** — Lithoformer TUI 第三轮布局修复：三列比例完全对齐 `layout.xml`，自适应进度条显示运行/剩余时间与 Tokens，Select 下拉样式恢复 JiraTUI 风格，按钮与批次号输入定位稳定。
+- **v0.10.4** — 新增 `lithoformer_layout.tcss` 与 Textual 日志集成；Detect/Start 状态机、问题表格宽度和命令输入区布局全部更新。
+- **v0.10.3** — 完整重写 TUI Compose 逻辑，落地 layout.xml 三列设计；Provider/Model 选择器支持搜索与自动填值；Detect 阶段生成 `DetectionResult` 快照。
+- **v0.10.1a** — Lithoformer 输出升级为逐行双语；Schema 新增翻译字段，CLI/API/TUI 全链路附带批次号与题目 `L` 编码；QuizFormatter 实现原文与译文交织。
 - **v0.9.2** — Lithoformer TUI 全面重写，采用 JiraTUI 布局，支持 Detect/Start 双阶段、实时日志与题目表格。
 - **v0.9.1a** — 扩充测验数据集，导入新的 Markdown 题库文件。
 - **v0.9.1** — 标记生产就绪，补齐 CLI/API、批次 ID、日志追踪与错误处理能力。
@@ -472,7 +497,7 @@ flowchart LR
 | Domain | `TermInput` / `TermOutput`；`apply_business_rules`、`generate_memo_id` 等领域服务 |
 | Application | `ProcessTermsUseCase`；端口接口 `LLMPort`、`TermListPort` |
 | Infrastructure | `ReanimatorLLMAdapter`、`CSVTermAdapter`、`TermListAdapter`、`REANIMATER_SYSTEM_PROMPT`、`TERM_RESULT_SCHEMA` |
-| CLI | `reanimator/cli/main.py`、`run_reanimate.sh` |
+| CLI | `reanimator/cli/main.py`、`scripts/run_reanimate.sh` |
 
 **Lithoformer（Quiz 重塑器）**
 
@@ -481,7 +506,7 @@ flowchart LR
 | Domain | `QuizItem`（含翻译字段）、`QuizAnalysis`；`split_markdown_into_questions`、`infer_titles_from_markdown`、`infer_question_seed`|
 | Application | `ParseQuizUseCase`（对齐翻译字段、累计 Token）；端口接口 `LLMPort` |
 | Infrastructure | `LithoformerLLMAdapter`、`FileAdapter`、`FormatterAdapter`、`LITHOFORMER_SYSTEM_PROMPT`、`QUESTION_SCHEMA`（含翻译字段） |
-| CLI | `lithoformer/cli/main.py`、`run_lithoform.sh` |
+| CLI | `lithoformer/cli/main.py`、`scripts/LfC.sh` |
 
 **Shared Kernel**
 
@@ -1355,6 +1380,31 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 ---
 
 ## 📝 变更日志
+
+### v0.10.5a (2025-10-21)
+
+**Lithoformer TUI 第三轮修复**
+
+- ✨ 引入 `CustomProgressBar`，显示运行时间、剩余时间与 Token 累计，并根据终端宽度自适应进度条长度与百分比位置。
+- 🛠️ 调整 `lithoformer_layout.tcss`，缩减输入组件间距，确保序号与批次号同列展示，Detect/Start 按钮固定在文件树底部。
+- 🛠️ Select 下拉恢复 JiraTUI 风格的焦点与箭头；命令输入高度调至 3，`RichLog` 明确标注为 “控制台”。
+- 🐞 修复模型下拉选择后仍显示占位文本的问题，并避免厂商下拉触发时清空模型列表。
+
+### v0.10.4 (2025-10-20)
+
+**Layout v2 正式落地**
+
+- ✨ 新建 `lithoformer_layout.tcss`，按照 layout.xml 三列比例重写布局，移除嵌套容器，所有控件独立挂载。
+- ✨ `logging_utils.py` 提供 Textual Handler，命令行支持 `/clear`、`/exit`，日志保留最近 999 条。
+- 🛠️ Detect → START 状态机完善，自动重置进度条、累积 Token 统计；题目表格固定宽高并禁用列头排序。
+
+### v0.10.3 (2025-10-19)
+
+**Layout XML 对齐重构**
+
+- ✨ 重写 `MainScreen.compose()` 以实现 760 / 560 / 280 三列布局；Provider/Model 选择器加入搜索与手动覆盖检测。
+- ✨ Detect 阶段新增 `DetectionResult` 缓存，自动推断标题（支持 `\n` 表示换行）、序号、批次号、输出文件名。
+- 📚 在 `TUI_design_note/` 中撰写 `DEVELOPMENT_REPORT_v0.10.3.md`、`LAYOUT_FIX_v1–v6.md` 记录每轮反馈与修复。
 
 ### v0.10.1a (2025-10-16)
 

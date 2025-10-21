@@ -7,13 +7,15 @@ This document captures shared memory and working agreements for AI coding agents
 Memosyne 是一个基于 LLM（OpenAI/Anthropic）的术语处理和测验解析工具。
 
 **版本信息**:
-- **v0.10.3** (当前) - Lithoformer TUI 布局完全重构：基于layout.xml三列布局，自定义进度条，解决所有用户反馈的布局问题
-- **v0.10.1a** - Lithoformer 输出升级为逐行双语，Schema/Formatter/TUI/CLI 全链路支持批次号与题目编码
-- **v0.9.3** - 首次引入双语输出管线，Formatter 与 CLI/TUI 联动
-- **v0.9.2** - Lithoformer TUI 完全重写，基于 JiraTUI 最佳实践
-- **v0.9.1a** - 数据更新，新增测验文件
-- **v0.9.1** - 生产就绪版本
-- **v0.9.0** - DDD + Hexagonal 架构，Lithoformer 支持逐题中文解析
+- **v0.10.5a** (当前) — Lithoformer TUI 第三轮修复：三列布局严格对齐 `layout.xml`，`CustomProgressBar` 显示时间/Token，Select 样式还原 JiraTUI，并修复模型选择显示问题。
+- **v0.10.4** — 引入 `lithoformer_layout.tcss` 与 Textual 日志 handler，完善 Detect→Start 状态机、问题表格尺寸与命令输入布局。
+- **v0.10.3** — 重写 TUI Compose 逻辑，落地 layout.xml 三列设计，Provider/Model 支持搜索与自动填值，Detect 阶段新增 `DetectionResult` 快照。
+- **v0.10.1a** — Lithoformer 输出升级为逐行双语，Schema/Formatter/TUI/CLI 全链路支持批次号与题目编码。
+- **v0.9.3** — 首次引入双语输出管线，Formatter 与 CLI/TUI 联动。
+- **v0.9.2** — Lithoformer TUI 完全重写，基于 JiraTUI 最佳实践。
+- **v0.9.1a** — 数据更新，新增测验文件。
+- **v0.9.1** — 生产就绪版本。
+- **v0.9.0** — DDD + Hexagonal 架构，Lithoformer 支持逐题中文解析。
 
 **核心架构模式**：
 - **Domain-Driven Design (DDD)** - 领域驱动设计
@@ -38,9 +40,9 @@ python -m memosyne.lithoformer.cli.main   # Lithoformer - Quiz 重塑
 python -m memosyne.lithoformer.tui.app    # Lithoformer - Textual TUI（Detect + START 流程）
 
 # 方式 2: 便捷脚本
-./run_reanimate.sh     # Reanimator
-./run_lithoform.sh     # Lithoformer
-./run_lithoformer_tui.sh  # Lithoformer Textual TUI
+./scripts/run_reanimate.sh     # Reanimator
+./scripts/LfC.sh               # Lithoformer CLI
+./scripts/LfT.sh               # Lithoformer Textual TUI
 
 # 方式 3: 编程 API
 python -c "from memosyne.api import reanimate; help(reanimate)"
@@ -72,6 +74,7 @@ cp .env.example .env
 ```bash
 OPENAI_API_KEY=your-key-here
 ANTHROPIC_API_KEY=your-key-here  # 可选
+DEFAULT_LLM_PROVIDER=openai
 DEFAULT_OPENAI_MODEL=gpt-4o-mini
 DEFAULT_ANTHROPIC_MODEL=claude-sonnet-4-5
 LOG_LEVEL=INFO
@@ -117,7 +120,7 @@ LOG_LEVEL=INFO
 
 ---
 
-## 核心架构 (v0.10.1a - DDD + Hexagonal + Bilingual Pipeline)
+## 核心架构 (v0.10.5a - DDD + Hexagonal + Bilingual Pipeline)
 
 ### DDD 分层架构
 
@@ -189,15 +192,24 @@ src/memosyne/
 │   ├── infrastructure/             # 基础设施层
 │   │   ├── llm_adapter.py          # LithoformerLLMAdapter（注入 prompts/schemas）
 │   │   ├── prompts.py              # LITHOFORMER_SYSTEM_PROMPT
-│   │   ├── schemas.py              # QUIZ_SCHEMA（含翻译字段）
+│   │   ├── schemas.py              # QUESTION_SCHEMA（含翻译字段）
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
 │   │   └── formatters/             # QuizFormatter（依赖领域模型）
 │   ├── cli/main.py                 # Lithoformer CLI
 │   └── tui/                        # Textual TUI 界面
-│       ├── __init__.py             # 导出 LithoformerTUIApp
-│       ├── app.py                  # Detect/Start 控制台
-│       └── styles.tcss             # TUI 主题样式
+│       ├── app.py                  # LithoformerTUIApp（Layout v2）
+│       ├── constants.py            # ASCII Logo 等常量
+│       ├── logging_utils.py        # Textual 日志 Handler
+│       ├── css/
+│       │   └── lithoformer_layout.tcss  # Layout v2 样式
+│       └── widgets/
+│           ├── __init__.py
+│           ├── custom_progress.py  # 自定义进度条
+│           ├── filters.py          # 输入组件
+│           ├── questions_table.py  # 题目表格
+│           ├── screens.py          # 主屏幕（Detect → Start）
+│           └── screens_v2.py       # Grid 布局实验（未启用）
 │
 └── api.py                          # 编程 API（reanimate(), lithoform()）
 ```
@@ -274,16 +286,17 @@ src/memosyne/
 - `lithoformer/application/ports.py` - `LLMPort`，端口接口
 - `lithoformer/infrastructure/llm_adapter.py` - `LithoformerLLMAdapter`，注入 prompts/schemas
 - `lithoformer/infrastructure/prompts.py` - `LITHOFORMER_SYSTEM_PROMPT`，业务逻辑
-- `lithoformer/infrastructure/schemas.py` - `QUIZ_SCHEMA`，JSON Schema
+- `lithoformer/infrastructure/schemas.py` - `QUESTION_SCHEMA`，JSON Schema
 - `lithoformer/infrastructure/formatters/quiz_formatter.py` - `QuizFormatter`，格式化输出
 - `lithoformer/domain/services.py` - 业务规则函数
 - `lithoformer/domain/models.py` - `QuizItem`, `QuizOptions`
-- `lithoformer/tui/app.py` - `LithoformerTUIApp`，简化的主入口
-- `lithoformer/tui/widgets/` - TUI 组件模块化结构
-  - `screens.py` - `MainScreen`（主屏幕，Detect→Start 流程）
-  - `filters.py` - 所有输入和选择组件
-  - `questions_table.py` - 响应式题目表格
-- `lithoformer/tui/css/lithoformer.tcss` - GitHub 深色主题样式
+- `lithoformer/tui/app.py` - `LithoformerTUIApp`，Layout v2 主入口
+- `lithoformer/tui/logging_utils.py` - Textual 日志 Handler（绑定 RichLog 与命令输入）
+- `lithoformer/tui/widgets/custom_progress.py` - 自定义进度条组件
+- `lithoformer/tui/widgets/screens.py` - `MainScreen`（Detect→Start 状态机）
+- `lithoformer/tui/widgets/filters.py` - 所有输入和选择组件（支持自动推断与手动覆盖）
+- `lithoformer/tui/widgets/questions_table.py` - 响应式题目表格
+- `lithoformer/tui/css/lithoformer_layout.tcss` - Layout v2 样式（JiraTUI 风格）
 
 **输入**: `data/input/lithoformer/*.md` - Markdown 格式测验文件
 **输出**: `data/output/lithoformer/ShouldBe.txt` - 标准化测验文本
@@ -458,7 +471,8 @@ logger.error("LLM 调用失败", exc_info=True)
 **IMPORTANT**: 每次代码更改后，必须同时更新以下文档：
 
 1. **AGENTS.md**（本文件）——同步通用记忆、常用命令、协作流程
-2. **README.md** —— 更新特性、使用示例、安装步骤、架构图、API 示例
+2. **CHANGELOG.md** —— 记录版本级变更，汇总自 `TUI_design_note/` 与 README 的更新
+3. **README.md** —— 更新特性、使用示例、安装步骤、架构图、API 示例
 
 **注意**: README.md 现在是项目的唯一主文档，包含完整的架构说明、API 使用指南和设计决策。
 
@@ -488,7 +502,7 @@ logger.error("LLM 调用失败", exc_info=True)
 ## 版本发布流程
 
 1. **更新版本号**: 修改 `src/memosyne/__init__.py` 中的 `__version__`
-2. **更新 CHANGELOG**: 在 `README.md` 中添加版本变更记录
+2. **更新 CHANGELOG**: 同步更新 `CHANGELOG.md` 与 `README.md` 中的版本记录
 3. **创建 Git 标签**: `git tag -a v0.x.x -m "Release v0.x.x"`
 4. **推送标签**: `git push origin v0.x.x`
 5. **GitHub Release**: 在 GitHub 上创建正式 Release
@@ -512,6 +526,7 @@ Memosyne/
 
 - 输入格式：题目使用 ```Question``` / ```Answer``` 成对代码块，兼容旧的 ```Gezhi``` 格式。
 - 标题推断：优先读取 Markdown 中的 `#` 标题；若缺失，可在 `src/memosyne/lithoformer/domain/services.py` 的 `TITLE_OVERRIDES` 中添加映射。
+- 标题字段使用 `\n` 作为换行分隔；Formatter 会将首行加粗，其余行保持常规文本。
 - 默认字典目前包含 `"23": ("Profiles in Psychopathology", "Anxiety Disorders")`。
 - LLM 输出会包含英文字段与 `*_translation` 字段，Formatter 会逐行交织生成中英双语 ShouldBe.txt，并在每题末尾追加批次号与题目 `L` 编码。
 
@@ -559,7 +574,7 @@ Memosyne/
 ```bash
 python -m memosyne.reanimator.cli.main
 # 或使用便捷脚本
-./run_reanimate.sh
+./scripts/run_reanimate.sh
 ```
 
 ### 问题：ValidationError: Field required
@@ -582,108 +597,43 @@ python -m memosyne.reanimator.cli.main
 
 ---
 
-## Lithoformer TUI 重写 (v0.9.2)
+## Lithoformer TUI Layout v2 (v0.10.3–v0.10.5a)
 
-### 重写动机
+### 迭代目标
 
-原 TUI 代码存在以下问题：
-- 单一巨型文件（874 行），难以维护
-- 缺乏组件封装和复用
-- 布局混乱，存在大量空白区域
-- 样式硬编码，缺乏设计系统
+- 以 `layout.xml` 的 760 / 560 / 280 三列设计为基准，所有控件独立挂载，复制 JiraTUI 的信息密度与视觉风格。
+- 保留 Detect → Start 两段式工作流与自动推断逻辑，确保旧有功能无回归。
+- 全面替换 CSS，统一 round 边框、焦点态与配色，同时提供可读的日志与进度反馈。
 
-### 新架构设计
+### 当前实现要点
 
-参考 **JiraTUI**（https://github.com/whyisdifficult/jiratui）最佳实践，完全重写：
+- 单页三列布局：左侧题目表格，中列输入面板，右列目录树 + Detect/Start 按钮，底部为自定义 `CustomProgressBar`。
+- 自适应进度条显示运行时间、剩余时间、Token 累计，百分比指示器随着填充动态移动。
+- Provider/Model 下拉支持搜索与自动填值；序号与批次号共享同一行；Detect/Start 按钮固定在文件树下方。
+- `RichLog` 标题为 “控制台”，命令输入高度 3，支持 `/clear` 与 `/exit`，日志保留最近 999 条，后台线程安全写入。
 
-#### 模块化结构
-```
-tui/
-├── app.py                      # 简化的主入口（仅挂载主屏幕）
-├── constants.py                # 共用 ASCII Logo 等常量
-├── logging_utils.py            # Textual 日志 Handler
-├── css/
-│   └── lithoformer.tcss       # JiraTUI 风格暗色主题
-└── widgets/
-    ├── __init__.py            # 组件导出
-    ├── filters.py             # 所有输入和选择组件
-    ├── questions_table.py     # 响应式题目表格
-    └── screens.py             # MainScreen 主屏幕
-```
+### 核心组件
 
-#### 核心改进
+- `MainScreen` — 管理 Detect → Start 状态机、自动填值缓存 `_auto_values` 与手动覆盖标记 `_manual_overrides`。
+- `CustomProgressBar` — Textual Widget，三行输出（时间信息 / 进度条 / 百分比）。
+- `QuestionsTable` — 禁用表头排序的 DataTable，按状态着色。
+- `filters.py` — 13 个输入组件；`TitleInput` 使用 `\n` 表示换行（首行输出时加粗），`TagInput`（显示为“备注”）的内容会写入 LLM user prompt。
+- `logging_utils.py` — Textual Handler，将标准 logging 输出与命令输入联动。
 
-1. **组件化设计**
-   - 每个 UI 组件独立封装为类
-   - 支持响应式数据绑定（`reactive` 属性）
-   - 清晰的职责划分
+### 使用提示
 
-2. **现代化布局**
-   - 顶部 ASCII Logo，左表格 / 中表单 / 右文件树，底部日志 + 双进度条
-   - 单个操作键在 `Detect → START → RUNNING` 间切换，响应第一张需求草图
+- Detect 阶段不会调用 LLM，只解析 Markdown —— 利用题目前的纯文本作为标题，`# ` 开头的行在输出中自动加粗。
+- 备注默认为空，任何非空文本会附加到 LLM user prompt，用于额外指示。
+- 命令输入支持 `/clear`（清空日志）与 `/exit`（调用 `App.action_quit()`），方便快速调试。
+- 输出文件按照 `BatchID-原文件名-模型代码.txt` 模板生成，借助 `unique_path` 避免重名覆盖。
 
-3. **主题风格**
-   - 复刻 JiraTUI 暗色调，蓝色描边 + 高对比字体
-   - 统一按钮态（primary / error / warning / disabled）
+### 相关文档
 
-4. **事件处理优化**
-   - 使用 `@on` 装饰器
-   - `@property` 装饰器访问子组件
-   - 类型安全的组件引用
-   - 背景线程解析时通过 `asyncio.Queue` 推送事件
-
-5. **日志与状态**
-   - 自定义 `logging.Handler` 输出到 TextLog，格式 `HH:MM:SS | LEVEL | message`
-   - 日志保留最近 999 条，支持 `/clear`
-   - 单题 / 总进度条 + 运行时间估算 + Token 累计
-
-6. **代码质量提升**
-   - 从 874 行单文件 → 模块化结构（~500 行分布在多个文件）
-   - 更好的可测试性
-   - 更容易扩展和维护
-
-### 组件清单
-
-#### Filters (`widgets/filters.py`)
-- `InputPathInput` - 输入目录（可切换目录树根）
-- `OutputPathInput` - 输出路径输入
-- `ProviderSelectionInput` - LLM 厂商选择
-- `ModelSelectionInput` - 模型选择（支持 reactive）
-- `ModelInput` - 自定义模型输入
-- `TagInput`, `TitleInput`, `SequenceInput`, `BatchInput` - 元数据输入
-- `OutputFilenameInput` - 输出文件名
-- `ModelNoteInput` - 模型备注
-- `CommandInput` - 命令输入
-- `LithoformerDirectoryTree` - 文件树
-
-#### Questions Table (`widgets/questions_table.py`)
-- `QuestionRow` - 数据类
-- `QuestionsTable` - 响应式 DataTable
-  - 自动更新（reactive 属性）
-  - 状态颜色编码（Pending/In Progress/Done/ERROR）
-
-#### Main Screen (`widgets/screens.py`)
-- `MainScreen` - 主屏幕
-  - 属性访问器（@property）
-  - 事件处理器（@on）
-  - 异步工作流程（Detect 不触发 LLM，Start 才逐题调用）
-  - 线程安全日志 + 标准 logging 集成
-  - 自动字段推断：若用户手动覆盖则不会被 Detect 再次写回
-  - 仅展示 `.md` 文件的目录树，实时替换根目录
-
-### 启动方式（保持不变）
-```bash
-./run_lithoformer_tui.sh
-# 或
-PYTHONPATH=src python -m memosyne.lithoformer.tui.app
-```
-
-### 参考资料
-- JiraTUI: https://github.com/whyisdifficult/jiratui
-- Textual: https://textual.textualize.io/
-- 重写总结: 详见 `TUI_REWRITE_SUMMARY.md`
+- `CHANGELOG.md` — v0.10.3 及之后的迭代摘要。
+- `TUI_design_note/DEVELOPMENT_REPORT_v0.10.3.md`、`LAYOUT_FIX_v1–v6.md` — 反馈与修复细节。
+- `REFACTOR_REPORT.md` — CSS 重构与测试记录。
 
 ---
 
-**最后更新**: 2025-10-15
-**文档版本**: v0.10.1a
+**最后更新**: 2025-10-21  
+**文档版本**: v0.10.5a
