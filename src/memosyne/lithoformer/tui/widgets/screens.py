@@ -278,6 +278,8 @@ class MainScreen(Screen):
     @on(ProviderSelectionInput.Changed)
     async def handle_provider_changed(self, event: ProviderSelectionInput.Changed) -> None:
         """Refresh model options when provider changes."""
+        if event.select is not self.provider_select:
+            return
         provider = event.value if isinstance(event.value, str) else "openai"
         self._refresh_model_options(provider)
         self.logger.info("已切换厂商为 %s", provider)
@@ -285,6 +287,8 @@ class MainScreen(Screen):
     @on(ModelSelectionInput.Changed)
     async def handle_model_selected(self, event: ModelSelectionInput.Changed) -> None:
         """Populate model input when a model is picked from the dropdown."""
+        if event.select is not self.model_select:
+            return
         if isinstance(event.value, str) and event.value:
             self._set_input_value(self.model_input, event.value)
 
@@ -890,7 +894,11 @@ class MainScreen(Screen):
     def _refresh_model_options(self, provider: str) -> None:
         """Refresh model options based on provider."""
         models = list_all_models()
-        options = [(model, model) for model in models.get(provider, [])]
+        provider_models = models.get(provider)
+        if provider_models is None:
+            self.logger.warning("未知厂商 %s，保持现有模型列表", provider)
+            return
+        options = [(model, model) for model in provider_models]
         self.model_select.models = options
         self._model_option_values = {value for _, value in options}
 
