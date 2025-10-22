@@ -202,13 +202,13 @@ class ConfigDefaultOutputDirInput(Input):
 
 
 class ConfigDefaultModelInput(Input):
-    """Config widget for default model (format: provider:model)."""
+    """Config widget for default model (format: Provider::model)."""
 
     def __init__(self, value: str | None = None):
         super().__init__(
             id="config-default-model",
             value=value or "",
-            placeholder="格式：provider:model（如 openai:gpt-4o-mini）",
+            placeholder="格式：Provider::model（如 OpenAI::gpt-4o-mini）",
         )
         self.border_title = "默认使用模型"
 

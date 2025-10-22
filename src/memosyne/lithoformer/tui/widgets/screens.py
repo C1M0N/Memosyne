@@ -299,7 +299,18 @@ class MainScreen(Screen):
         self._log_handler = handler
         logging.getLogger().addHandler(handler)
 
-        self._refresh_model_options(self.settings.default_llm_provider)
+        # 从数据库读取默认模型并设置provider
+        default_model_str = self.settings.get_default_model()
+        from memosyne.core.models import Configuration
+        config = Configuration(default_model=default_model_str)
+        provider, model = config.parse_model()
+
+        # 设置provider选择（会触发Changed事件，自动调用_refresh_model_options）
+        self.provider_select.value = provider
+
+        # 注意：不需要显式调用_refresh_model_options，
+        # 因为设置provider_select.value会触发handle_provider_changed事件处理器
+
         self.action_mode = "detect"
         self._reset_progress_bars()
 
@@ -337,7 +348,19 @@ class MainScreen(Screen):
         if event.select is not self.model_select:
             return
         if isinstance(event.value, str) and event.value:
-            self._set_input_value(self.model_input, event.value)
+            # 如果选择了"Others"，显示厂商前缀供用户填写
+            if event.value == "others":
+                provider = self.provider_select.value
+                from memosyne.core.models import Configuration
+                provider_map = {"openai": "OpenAI", "anthropic": "Anthropic"}
+                provider_formatted = provider_map.get(provider, provider.capitalize())
+                self._set_input_value(self.model_input, f"{provider_formatted}::")
+            else:
+                # 否则使用新格式填充模型
+                provider = self.provider_select.value
+                from memosyne.core.models import Configuration
+                model_display = Configuration.format_model(provider, event.value)
+                self._set_input_value(self.model_input, model_display)
 
     @on(LithoformerDirectoryTree.FileSelected)
     async def handle_file_selected(self, event: LithoformerDirectoryTree.FileSelected) -> None:
@@ -468,6 +491,24 @@ class MainScreen(Screen):
             # 实时生效（Option C：立即更新Settings单例，但不改变当前已填写的输入框）
             # 由于配置是通过property读取的，下次访问时会自动从数据库读取新值
             self.settings.reload_from_db()
+
+            # 特殊处理：如果修改的是默认模型，同步更新"输入"tab（仅当用户未手动修改时）
+            if config_key == "default_model" and value and "model-input" not in self._manual_overrides:
+                from memosyne.core.models import Configuration
+                config = Configuration(default_model=value)
+                provider, model = config.parse_model()
+
+                # 更新provider选择（如果provider改变了）
+                if self.provider_select.value != provider:
+                    self.provider_select.value = provider
+                    self._refresh_model_options(provider)
+
+                # 更新模型下拉框（如果模型在列表中）
+                if model in self._model_option_values:
+                    self.model_select.value = model
+
+                # 更新模型输入框
+                self._set_auto_field(self.model_input, value)
 
             # 记录日志
             self.log_view.write(f"[dim]配置已保存: {config_key} = {value}[/dim]")
@@ -1109,25 +1150,103 @@ class MainScreen(Screen):
         if provider_models is None:
             self.logger.warning("未知厂商 %s，保持现有模型列表", provider)
             return
+
+        # 添加所有模型选项 + "Others"选项
         options = [(model, model) for model in provider_models]
+        options.append(("Others (手动输入)", "others"))
+
+        # 从数据库读取默认模型
+        default_model_str = self.settings.get_default_model()  # 格式：Provider::model
+        from memosyne.core.models import Configuration
+        config = Configuration(default_model=default_model_str)
+        db_provider, db_model = config.parse_model()
+
+        # 如果数据库中的provider与当前provider匹配，则使用数据库中的模型
+        if db_provider == provider:
+            default_model = db_model
+        else:
+            # 否则使用环境变量中的默认模型
+            default_model = (
+                self.settings.default_openai_model if provider == "openai" else self.settings.default_anthropic_model
+            )
+
+        # 设置选项（会触发watch_models清除并重新设置）
         self.model_select.models = options
         self._model_option_values = {value for _, value in options}
 
-        default_model = (
-            self.settings.default_openai_model if provider == "openai" else self.settings.default_anthropic_model
-        )
+        # 如果默认模型不在候选列表，回退到 Others
+        if default_model not in self._model_option_values:
+            default_model = "others"
 
-        if default_model in self._model_option_values and not self.model_input.value:
-            self.model_select.value = default_model
-            self._set_auto_field(self.model_input, default_model)
+        # 等待Textual更新后，设置默认值
+        self.call_after_refresh(self._set_default_model, provider, default_model)
+
+    def _set_default_model(self, provider: str, default_model: str) -> None:
+        """Set the default model after options are refreshed."""
+        from memosyne.core.models import Configuration
+
+        # 设置下拉框的值
+        if default_model in self._model_option_values:
+            if hasattr(self.model_select, "set_value"):
+                try:
+                    self.model_select.set_value(default_model)
+                except Exception:
+                    try:
+                        self.model_select.action_select(default_model)
+                    except Exception:
+                        self.model_select.value = default_model
+            else:
+                try:
+                    self.model_select.action_select(default_model)
+                except Exception:
+                    self.model_select.value = default_model
+        else:
+            self.logger.warning("默认模型 %s 不在可选列表中", default_model)
+
+        if not getattr(self.model_select, "value", None) or self.model_select.value == getattr(self.model_select, "BLANK", object()):
+            self.model_select.prompt = default_model
+
+        # 设置输入框的值（使用新格式）
+        model_display = Configuration.format_model(provider, default_model)
+        self._set_auto_field(self.model_input, model_display)
 
     def _resolve_model(self) -> tuple[str, str, str]:
-        """Resolve model string to provider, model_id, and model_code."""
+        """
+        Resolve model string to provider, model_id, and model_code.
+
+        支持格式：
+        - Provider::model (如 OpenAI::gpt-4o-mini)
+        - 旧格式 provider:model (如 openai:gpt-4o-mini)
+        - 纯模型名 (如 gpt-4o-mini)
+        - 4位代码 (如 o4oo)
+        """
         value = self.model_input.value.strip()
         if not value:
             raise ValueError("模型输入不能为空")
-        model_id, model_code = resolve_model_input(value)
-        provider = get_provider_from_model(model_id)
+
+        # 如果是新格式（Provider::model），提取model部分
+        from memosyne.core.models import Configuration
+        if "::" in value:
+            parts = value.split("::", 1)
+            provider = parts[0].lower()
+            model_part = parts[1]
+        # 如果是旧格式（provider:model），提取model部分
+        elif ":" in value:
+            parts = value.split(":", 1)
+            provider = parts[0].lower()
+            model_part = parts[1]
+        else:
+            # 纯模型名或代码，需要通过工具函数推断provider
+            model_part = value
+            provider = None
+
+        # 使用工具函数解析模型名/代码
+        model_id, model_code = resolve_model_input(model_part)
+
+        # 如果provider未指定，从model_id推断
+        if provider is None:
+            provider = get_provider_from_model(model_id)
+
         return provider, model_id, model_code
 
     def _create_llm_adapter(self, provider: str, model_id: str) -> LithoformerLLMAdapter:

@@ -68,8 +68,8 @@ class Configuration(BaseModel):
     lithoformer_input_dir: str = Field(default="", description="Lithoformer输入目录")
     lithoformer_output_dir: str = Field(default="", description="Lithoformer输出目录")
 
-    # 模型配置（格式：provider:model，如 openai:gpt-4o-mini）
-    default_model: str = Field(default="openai:gpt-4o-mini", description="默认使用模型")
+    # 模型配置（格式：Provider::model，如 OpenAI::gpt-4o-mini）
+    default_model: str = Field(default="OpenAI::gpt-4o-mini", description="默认使用模型")
 
     # 预留配置项（7个）
     reserved_config_1: str = Field(default="", description="预留配置1")
@@ -84,16 +84,45 @@ class Configuration(BaseModel):
         """
         解析模型字符串，返回 (provider, model_name)
 
+        格式：Provider::model（双冒号，首字母大写）
+
         Examples:
-            >>> config = Configuration(default_model="openai:gpt-4o-mini")
+            >>> config = Configuration(default_model="OpenAI::gpt-4o-mini")
             >>> config.parse_model()
             ('openai', 'gpt-4o-mini')
         """
+        if "::" in self.default_model:
+            parts = self.default_model.split("::", 1)
+            provider = parts[0].lower()  # 转换为小写
+            model = parts[1]
+            return provider, model
+        # 向后兼容旧格式（单冒号）
         if ":" in self.default_model:
             parts = self.default_model.split(":", 1)
-            return parts[0], parts[1]
+            provider = parts[0].lower()
+            model = parts[1]
+            return provider, model
         # 默认假设是OpenAI模型
         return "openai", self.default_model
+
+    @staticmethod
+    def format_model(provider: str, model: str) -> str:
+        """
+        格式化模型字符串
+
+        Args:
+            provider: 厂商名（如 'openai', 'anthropic'）
+            model: 模型名（如 'gpt-4o-mini'）
+
+        Returns:
+            格式化的模型字符串（如 'OpenAI::gpt-4o-mini'）
+        """
+        provider_map = {
+            "openai": "OpenAI",
+            "anthropic": "Anthropic",
+        }
+        provider_formatted = provider_map.get(provider.lower(), provider.capitalize())
+        return f"{provider_formatted}::{model}"
 
 
 __all__ = ["TokenUsage", "ProcessResult", "Configuration"]

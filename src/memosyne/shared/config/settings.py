@@ -215,17 +215,20 @@ class Settings(BaseSettings):
 
     def get_default_model(self) -> str:
         """
-        获取默认模型（格式：provider:model）
+        获取默认模型（格式：Provider::model）
 
         Returns:
-            默认模型字符串，如 "openai:gpt-4o-mini"
+            默认模型字符串，如 "OpenAI::gpt-4o-mini"
         """
         if self._config_repo:
             db_value = self._config_repo.get("default_model")
             if db_value:
                 return db_value
         # fallback 到环境变量或默认值
-        return f"{self.default_llm_provider}:{self.default_openai_model}"
+        from memosyne.core.models import Configuration
+        provider = self.default_llm_provider
+        model = self.default_openai_model if provider == "openai" else self.default_anthropic_model
+        return Configuration.format_model(provider, model)
 
     def save_config(self, key: str, value: str) -> None:
         """
