@@ -15,6 +15,7 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 - Moved the reference `layout.xml` blueprint into `misc/layout.xml` to keep the project root tidy.
 - Renamed the TUI “标签”字段为 `NoteInput` 并改为非必填，保持备注可选同时沿用 LLM 提示附加逻辑。
 - Questions table now displays canonical `L` 题号 derived from the sequence seed, and the preview选项卡会同步展示该题的完整 Markdown 原文。
+- Introduced `config/paths.json` and `misc/` sample directories; CLI/API/TUI detect read-only samples and prompt users for real input/output paths.
 
 ### Fixed
 - Batch ID input now shares the row with sequence as designed; Detect/Start button remains anchored below the directory tree.

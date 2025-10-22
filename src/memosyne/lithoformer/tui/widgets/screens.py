@@ -557,7 +557,18 @@ class MainScreen(Screen):
                 await asyncio.sleep(0)
 
             try:
-                output_dir = Path(self.output_path_input.value.strip() or self.settings.lithoformer_output_dir)
+                output_dir_raw = self.output_path_input.value.strip()
+                output_dir = Path(output_dir_raw) if output_dir_raw else self.settings.lithoformer_output_dir
+                if not output_dir.is_absolute():
+                    output_dir = Path.cwd() / output_dir
+
+                if self.settings.is_sample_path(output_dir):
+                    self.logger.error("当前输出目录位于 misc 示例资源中（只读）。请在输入框或 config/paths.json 中指定可写目录。")
+                    self._set_status("状态：输出路径不可写")
+                    self.action_mode = "detect"
+                    self._set_action_state("detect")
+                    return
+
                 output_dir.mkdir(parents=True, exist_ok=True)
                 output_path = unique_path(output_dir / detection.output_filename)
                 sequence_source = self.sequence_input.value.strip() or detection.sequence

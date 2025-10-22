@@ -16,6 +16,10 @@ __pycache__/
 *.pyd
 .Python
 *.so
+.venv/
+.coverage
+.pytest_cache/
+.ruff_cache/
 
 # macOS
 .DS_Store
@@ -25,6 +29,17 @@ __pycache__/
 .idea/
 *.swp
 *.swo
+
+# local datasets (project now uses misc/ for bundled samples)
+data/
+
+# runtime outputs (created on first run if missing)
+output/
+logs/
+*.log
+
+# optional local overrides
+config/paths.local.json
 
 # 防止临时输出文件进入源代码目录
 src/memosyne/cli/lit/

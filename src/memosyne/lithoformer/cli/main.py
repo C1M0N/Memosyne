@@ -38,7 +38,7 @@ def main():
     settings.ensure_dirs()
 
     model_input = ask("Engine (4-digit code like o4oo/cs45):")
-    input_raw = ask("Input Markdown file (default data/input/lithoformer/...):", required=False)
+    input_raw = ask("Input Markdown file (default misc/input/lithoformer/...):", required=False)
 
     # Parse inputs
     try:
@@ -59,10 +59,25 @@ def main():
         return
 
     # Resolve input path
-    input_path = Path(input_raw.strip()) if input_raw.strip() else \
-        settings.lithoformer_input_dir / "Chapter 3 Quiz- Assessment and Classification of Mental Disorders.md"
-    if not input_path.is_absolute():
-        input_path = settings.lithoformer_input_dir / input_path
+    default_input = settings.lithoformer_input_dir / "Chapter 3 Quiz- Assessment and Classification of Mental Disorders.md"
+    input_value = input_raw.strip()
+    if input_value:
+        potential = Path(input_value)
+        if not potential.is_absolute():
+            potential = Path.cwd() / potential
+        input_path = potential
+    else:
+        input_path = default_input
+
+    if not input_path.exists():
+        print("⚠️  未找到默认示例题库。请提供要解析的 Markdown 文件路径。")
+        user_path = ask("Input Markdown file (absolute or relative path):", required=True)
+        input_path = Path(user_path).expanduser()
+        if not input_path.is_absolute():
+            input_path = Path.cwd() / input_path
+
+    if settings.is_sample_path(input_path):
+        print("ℹ️  当前使用的是 misc 中的示例文件（只读）。如需解析自己的测验，请在 config/paths.json 中修改默认路径或在此输入自定义路径。")
 
     print(f"[Provider] {provider_type}")
     print(f"[Model   ] {model_id}")
@@ -111,13 +126,22 @@ def main():
         traceback.print_exc()
         return
 
-    # Generate BatchID
-    batch_gen = BatchIDGenerator(output_dir=settings.lithoformer_output_dir, timezone=settings.batch_timezone)
+    # Resolve output directory (avoid read-only samples)
+    output_dir = settings.lithoformer_output_dir
+    if settings.is_sample_path(output_dir):
+        print("⚠️  默认输出目录位于 misc 示例资源中（只读）。请指定实际的输出目录。")
+        custom_dir = ask("Output directory (absolute or relative path):", required=True)
+        output_dir = Path(custom_dir).expanduser()
+        if not output_dir.is_absolute():
+            output_dir = Path.cwd() / output_dir
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    batch_gen = BatchIDGenerator(output_dir=output_dir, timezone=settings.batch_timezone)
     batch_id = batch_gen.generate(term_count=result.success_count)
 
     # Generate output filename
     output_filename = generate_output_filename(batch_id=batch_id, model_code=model_code, input_filename=str(input_path), ext="txt")
-    output_path = unique_path(settings.lithoformer_output_dir / output_filename)
+    output_path = unique_path((output_dir / output_filename).resolve())
 
     # Format output
     formatter_adapter = FormatterAdapter.create()

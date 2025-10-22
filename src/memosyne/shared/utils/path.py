@@ -11,7 +11,7 @@ from typing import Callable
 
 
 def find_project_root(
-    marker: str = "data",
+    marker: str | tuple[str, ...] = ("config", "misc", "src"),
     start_path: Path | None = None,
     max_depth: int = 5
 ) -> Path:
@@ -39,8 +39,14 @@ def find_project_root(
 
     current = Path(start_path).resolve()
 
+    markers: tuple[str, ...]
+    if isinstance(marker, str):
+        markers = (marker,)
+    else:
+        markers = marker
+
     for _ in range(max_depth):
-        if (current / marker).is_dir():
+        if any((current / m).exists() for m in markers):
             return current
         if current.parent == current:  # 已到根目录
             break
@@ -98,7 +104,7 @@ def ensure_dir(path: Path, parents: bool = True) -> Path:
         目录路径（便于链式调用）
 
     Example:
-        >>> data_dir = ensure_dir(Path("data/output/memo"))
+        >>> data_dir = ensure_dir(Path("misc/output/memo"))
         >>> assert data_dir.exists()
     """
     path.mkdir(parents=parents, exist_ok=True)
@@ -128,15 +134,15 @@ def resolve_input_path(
 
     Example:
         >>> # 用户输入空 -> 使用默认
-        >>> p = resolve_input_path("", Path("data/input"), "default.csv")
-        >>> assert p == Path("data/input/default.csv")
+        >>> p = resolve_input_path("", Path("misc/input"), "default.csv")
+        >>> assert p == Path("misc/input/default.csv")
         >>>
         >>> # 用户输入文件名 -> 拼接到默认目录
-        >>> p = resolve_input_path("my.csv", Path("data/input"))
-        >>> assert p == Path("data/input/my.csv")
+        >>> p = resolve_input_path("my.csv", Path("misc/input"))
+        >>> assert p == Path("misc/input/my.csv")
         >>>
         >>> # 用户输入绝对路径 -> 直接使用
-        >>> p = resolve_input_path("/tmp/test.csv", Path("data/input"))
+        >>> p = resolve_input_path("/tmp/test.csv", Path("misc/input"))
         >>> assert p == Path("/tmp/test.csv")
     """
     s = user_input.strip()
@@ -150,7 +156,7 @@ def resolve_input_path(
         path = Path(s).expanduser()
 
         if not path.is_absolute():
-            # 推断项目根目录（寻找包含 data/ 或 src/ 的祖先）
+            # 推断项目根目录（寻找包含 misc/ 或 src/ 的祖先）
             project_root = default_dir
             for candidate in [default_dir] + list(default_dir.parents):
                 if (candidate / "data").is_dir() or (candidate / "src").is_dir():
@@ -193,12 +199,12 @@ if __name__ == "__main__":
     print(f"唯一路径：{unique}")
 
     # 3. 确保目录存在
-    data_dir = ensure_dir(Path("data/test"))
+    data_dir = ensure_dir(Path("misc/test"))
     print(f"目录已创建：{data_dir}")
 
     # 4. 解析输入路径
-    p1 = resolve_input_path("", Path("data/input"), "default.csv")
+    p1 = resolve_input_path("", Path("misc/input"), "default.csv")
     print(f"解析路径1：{p1}")
 
-    p2 = resolve_input_path("my.csv", Path("data/input"))
+    p2 = resolve_input_path("my.csv", Path("misc/input"))
     print(f"解析路径2：{p2}")

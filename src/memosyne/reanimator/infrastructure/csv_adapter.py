@@ -80,12 +80,12 @@ if __name__ == "__main__":
 
     # 2. 读取输入
     from pathlib import Path
-    terms = adapter.read_input(Path("data/input/reanimator/221.csv"))
+    terms = adapter.read_input(Path("misc/input/reanimator/221.csv"))
     print(f"读取到 {len(terms)} 个术语")
 
     # 3. 写出结果
     # (假设已经处理完成)
-    adapter.write_output(Path("data/output/reanimator/result.csv"), results)
+    adapter.write_output(Path("misc/output/reanimator/result.csv"), results)
 
     # 4. 注入到用例
     from memosyne.reanimator.application import ProcessTermsUseCase

@@ -21,7 +21,7 @@ class BatchIDGenerator:
     - NNN: 词条数量（3位，左填充0）
 
     Example:
-        >>> gen = BatchIDGenerator(output_dir=Path("data/output/memo"))
+        >>> gen = BatchIDGenerator(output_dir=Path("misc/output/memo"))
         >>> batch_id = gen.generate(term_count=15)
         >>> print(batch_id)  # 251007A015
     """
@@ -164,7 +164,7 @@ if __name__ == "__main__":
     from pathlib import Path
 
     # 1. 创建生成器
-    output_dir = Path("data/output/memo")
+    output_dir = Path("misc/output/memo")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     generator = BatchIDGenerator(

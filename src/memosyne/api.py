@@ -8,19 +8,20 @@ Example:
     >>>
     >>> # 处理术语 (Reanimator)
     >>> results = reanimate(
-    ...     input_csv="data/input/reanimator/221.csv",
+    ...     input_csv="misc/input/reanimator/221.csv",
     ...     start_memo_index=221,
     ...     model="gpt-4o-mini"
     ... )
     >>>
     >>> # 解析 Quiz (Lithoformer)
     >>> output_path = lithoform(
-    ...     input_md="data/input/lithoformer/quiz.md",
+    ...     input_md="misc/input/lithoformer/quiz.md",
     ...     model="gpt-4o-mini"
     ... )
 """
 from pathlib import Path
 from typing import Literal
+import warnings
 
 # Shared 层导入（DDD: Shared Kernel / Infrastructure）
 from .shared.config import get_settings
@@ -68,7 +69,7 @@ def reanimate(
     Args:
         input_csv: 输入 CSV 文件路径（包含 word, zh_def 列）
         start_memo_index: 起始 Memo 编号（如 221 表示从 M000222 开始）
-        output_csv: 输出 CSV 文件路径（默认自动生成到 data/output/reanimator/）
+        output_csv: 输出 CSV 文件路径（默认自动生成到 misc/output/reanimator/）
         model: 模型 ID（默认 gpt-4o-mini）
         provider: LLM 提供商（openai 或 anthropic）
         batch_note: 批次备注
@@ -90,7 +91,7 @@ def reanimate(
 
     Example:
         >>> result = reanimate(
-        ...     input_csv="data/input/reanimator/221.csv",
+        ...     input_csv="misc/input/reanimator/221.csv",
         ...     start_memo_index=221,
         ...     model="gpt-4o-mini",
         ...     batch_note="测试批次"
@@ -107,6 +108,12 @@ def reanimate(
         input_path = settings.reanimator_input_dir / input_path
     if not input_path.exists():
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
+    if settings.is_sample_path(input_path):
+        warnings.warn(
+            "Reanimator 默认输入目录指向 misc 示例资源（只读）。如需处理自有数据，"
+            "请在 config/paths.json 或环境变量 REANIMATOR_INPUT_DIR 中配置实际目录，"
+            "或显式传入绝对路径。"
+        )
 
     # 2. 读取输入术语（使用新的 Infrastructure Adapter）
     csv_adapter = CSVTermAdapter.create()
@@ -115,8 +122,9 @@ def reanimate(
         raise ValueError(f"输入文件为空或格式错误: {input_path}")
 
     # 3. 生成批次 ID
+    reanimator_output_dir = _resolve_output_dir(settings.reanimator_output_dir, settings, "Reanimator")
     batch_gen = BatchIDGenerator(
-        output_dir=settings.reanimator_output_dir,
+        output_dir=reanimator_output_dir,
         timezone=settings.batch_timezone
     )
     batch_id = batch_gen.generate(term_count=len(term_inputs))
@@ -170,11 +178,16 @@ def reanimate(
             input_filename=str(input_path),
             ext="csv"
         )
-        output_path = unique_path(settings.reanimator_output_dir / output_filename)
+        output_path = unique_path(reanimator_output_dir / output_filename)
     else:
         output_path = Path(output_csv)
         if not output_path.is_absolute():
-            output_path = settings.reanimator_output_dir / output_path
+            output_path = reanimator_output_dir / output_path
+
+    if settings.is_sample_path(output_path):
+        raise ValueError(
+            "Reanimator 默认输出目录位于只读示例。请在 config/paths.json 或环境变量 REANIMATOR_OUTPUT_DIR 中配置可写目录。"
+        )
 
     # 9. 写出结果（使用 Infrastructure Adapter）
     csv_adapter.write_output(output_path, process_result.items)
@@ -209,7 +222,7 @@ def lithoform(
 
     Args:
         input_md: 输入 Markdown 文件路径
-        output_txt: 输出 TXT 文件路径（默认自动生成到 data/output/lithoformer/）
+        output_txt: 输出 TXT 文件路径（默认自动生成到 misc/output/lithoformer/）
         model: 模型 ID（默认 gpt-4o-mini）
         provider: LLM 提供商（openai 或 anthropic）
         title_main: 主标题（None 则自动从MD文件内容推断）
@@ -252,6 +265,12 @@ def lithoform(
         input_path = settings.lithoformer_input_dir / input_path
     if not input_path.exists():
         raise FileNotFoundError(f"输入文件不存在: {input_path}")
+    if settings.is_sample_path(input_path):
+        warnings.warn(
+            "Lithoformer 默认输入目录指向 misc 示例资源（只读）。如需解析自有测验，"
+            "请在 config/paths.json 或环境变量 LITHOFORMER_INPUT_DIR 中配置实际目录，"
+            "或显式传入绝对路径。"
+        )
 
     # 2. 读取 Markdown（使用新的 Infrastructure Adapter）
     file_adapter = FileAdapter.create()
@@ -298,8 +317,9 @@ def lithoform(
     process_result = use_case.execute(md_text, show_progress=show_progress)
 
     # 8. 生成 BatchID（基于题目数量）
+    lithoformer_output_dir = _resolve_output_dir(settings.lithoformer_output_dir, settings, "Lithoformer")
     batch_gen = BatchIDGenerator(
-        output_dir=settings.lithoformer_output_dir,
+        output_dir=lithoformer_output_dir,
         timezone=settings.batch_timezone
     )
     batch_id = batch_gen.generate(term_count=process_result.success_count)
@@ -329,11 +349,16 @@ def lithoform(
             input_filename=str(input_path),
             ext="txt"
         )
-        output_path = unique_path(settings.lithoformer_output_dir / output_filename)
+        output_path = unique_path(lithoformer_output_dir / output_filename)
     else:
         output_path = Path(output_txt)
         if not output_path.is_absolute():
-            output_path = settings.lithoformer_output_dir / output_path
+            output_path = lithoformer_output_dir / output_path
+
+    if settings.is_sample_path(output_path):
+        raise ValueError(
+            "Lithoformer 默认输出目录位于只读示例。请在 config/paths.json 或环境变量 LITHOFORMER_OUTPUT_DIR 中配置可写目录。"
+        )
 
     # 11. 写出结果（使用 Infrastructure Adapter）
     file_adapter.write_text(output_path, out_text)
@@ -352,6 +377,16 @@ def lithoform(
             "total_tokens": process_result.token_usage.total_tokens,
         },
     }
+
+
+def _resolve_output_dir(default_dir: Path, settings, label: str) -> Path:
+    """确保输出目录可写（不在只读示例资源内）。"""
+    if settings.is_sample_path(default_dir):
+        raise ValueError(
+            f"{label} 默认输出目录位于只读的 misc 示例资源中。请更新 config/paths.json 或通过环境变量配置可写目录。"
+        )
+    default_dir.mkdir(parents=True, exist_ok=True)
+    return default_dir
 
 
 

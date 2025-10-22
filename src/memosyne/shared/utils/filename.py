@@ -27,7 +27,7 @@ def extract_short_filename(filepath: str | Path, max_length: int = 15) -> str:
     Example:
         >>> extract_short_filename("221.csv")
         '221'
-        >>> extract_short_filename("data/input/205.md")
+        >>> extract_short_filename("misc/input/205.md")
         '205'
         >>> extract_short_filename("Chapter 3 Quiz- Assessment.md")
         ''  # 太长，省略
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     print("=== 测试 extract_short_filename ===")
     test_cases = [
         ("221.csv", "221"),
-        ("data/input/205.md", "205"),
+        ("misc/input/205.md", "205"),
         ("Chapter 3 Quiz- Assessment and Classification.md", ""),  # 太长
         ("test-file_123.csv", "test-file-123"),
         ("My@File#Name$.txt", "MyFileName"),

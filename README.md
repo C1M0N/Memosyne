@@ -265,6 +265,30 @@ LOG_FORMAT=console
 
 **注意**: `.env` 文件已在 `.gitignore` 中，绝不能提交到版本控制。
 
+### 5. （可选）自定义输入/输出路径
+
+项目默认的示例文件位于 `misc/` 目录，配置文件 `config/paths.json` 会指向该目录。
+这些示例是只读的，CLI/API/TUI 遇到写入请求时会提示你选择真正的输出目录。
+
+如需将默认输入或输出切换到团队自己的共享目录，修改 `config/paths.json`（或通过
+环境变量 `REANIMATOR_INPUT_DIR` / `REANIMATOR_OUTPUT_DIR` / `LITHOFORMER_*` 覆盖），示例：
+
+```json
+{
+  "base_dir": "misc",
+  "reanimator": {
+    "input": "/Users/me/datasets/reanimator_input",
+    "output": "/Users/me/datasets/reanimator_output"
+  },
+  "lithoformer": {
+    "input": "/Users/me/datasets/lithoformer_input",
+    "output": "/Users/me/datasets/lithoformer_output"
+  }
+}
+```
+
+> 提醒：如果仍指向 `misc/`，运行时会提示“示例目录只读”并要求你提供实际路径。
+
 ---
 
 ## 🏛️ 架构详解
@@ -435,13 +459,18 @@ src/memosyne/
 │
 └── api.py                          # 编程 API（reanimate(), lithoform()）
 
-data/
+config/
+└── paths.json                      # 默认路径配置（可自定义到非 misc 目录）
+
+misc/
 ├── input/
-│   ├── reanimator/                 # Reanimator 输入 CSV（Word, ZhDef）
-│   └── lithoformer/                # Lithoformer 输入 Markdown 测验
-└── output/
-    ├── reanimator/                 # Reanimator 输出 CSV
-    └── lithoformer/                # Lithoformer 输出 TXT
+│   ├── reanimator/                 # Reanimator 示例 CSV（只读模板）
+│   ├── lithoformer/                # Lithoformer 示例 Markdown
+│   └── ARCHIVED/                   # 历史示例
+└── output/                         # 示例输出（只读，不会写入）
+    ├── reanimator/
+    ├── lithoformer/
+    └── archived/
 
 db/
 ├── term_list_v1.csv                # 术语表（英文→两字中文）
@@ -716,7 +745,7 @@ from memosyne.api import reanimate
 
 # 处理术语（使用默认的 OpenAI gpt-4o-mini 模型）
 result = reanimate(
-    input_csv="data/input/reanimator/terms.csv",  # 输入 CSV 文件
+    input_csv="misc/input/reanimator/terms.csv",  # 输入 CSV 文件
     start_memo_index=2700,                         # 起始 Memo 编号（M002701）
     batch_note="心理学术语"                        # 批次备注
 )
@@ -733,7 +762,7 @@ from memosyne.api import lithoform
 
 # 解析 Quiz Markdown 文档
 result = lithoform(
-    input_md="data/input/lithoformer/chapter3.md",  # 输入 Markdown 文件
+    input_md="misc/input/lithoformer/chapter3.md",  # 输入 Markdown 文件
     title_main="Chapter 3 Quiz",                    # 主标题
     title_sub="Assessment and Classification"       # 副标题
 )
@@ -769,7 +798,7 @@ def reanimate(
 |------|------|------|------|
 | `input_csv` | str \| Path | ✓ | 输入 CSV 文件路径，包含 `word` 和 `zh_def` 列 |
 | `start_memo_index` | int | ✓ | 起始 Memo 编号（如 `2700` 表示从 M002701 开始） |
-| `output_csv` | str \| Path \| None | ✗ | 输出 CSV 文件路径（默认自动生成到 `data/output/reanimator/`） |
+| `output_csv` | str \| Path \| None | ✗ | 输出 CSV 文件路径（默认自动生成到 `misc/output/reanimator/`） |
 | `model` | str | ✗ | 模型 ID，默认 `"gpt-4o-mini"` |
 | `provider` | "openai" \| "anthropic" | ✗ | LLM 提供商，默认 `"openai"` |
 | `batch_note` | str | ✗ | 批次备注（会出现在输出 CSV 的 BatchNote 列） |
@@ -783,7 +812,7 @@ def reanimate(
 ```python
 {
     "success": True,                  # 是否成功
-    "output_path": "data/output/reanimator/251010A015.csv",  # 输出文件路径
+    "output_path": "misc/output/reanimator/251010A015.csv",  # 输出文件路径
     "batch_id": "251010A015",         # 批次 ID（格式：YYMMDD + 批次字母 + 词条数）
     "processed_count": 15,            # 成功处理的术语数量
     "total_count": 15,                # 总术语数量
@@ -864,7 +893,7 @@ result = reanimate(
 result = reanimate(
     input_csv="terms.csv",
     start_memo_index=2700,
-    output_csv="my_output.csv",  # 将保存到 data/output/reanimator/my_output.csv
+    output_csv="my_output.csv",  # 将保存到 misc/output/reanimator/my_output.csv
     batch_note="测试批次"
 )
 ```
@@ -910,7 +939,7 @@ def lithoform(
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `input_md` | str \| Path | ✓ | 输入 Markdown 文件路径 |
-| `output_txt` | str \| Path \| None | ✗ | 输出 TXT 文件路径（默认自动生成到 `data/output/lithoformer/`） |
+| `output_txt` | str \| Path \| None | ✗ | 输出 TXT 文件路径（默认自动生成到 `misc/output/lithoformer/`） |
 | `model` | str | ✗ | 模型 ID，默认 `"gpt-4o-mini"` |
 | `provider` | "openai" \| "anthropic" | ✗ | LLM 提供商，默认 `"openai"` |
 | `title_main` | str \| None | ✗ | 主标题（`None` 自动从文件名推断） |
@@ -925,7 +954,7 @@ def lithoform(
 ```python
 {
     "success": True,                  # 是否成功
-    "output_path": "data/output/lithoformer/ShouldBe.txt",  # 输出文件路径
+    "output_path": "misc/output/lithoformer/ShouldBe.txt",  # 输出文件路径
     "item_count": 25,                 # 成功解析的题目数量
     "total_count": 25,                # 总题目数量
     "title_main": "Chapter 3 Quiz",   # 主标题
@@ -983,7 +1012,7 @@ result = lithoform(
 ```python
 result = lithoform(
     input_md="quiz.md",
-    output_txt="chapter3_output.txt",  # 保存到 data/output/lithoformer/chapter3_output.txt
+    output_txt="chapter3_output.txt",  # 保存到 misc/output/lithoformer/chapter3_output.txt
     title_main="Chapter 3 Quiz",
     show_progress=True  # 进度条会显示实时 Token 使用量
 )
@@ -1000,7 +1029,7 @@ print(f"Total Tokens: {result['token_usage']['total_tokens']}")
 from pathlib import Path
 from memosyne.api import reanimate
 
-input_dir = Path("data/input/reanimator")
+input_dir = Path("misc/input/reanimator")
 start_index = 2700
 
 for csv_file in input_dir.glob("*.csv"):
@@ -1175,7 +1204,7 @@ os.environ["OPENAI_API_KEY"] = "sk-..."  # 容易泄露
 
 #### 5. 数据管理
 
-- 定期备份 `data/output/` 目录
+- 定期备份 `misc/output/` 目录
 - 使用有意义的 `batch_note` 便于追溯
 - 保留输入文件用于审计
 
@@ -1323,7 +1352,7 @@ class MyProvider(BaseLLMProvider):
 **原因**：输入文件路径错误
 
 **解决**：
-1. 使用相对路径时，文件应在 `data/input/reanimator/` 或 `data/input/lithoformer/`
+1. 使用相对路径时，文件应在 `misc/input/reanimator/` 或 `misc/input/lithoformer/`
 2. 使用绝对路径确保路径正确
 3. 检查文件名拼写
 

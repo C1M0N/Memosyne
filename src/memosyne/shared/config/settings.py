@@ -1,35 +1,28 @@
-"""
-配置管理模块 - 使用 Pydantic Settings 实现类型安全的配置
+"""配置管理模块 - 使用 Pydantic Settings 实现类型安全的配置。"""
 
-重构收益：
-- ✅ 类型验证：API Key 不能为空
-- ✅ 环境分离：支持 .env.dev / .env.prod
-- ✅ 默认值管理：集中在一处
-- ✅ IDE 提示：完整的类型提示
-"""
 from pathlib import Path
 from typing import Literal
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .path_config import get_path_config
 
-# 查找项目根目录（包含 .env 文件的位置）
+
 def _find_project_root() -> Path:
-    """查找项目根目录（查找包含 .env 文件的目录）"""
+    """查找项目根目录（优先以 .env 或 src/ 为参考）。"""
     current = Path(__file__).resolve()
-    # 向上查找包含 .env 文件的目录
     for parent in current.parents:
         if (parent / ".env").exists():
             return parent
-    # 如果找不到 .env，查找同时包含 data/ 和 db/ 的目录
     for parent in current.parents:
-        if (parent / "data").is_dir() and (parent / "db").is_dir():
+        if (parent / "config" / "paths.json").exists() or (parent / "pyproject.toml").exists():
             return parent
-    # 最后返回当前工作目录
     return Path.cwd()
 
 
 _PROJECT_ROOT = _find_project_root()
+_PATH_CONFIG = get_path_config()
 
 
 class Settings(BaseSettings):
@@ -55,8 +48,27 @@ class Settings(BaseSettings):
 
     # === 路径配置 ===
     project_root: Path = Field(default=_PROJECT_ROOT)
-    data_dir: Path = Field(default=Path("data"))
-    db_dir: Path = Field(default=Path("db"))
+    db_dir: Path = Field(default=_PROJECT_ROOT / "db")
+    reanimator_input_dir_override: Path | None = Field(
+        default=None,
+        validation_alias="REANIMATOR_INPUT_DIR",
+        description="Override for Reanimator input directory",
+    )
+    reanimator_output_dir_override: Path | None = Field(
+        default=None,
+        validation_alias="REANIMATOR_OUTPUT_DIR",
+        description="Override for Reanimator output directory",
+    )
+    lithoformer_input_dir_override: Path | None = Field(
+        default=None,
+        validation_alias="LITHOFORMER_INPUT_DIR",
+        description="Override for Lithoformer input directory",
+    )
+    lithoformer_output_dir_override: Path | None = Field(
+        default=None,
+        validation_alias="LITHOFORMER_OUTPUT_DIR",
+        description="Override for Lithoformer output directory",
+    )
 
     # === 业务配置 ===
     batch_timezone: str = "America/New_York"
@@ -81,7 +93,6 @@ class Settings(BaseSettings):
         if isinstance(v, str) and v.strip() == "":
             return None
         return v
-
     @field_validator("default_temperature", mode="before")
     @classmethod
     def empty_str_to_none(cls, v: str | float | None) -> float | None:
@@ -90,50 +101,66 @@ class Settings(BaseSettings):
             return None
         return v
 
-    @field_validator("data_dir", "db_dir", mode="before")
+    @field_validator("db_dir", mode="before")
     @classmethod
-    def resolve_relative_path(cls, v: Path | str) -> Path:
-        """将相对路径解析为绝对路径"""
+    def ensure_db_absolute(cls, v: Path | str) -> Path:
+        """确保数据库目录为绝对路径。"""
         path = Path(v) if isinstance(v, str) else v
         if not path.is_absolute():
-            return _PROJECT_ROOT / path
-        return path
+            return (_PROJECT_ROOT / path).resolve()
+        return path.resolve()
 
     @property
     def reanimator_input_dir(self) -> Path:
         """Reanimator 输入目录"""
-        return self.data_dir / "input" / "reanimator"
+        return self._normalize_path(self.reanimator_input_dir_override, _PATH_CONFIG.reanimator_input)
 
     @property
     def reanimator_output_dir(self) -> Path:
         """Reanimator 输出目录"""
-        return self.data_dir / "output" / "reanimator"
+        return self._normalize_path(self.reanimator_output_dir_override, _PATH_CONFIG.reanimator_output)
 
     @property
     def lithoformer_input_dir(self) -> Path:
         """Lithoformer 输入目录"""
-        return self.data_dir / "input" / "lithoformer"
+        return self._normalize_path(self.lithoformer_input_dir_override, _PATH_CONFIG.lithoformer_input)
 
     @property
     def lithoformer_output_dir(self) -> Path:
         """Lithoformer 输出目录"""
-        return self.data_dir / "output" / "lithoformer"
+        return self._normalize_path(self.lithoformer_output_dir_override, _PATH_CONFIG.lithoformer_output)
 
     @property
     def term_list_path(self) -> Path:
         """术语表路径"""
         return self.db_dir / f"term_list_{self.reanimator_term_list_version}.csv"
 
+    @property
+    def sample_root(self) -> Path:
+        """只读示例资源目录。"""
+        return _PATH_CONFIG.sample_root
+
+    def is_sample_path(self, path: Path) -> bool:
+        """判断路径是否位于只读示例资源内。"""
+        return _PATH_CONFIG.is_within_samples(path)
+
     def ensure_dirs(self) -> None:
-        """确保所有必需的目录存在"""
-        for dir_path in [
-            self.reanimator_input_dir,
-            self.reanimator_output_dir,
-            self.lithoformer_input_dir,
-            self.lithoformer_output_dir,
+        """确保需要写入的目录存在（排除只读示例资源）。"""
+        dirs_to_check = [
             self.db_dir,
-        ]:
+            Path.cwd() / "output",
+        ]
+        for dir_path in dirs_to_check:
+            if self.is_sample_path(dir_path):
+                continue
             dir_path.mkdir(parents=True, exist_ok=True)
+
+    def _normalize_path(self, override: Path | None, default: Path) -> Path:
+        if override:
+            return (self.project_root / override).resolve() if not override.is_absolute() else override.resolve()
+        if self.is_sample_path(default):
+            return default
+        return default
 
 
 # === 单例模式 - 全局配置实例 ===

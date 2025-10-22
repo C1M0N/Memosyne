@@ -1,0 +1,13 @@
+{
+  "base_dir": "misc/example",
+  "reanimator": {
+    "input": "reanimator",
+    "output": "../output/reanimator",
+    "templates": "reanimator"
+  },
+  "lithoformer": {
+    "input": "lithoformer",
+    "output": "../output/lithoformer",
+    "templates": "lithoformer"
+  }
+}

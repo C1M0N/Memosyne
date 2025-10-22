@@ -107,7 +107,7 @@ def resolve_input_and_memo(
 
     s = user_path.strip()
 
-    # Pure number: data/input/{num}.csv, start Memo = num
+    # Pure number: misc/input/{num}.csv, start Memo = num
     if s.isdigit():
         memo = int(s)
         path = default_dir / f"{s}.csv"
@@ -157,7 +157,22 @@ def main():
     # 3. Parse inputs
     try:
         provider_type, model_id, model_code, model_display = resolve_model_choice(model_input, settings)
-        input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimator_input_dir)
+    input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimator_input_dir)
+    if not input_path.exists():
+        print("⚠️  未找到默认示例术语表。请提供要处理的 CSV 路径。")
+        user_path = ask("Input CSV path (absolute or relative):", required=True)
+        input_path = Path(user_path).expanduser()
+        if not input_path.is_absolute():
+            input_path = Path.cwd() / input_path
+        memo_str = ask("Starting Memo number (integer, e.g., 2700 for M002701):")
+        try:
+            start_memo = int(memo_str)
+        except ValueError:
+            print("Starting Memo number must be an integer")
+            return
+
+    if settings.is_sample_path(input_path):
+        print("ℹ️  当前使用的是 misc 中的示例 CSV（只读）。如需处理自定义术语表，请在 config/paths.json 中修改默认路径或在此输入自定义路径。")
     except Exception as e:
         print(f"Parsing failed: {e}")
         return
@@ -178,10 +193,21 @@ def main():
         print(f"Failed to read input: {e}")
         return
 
-    # 5. Generate BatchID
+    # 5. Resolve output directory (avoid read-only samples)
+    output_dir = settings.reanimator_output_dir
+    if settings.is_sample_path(output_dir):
+        print("⚠️  默认输出目录位于 misc 示例资源中（只读）。请指定实际输出目录。")
+        custom_dir = ask("Output directory (absolute or relative path):", required=True)
+        output_dir = Path(custom_dir).expanduser()
+        if not output_dir.is_absolute():
+            output_dir = Path.cwd() / output_dir
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 6. Generate BatchID
     try:
         batch_gen = BatchIDGenerator(
-            output_dir=settings.reanimator_output_dir,
+            output_dir=output_dir,
             timezone=settings.batch_timezone
         )
         batch_id = batch_gen.generate(term_count=len(terms_input))
@@ -190,17 +216,17 @@ def main():
         print(f"BatchID generation failed: {e}")
         return
 
-    # 6. Generate output path (smart naming: BatchID-FileName-ModelCode.csv)
+    # 7. Generate output path (smart naming: BatchID-FileName-ModelCode.csv)
     output_filename = generate_output_filename(
         batch_id=batch_id,
         model_code=model_code,
         input_filename=str(input_path),
         ext="csv"
     )
-    output_path = unique_path(settings.reanimator_output_dir / output_filename)
+    output_path = unique_path((output_dir / output_filename).resolve())
     print(f"[Output  ] {output_path}")
 
-    # 7. Create LLM Provider
+    # 8. Create LLM Provider
     try:
         if provider_type == "anthropic":
             if not settings.anthropic_api_key:
@@ -221,7 +247,7 @@ def main():
         print(f"Failed to create LLM Provider: {e}")
         return
 
-    # 8. Create Infrastructure adapters (Dependency Injection)
+    # 9. Create Infrastructure adapters (Dependency Injection)
     try:
         llm_adapter = ReanimatorLLMAdapter.from_provider(llm_provider)
         term_list_adapter = TermListAdapter.from_settings(settings)
@@ -229,7 +255,7 @@ def main():
         print(f"Failed to create adapters: {e}")
         return
 
-    # 9. Create Use Case (Application layer)
+    # 10. Create Use Case (Application layer)
     try:
         use_case = ProcessTermsUseCase(
             llm=llm_adapter,
@@ -242,7 +268,7 @@ def main():
         print(f"Failed to create use case: {e}")
         return
 
-    # 10. Execute Use Case
+    # 11. Execute Use Case
     try:
         process_result = use_case.execute(terms_input, show_progress=True)
     except Exception as e:
@@ -251,7 +277,7 @@ def main():
         traceback.print_exc()
         return
 
-    # 11. Write output (using Infrastructure adapter)
+    # 12. Write output (using Infrastructure adapter)
     try:
         csv_adapter.write_output(output_path, process_result.items)
         print(f"\n✅ Complete: {output_path}")

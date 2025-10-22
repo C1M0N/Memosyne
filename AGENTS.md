@@ -86,6 +86,12 @@ LOG_LEVEL=INFO
 
 **注意**: `.env` 文件已在 `.gitignore` 中，绝不能提交到版本控制。
 
+### 目录与示例资源
+
+- 示例输入/输出统一放在 `misc/` 目录，视为只读模板。
+- `config/paths.json` 控制默认输入/输出目录，CLI/API/TUI 会遵循该配置。
+- 如果仍然指向 `misc/`，运行时会提示“示例目录只读”，需要用户提供真实可写路径。
+
 ### 集中配置管理
 
 模型名称现已集中配置，**只需在一处修改**即可全局生效：
@@ -298,15 +304,15 @@ src/memosyne/
 - `lithoformer/tui/widgets/questions_table.py` - 响应式题目表格
 - `lithoformer/tui/css/lithoformer_layout.tcss` - Layout v2 样式（JiraTUI 风格）
 
-**输入**: `data/input/lithoformer/*.md` - Markdown 格式测验文件
-**输出**: `data/output/lithoformer/ShouldBe.txt` - 标准化测验文本
+**输入**: `misc/input/lithoformer/*.md` - Markdown 格式测验文件
+**输出**: `misc/output/lithoformer/ShouldBe.txt` - 标准化测验文本
 
 ---
 
 ## 数据目录结构
 
 ```
-data/
+misc/
 ├── input/
 │   ├── reanimator/    # Reanimator 输入 CSV（Word, ZhDef）
 │   └── lithoformer/   # Lithoformer 输入 Markdown 测验
