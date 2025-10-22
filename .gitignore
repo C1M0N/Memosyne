@@ -49,4 +49,4 @@ AGENTS.md
 src/memosyne/cli/lit/
 src/memosyne/cli/*.txt
 src/memosyne/cli/*.csv
-jiratui-main/*
+jiratui-main/
