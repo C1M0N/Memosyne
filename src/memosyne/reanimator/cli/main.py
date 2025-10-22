@@ -172,7 +172,7 @@ def main():
             return
 
     if settings.is_sample_path(input_path):
-        print("ℹ️  当前使用的是 misc 中的示例 CSV（只读）。如需处理自定义术语表，请在 config/paths.json 中修改默认路径或在此输入自定义路径。")
+        print("ℹ️  当前使用的是 misc 中的示例 CSV（只读）。如需处理自定义术语表，请在 TUI 的配置选项卡中修改默认路径或在此输入自定义路径。")
     except Exception as e:
         print(f"Parsing failed: {e}")
         return

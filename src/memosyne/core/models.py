@@ -57,4 +57,43 @@ class ProcessResult(BaseModel, Generic[T]):
         return f"ProcessResult(success={self.success_count}/{self.total_count}, tokens={self.token_usage})"
 
 
-__all__ = ["TokenUsage", "ProcessResult"]
+class Configuration(BaseModel):
+    """
+    应用配置值对象
+
+    用于封装应用的配置数据，包括路径配置和模型配置
+    """
+
+    # 路径配置
+    lithoformer_input_dir: str = Field(default="", description="Lithoformer输入目录")
+    lithoformer_output_dir: str = Field(default="", description="Lithoformer输出目录")
+
+    # 模型配置（格式：provider:model，如 openai:gpt-4o-mini）
+    default_model: str = Field(default="openai:gpt-4o-mini", description="默认使用模型")
+
+    # 预留配置项（7个）
+    reserved_config_1: str = Field(default="", description="预留配置1")
+    reserved_config_2: str = Field(default="", description="预留配置2")
+    reserved_config_3: str = Field(default="", description="预留配置3")
+    reserved_config_4: str = Field(default="", description="预留配置4")
+    reserved_config_5: str = Field(default="", description="预留配置5")
+    reserved_config_6: str = Field(default="", description="预留配置6")
+    reserved_config_7: str = Field(default="", description="预留配置7")
+
+    def parse_model(self) -> tuple[str, str]:
+        """
+        解析模型字符串，返回 (provider, model_name)
+
+        Examples:
+            >>> config = Configuration(default_model="openai:gpt-4o-mini")
+            >>> config.parse_model()
+            ('openai', 'gpt-4o-mini')
+        """
+        if ":" in self.default_model:
+            parts = self.default_model.split(":", 1)
+            return parts[0], parts[1]
+        # 默认假设是OpenAI模型
+        return "openai", self.default_model
+
+
+__all__ = ["TokenUsage", "ProcessResult", "Configuration"]

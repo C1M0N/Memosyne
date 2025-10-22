@@ -126,6 +126,50 @@ class CSVRepository(Protocol):
         ...
 
 
+class ConfigRepository(Protocol):
+    """配置仓储协议（用于持久化应用配置）"""
+
+    def get(self, key: str) -> str | None:
+        """
+        获取配置项
+
+        Args:
+            key: 配置键
+
+        Returns:
+            配置值，如果不存在返回 None
+        """
+        ...
+
+    def set(self, key: str, value: str) -> None:
+        """
+        设置配置项
+
+        Args:
+            key: 配置键
+            value: 配置值
+        """
+        ...
+
+    def get_all(self) -> dict[str, str]:
+        """
+        获取所有配置项
+
+        Returns:
+            配置字典
+        """
+        ...
+
+    def delete(self, key: str) -> None:
+        """
+        删除配置项
+
+        Args:
+            key: 配置键
+        """
+        ...
+
+
 # ============================================================
 # 自定义异常
 # ============================================================

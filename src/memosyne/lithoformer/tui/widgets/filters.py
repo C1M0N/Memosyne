@@ -173,3 +173,125 @@ class LithoformerDirectoryTree(DirectoryTree):
         for path in paths:
             if path.is_dir() or path.suffix.lower() == ".md":
                 yield path
+
+
+# === Config Tab Widgets ===
+
+class ConfigDefaultInputDirInput(Input):
+    """Config widget for default input directory."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-default-input-dir",
+            value=value or "",
+            placeholder="默认输入路径",
+        )
+        self.border_title = "默认输入路径"
+
+
+class ConfigDefaultOutputDirInput(Input):
+    """Config widget for default output directory."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-default-output-dir",
+            value=value or "",
+            placeholder="默认输出路径",
+        )
+        self.border_title = "默认输出路径"
+
+
+class ConfigDefaultModelInput(Input):
+    """Config widget for default model (format: provider:model)."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-default-model",
+            value=value or "",
+            placeholder="格式：provider:model（如 openai:gpt-4o-mini）",
+        )
+        self.border_title = "默认使用模型"
+
+
+class ConfigReserved1Input(Input):
+    """Config widget for reserved configuration 1."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-reserved-1",
+            value=value or "",
+            placeholder="预留配置1",
+        )
+        self.border_title = "预留配置1"
+
+
+class ConfigReserved2Input(Input):
+    """Config widget for reserved configuration 2."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-reserved-2",
+            value=value or "",
+            placeholder="预留配置2",
+        )
+        self.border_title = "预留配置2"
+
+
+class ConfigReserved3Input(Input):
+    """Config widget for reserved configuration 3."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-reserved-3",
+            value=value or "",
+            placeholder="预留配置3",
+        )
+        self.border_title = "预留配置3"
+
+
+class ConfigReserved4Input(Input):
+    """Config widget for reserved configuration 4."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-reserved-4",
+            value=value or "",
+            placeholder="预留配置4",
+        )
+        self.border_title = "预留配置4"
+
+
+class ConfigReserved5Input(Input):
+    """Config widget for reserved configuration 5."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-reserved-5",
+            value=value or "",
+            placeholder="预留配置5",
+        )
+        self.border_title = "预留配置5"
+
+
+class ConfigReserved6Input(Input):
+    """Config widget for reserved configuration 6."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-reserved-6",
+            value=value or "",
+            placeholder="预留配置6",
+        )
+        self.border_title = "预留配置6"
+
+
+class ConfigReserved7Input(Input):
+    """Config widget for reserved configuration 7."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-reserved-7",
+            value=value or "",
+            placeholder="预留配置7",
+        )
+        self.border_title = "预留配置7"

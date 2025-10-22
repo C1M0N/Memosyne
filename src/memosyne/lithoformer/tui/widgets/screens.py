@@ -45,6 +45,16 @@ from ..logging_utils import build_textual_handler
 from .filters import (
     BatchInput,
     CommandInput,
+    ConfigDefaultInputDirInput,
+    ConfigDefaultModelInput,
+    ConfigDefaultOutputDirInput,
+    ConfigReserved1Input,
+    ConfigReserved2Input,
+    ConfigReserved3Input,
+    ConfigReserved4Input,
+    ConfigReserved5Input,
+    ConfigReserved6Input,
+    ConfigReserved7Input,
     InputPathInput,
     LithoformerDirectoryTree,
     ModelInput,
@@ -237,6 +247,32 @@ class MainScreen(Screen):
                                 preview.border_title = "检测结果预览"
                                 yield preview
 
+                            # 第三个选项卡：配置管理
+                            with TabPane(title="配置", id="tab-config"):
+                                # 从数据库读取配置值
+                                config_repo = self.settings._config_repo
+                                default_input = config_repo.get("lithoformer_input_dir") if config_repo else ""
+                                default_output = config_repo.get("lithoformer_output_dir") if config_repo else ""
+                                default_model = config_repo.get("default_model") if config_repo else ""
+                                reserved_1 = config_repo.get("reserved_config_1") if config_repo else ""
+                                reserved_2 = config_repo.get("reserved_config_2") if config_repo else ""
+                                reserved_3 = config_repo.get("reserved_config_3") if config_repo else ""
+                                reserved_4 = config_repo.get("reserved_config_4") if config_repo else ""
+                                reserved_5 = config_repo.get("reserved_config_5") if config_repo else ""
+                                reserved_6 = config_repo.get("reserved_config_6") if config_repo else ""
+                                reserved_7 = config_repo.get("reserved_config_7") if config_repo else ""
+
+                                yield ConfigDefaultInputDirInput(value=default_input)
+                                yield ConfigDefaultOutputDirInput(value=default_output)
+                                yield ConfigDefaultModelInput(value=default_model)
+                                yield ConfigReserved1Input(value=reserved_1)
+                                yield ConfigReserved2Input(value=reserved_2)
+                                yield ConfigReserved3Input(value=reserved_3)
+                                yield ConfigReserved4Input(value=reserved_4)
+                                yield ConfigReserved5Input(value=reserved_5)
+                                yield ConfigReserved6Input(value=reserved_6)
+                                yield ConfigReserved7Input(value=reserved_7)
+
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):
                         yield self._file_tree
@@ -394,6 +430,47 @@ class MainScreen(Screen):
         if widget_id == "sequence-input":
             seed = infer_question_seed(event.value.strip()) if event.value else 0
             self._reassign_question_codes(seed)
+
+    @on(Input.Changed, "#config-default-input-dir")
+    @on(Input.Changed, "#config-default-output-dir")
+    @on(Input.Changed, "#config-default-model")
+    @on(Input.Changed, "#config-reserved-1")
+    @on(Input.Changed, "#config-reserved-2")
+    @on(Input.Changed, "#config-reserved-3")
+    @on(Input.Changed, "#config-reserved-4")
+    @on(Input.Changed, "#config-reserved-5")
+    @on(Input.Changed, "#config-reserved-6")
+    @on(Input.Changed, "#config-reserved-7")
+    async def handle_config_changed(self, event: Input.Changed) -> None:
+        """Save configuration changes to database (real-time)."""
+        widget_id = event.input.id
+        value = event.value.strip()
+
+        # 映射widget ID到配置键
+        config_key_map = {
+            "config-default-input-dir": "lithoformer_input_dir",
+            "config-default-output-dir": "lithoformer_output_dir",
+            "config-default-model": "default_model",
+            "config-reserved-1": "reserved_config_1",
+            "config-reserved-2": "reserved_config_2",
+            "config-reserved-3": "reserved_config_3",
+            "config-reserved-4": "reserved_config_4",
+            "config-reserved-5": "reserved_config_5",
+            "config-reserved-6": "reserved_config_6",
+            "config-reserved-7": "reserved_config_7",
+        }
+
+        config_key = config_key_map.get(widget_id)
+        if config_key and self.settings._config_repo:
+            # 保存到数据库
+            self.settings.save_config(config_key, value)
+
+            # 实时生效（Option C：立即更新Settings单例，但不改变当前已填写的输入框）
+            # 由于配置是通过property读取的，下次访问时会自动从数据库读取新值
+            self.settings.reload_from_db()
+
+            # 记录日志
+            self.log_view.write(f"[dim]配置已保存: {config_key} = {value}[/dim]")
 
     @on(QuestionsTable.RowHighlighted)
     def handle_question_row_highlighted(self, event: QuestionsTable.RowHighlighted) -> None:
