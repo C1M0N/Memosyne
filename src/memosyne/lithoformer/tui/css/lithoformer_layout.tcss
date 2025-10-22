@@ -19,6 +19,13 @@ Screen {
 #left-col {
     width: 19fr;  /* 760/40 */
     layout: vertical;
+    padding: 0;
+    margin: 0;
+}
+
+/* 消除 left-col 内部所有子元素之间的间距 */
+#left-col > * {
+    margin: 0;
 }
 
 /* 右侧区域: 中列 + 右列 + 控制台 (840px / 1600px ≈ 52.5%) */
@@ -64,23 +71,37 @@ Screen {
    LEFT COLUMN
    ================================================================== */
 
+/* LOGO + 信息区容器 */
+#header-area {
+    height: auto;
+    background: #0d141f;
+    border: none;  /* 容器不显示边框 */
+    padding: 0;
+    margin: 0 0 0 0;  /* 与题目列表之间不要空行 */
+}
+
+/* 消除 header-area 内部所有子元素之间的间距 */
+#header-area > * {
+    margin: 0;
+}
+
 #logo-panel {
     height: 9;  /* ~180px */
     padding: 1;
     color: #4aa8ff;
     background: #0d141f;
-    border: round #1f4b8f;
+    border: none;  /* 去掉边框 */
     text-style: bold;
-    margin-bottom: 1;
+    margin: 0;  /* 去掉底部边距 */
 }
 
 #info-panel {
     height: 3;  /* ~60px - 固定高度 */
-    border: round #1f4b8f;
+    border: none;  /* 去掉边框 */
     background: #0d141f;
     padding: 0 1;
     color: #9cb3ce;
-    margin-bottom: 1;
+    margin: 0;  /* 去掉底部边距 */
 }
 
 #questions-table {
@@ -89,6 +110,7 @@ Screen {
     border: round #1f4b8f;
     background: #070d16;
     scrollbar-size-vertical: 1;
+    margin: 0;  /* 与上方 header-area 之间不要空行 */
 }
 
 /* ==================================================================
@@ -297,52 +319,27 @@ Static {
 /* Tabs 栏 - 类似 jiraTUI 的选项卡行 */
 #main-tabs > Tabs {
     height: 2;  /* 减少高度，消除空行 */
-    background: #0d141f;
+    background: transparent;  /* 透明背景 */
     border: none;  /* 去掉底部蓝线 */
     margin: 0;
     padding: 0;
 }
 
-/* Tab 选项卡按钮 - 默认状态，参考 jiraTUI 简洁风格 */
-#main-tabs Tab {
-    background: transparent;  /* 透明背景，不是全蓝 */
-    color: #9cb3ce;  /* 灰色文字 */
-    text-style: none;
-    border: none;
-    padding: 0 2;
-    margin: 0 1 0 0;
+/* Tab 选项卡按钮 - jiraTUI 配色方案 */
+Tab {
+    background: transparent;
+    color: #9cb3ce;
 }
 
-/* Tab 悬停状态 */
-#main-tabs Tab:hover {
+Tab:hover {
     background: #14253a;
     color: #ffffff;
 }
 
-/* Tab 激活状态 - 下划线高亮，不是全蓝背景 */
-#main-tabs Tab.-active {
-    background: transparent !important;  /* 激活时背景也是透明的 */
-    color: #4aa8ff !important;  /* 蓝色文字 */
+Tab.-active {
+    background: #2b61a7;
+    color: #ffffff;
     text-style: bold;
-    border-bottom: solid #4aa8ff;  /* 底部蓝色下划线 */
-}
-
-/* Tab 激活且悬停状态 */
-#main-tabs Tab.-active:hover {
-    background: #14253a !important;
-    color: #ffffff !important;
-}
-
-/* Tab 激活且获得焦点时 */
-#main-tabs Tab.-active:focus {
-    background: transparent !important;
-    color: #4aa8ff !important;
-}
-
-/* Tab 获得焦点时（未激活） */
-#main-tabs Tab:focus {
-    background: #14253a;
-    color: #ffffff;
 }
 
 /* TabPane 内容区域 */

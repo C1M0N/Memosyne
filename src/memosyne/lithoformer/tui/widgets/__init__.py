@@ -11,7 +11,7 @@ from .filters import (
     OutputPathInput,
     ProviderSelectionInput,
     SequenceInput,
-    TagInput,
+    NoteInput,
     TitleInput,
 )
 from .questions_table import QuestionRow, QuestionsTable
@@ -31,6 +31,6 @@ __all__ = [
     "QuestionRow",
     "QuestionsTable",
     "SequenceInput",
-    "TagInput",
+    "NoteInput",
     "TitleInput",
 ]

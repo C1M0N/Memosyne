@@ -617,7 +617,7 @@ python -m memosyne.reanimator.cli.main
 - `MainScreen` — 管理 Detect → Start 状态机、自动填值缓存 `_auto_values` 与手动覆盖标记 `_manual_overrides`。
 - `CustomProgressBar` — Textual Widget，三行输出（时间信息 / 进度条 / 百分比）。
 - `QuestionsTable` — 禁用表头排序的 DataTable，按状态着色。
-- `filters.py` — 13 个输入组件；`TitleInput` 使用 `\n` 表示换行（首行输出时加粗），`TagInput`（显示为“备注”）的内容会写入 LLM user prompt。
+- `filters.py` — 13 个输入组件；`TitleInput` 使用 `\n` 表示换行（首行输出时加粗），`NoteInput`（显示为“备注”）的内容会写入 LLM user prompt（可选）。
 - `logging_utils.py` — Textual Handler，将标准 logging 输出与命令输入联动。
 
 ### 使用提示

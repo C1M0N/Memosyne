@@ -97,14 +97,14 @@ class ModelInput(Input):
         )
         self.border_title = "使用模型"
 
-class TagInput(Input):
-    """Input widget for model notes (备注)."""
+class NoteInput(Input):
+    """Input widget for optional model notes."""
 
     def __init__(self, value: str | None = None):
         super().__init__(
-            id="tag-input",
+            id="note-input",
             value=value or "",
-            placeholder="默认为空，填写内容会附加到user prompt后面",
+            placeholder="可选，填写内容会附加到 user prompt 末尾",
         )
         self.border_title = "备注"
 

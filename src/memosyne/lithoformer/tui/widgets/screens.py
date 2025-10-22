@@ -398,7 +398,7 @@ class MainScreen(Screen):
     @on(QuestionsTable.RowHighlighted)
     def handle_question_row_highlighted(self, event: QuestionsTable.RowHighlighted) -> None:
         """Update the preview area when the highlighted row changes."""
-        index = self._index_from_row_key(event.row_key)
+        index = event.row_index or self._index_from_row_key(event.row_key)
         if index:
             self._show_question_preview(index)
 

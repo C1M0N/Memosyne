@@ -31,9 +31,10 @@ class QuestionsTable(DataTable):
     class RowHighlighted(Message):
         """Message emitted when a row highlight/selection changes."""
 
-        def __init__(self, row_key: str) -> None:
+        def __init__(self, row_key: str, row_index: int) -> None:
             super().__init__()
             self.row_key = row_key
+            self.row_index = row_index
 
     questions: Reactive[list[QuestionRow] | None] = reactive(None, always_update=True)
 
@@ -49,11 +50,11 @@ class QuestionsTable(DataTable):
     def _setup_columns(self) -> None:
         """Set up the table columns."""
         self.add_column("#", key="index", width=3)
-        self.add_column("题号", key="number", width=7)
+        self.add_column("题号", key="number", width=12)
         self.add_column("Status", key="status", width=11)
         self.add_column("字符数", key="char", width=5)
-        self.add_column("题型", key="qtype", width=5)
-        self.add_column("输出字符数", key="output_chars", width=6)
+        self.add_column("题型", key="qtype", width=6)
+        self.add_column("输出字符数", key="output_chars", width=8)
         self.add_column("所用时间", key="elapsed", width=8)
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
@@ -128,15 +129,54 @@ class QuestionsTable(DataTable):
 
     def on_data_table_row_selected(self, event) -> None:  # type: ignore[override]
         """Forward row selection events as high-level messages."""
-        row_key = getattr(event, "row_key", None)
-        if row_key is not None:
-            self.post_message(self.RowHighlighted(str(row_key)))
+        info = self._extract_row_info(event)
+        if info is not None:
+            row_key, row_index = info
+            self.post_message(self.RowHighlighted(row_key, row_index))
 
     def on_data_table_row_highlighted(self, event) -> None:  # type: ignore[override]
         """Forward highlight changes as messages so the preview can sync."""
+        info = self._extract_row_info(event)
+        if info is not None:
+            row_key, row_index = info
+            self.post_message(self.RowHighlighted(row_key, row_index))
+
+    def _extract_row_info(self, event) -> tuple[str, int] | None:
+        """Extract row key and 1-based index from a DataTable event."""
         row_key = getattr(event, "row_key", None)
-        if row_key is not None:
-            self.post_message(self.RowHighlighted(str(row_key)))
+
+        row_index = getattr(event, "row_index", None)
+        if row_index is None:
+            row_index = getattr(event, "cursor_row", None)
+        if row_index is None:
+            row_index = getattr(event, "row", None)
+
+        row_index_int: int | None
+        if row_index is not None:
+            try:
+                row_index_int = int(row_index)
+            except (TypeError, ValueError):
+                row_index_int = None
+        else:
+            row_index_int = None
+
+        if row_key is None and row_index_int is not None:
+            row_key = f"row-{row_index_int + 1}"
+
+        if row_key is None:
+            return None
+
+        if row_index_int is None:
+            if isinstance(row_key, str) and row_key.startswith("row-"):
+                try:
+                    row_index_int = int(row_key.split('-', 1)[1]) - 1
+                except ValueError:
+                    row_index_int = None
+
+        if row_index_int is None:
+            return None
+
+        return str(row_key), row_index_int + 1
 
 
 __all__ = ["QuestionRow", "QuestionsTable"]

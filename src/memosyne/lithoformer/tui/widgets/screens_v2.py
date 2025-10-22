@@ -52,7 +52,7 @@ from .filters import (
     OutputPathInput,
     ProviderSelectionInput,
     SequenceInput,
-    TagInput,
+    NoteInput,
     TitleInput,
 )
 from .questions_table import QuestionRow, QuestionsTable
@@ -82,7 +82,7 @@ class MainScreen(Screen):
 
     AUTO_INPUT_IDS = {
         "model-input",
-        "tag-input",
+        "note-input",
         "title-input",
         "sequence-input",
         "batch-input",
@@ -142,8 +142,8 @@ class MainScreen(Screen):
         return self.query_one(ModelInput)
 
     @property
-    def tag_input(self) -> TagInput:
-        return self.query_one(TagInput)
+    def note_input(self) -> NoteInput:
+        return self.query_one(NoteInput)
 
     @property
     def title_input(self) -> TitleInput:
@@ -215,7 +215,7 @@ class MainScreen(Screen):
         yield SequenceInput()
         yield BatchInput()
         yield OutputFilenameInput()
-        yield TagInput()  # This is "给模型的备注" based on border_title
+        yield NoteInput()  # This is "给模型的备注" based on border_title
 
         # File tree and button area
         yield self._file_tree

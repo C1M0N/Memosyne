@@ -193,7 +193,7 @@ python -m memosyne.lithoformer.tui.app
 - `MainScreen` — 负责 Detect → Start 状态机、异步任务、自动填值与手动覆盖跟踪。
 - `CustomProgressBar` — 三行进度展示组件（运行时间 / 进度条 / 百分比随条移动）。
 - `QuestionsTable` — 固定宽高的题目表格，禁用表头排序，状态色编码。
-- `filters.py` — 13 个独立输入组件（路径、厂商、模型、标题、序号、批次、输出文件名、备注等），`TitleInput` 使用 `\n` 表示换行（首行自动加粗），`TagInput`（显示为“备注”）的内容会追加到 LLM user prompt。
+- `filters.py` — 13 个独立输入组件（路径、厂商、模型、标题、序号、批次、输出文件名、备注等），`TitleInput` 使用 `\n` 表示换行（首行自动加粗），`NoteInput`（显示为“备注”）的内容会追加到 LLM user prompt（可选）。
 - `logging_utils.py` — Textual 原生日志 handler，与 RichLog 及命令输入联动。
 
 ### 操作体验

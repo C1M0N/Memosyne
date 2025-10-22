@@ -13,6 +13,8 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 - Incorporated fixes from `LAYOUT_FIX_v4`–`LAYOUT_FIX_v6`: sequence/batch inputs share a row, Detect/Start button stays beneath the file tree, component gaps reduced so “备注”与“输出文件名”字段不再被挤出视图, and Select dropdown arrows regain JiraTUI contrast.
 - Consolidated helper shell scripts into `scripts/` (`run_reanimate.sh`, `LfC.sh`, `LfT.sh`) and updated documentation references.
 - Moved the reference `layout.xml` blueprint into `misc/layout.xml` to keep the project root tidy.
+- Renamed the TUI “标签”字段为 `NoteInput` 并改为非必填，保持备注可选同时沿用 LLM 提示附加逻辑。
+- Questions table now displays canonical `L` 题号 derived from the sequence seed, and the preview选项卡会同步展示该题的完整 Markdown 原文。
 
 ### Fixed
 - Batch ID input now shares the row with sequence as designed; Detect/Start button remains anchored below the directory tree.
