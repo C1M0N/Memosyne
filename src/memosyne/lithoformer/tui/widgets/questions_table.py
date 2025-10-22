@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rich.text import Text
+from textual.message import Message
 from textual.reactive import Reactive, reactive
 from textual.widgets import DataTable
 
@@ -27,6 +28,13 @@ class QuestionRow:
 class QuestionsTable(DataTable):
     """Table widget that displays the list of questions and their processing status."""
 
+    class RowHighlighted(Message):
+        """Message emitted when a row highlight/selection changes."""
+
+        def __init__(self, row_key: str) -> None:
+            super().__init__()
+            self.row_key = row_key
+
     questions: Reactive[list[QuestionRow] | None] = reactive(None, always_update=True)
 
     def __init__(self):
@@ -40,13 +48,13 @@ class QuestionsTable(DataTable):
 
     def _setup_columns(self) -> None:
         """Set up the table columns."""
-        self.add_column("#", key="index", width=4)
-        self.add_column("题号", key="number", width=14)
-        self.add_column("Status", key="status", width=14)
-        self.add_column("字符数", key="char", width=10)
-        self.add_column("题型", key="qtype", width=10)
-        self.add_column("输出字符数", key="output_chars", width=14)
-        self.add_column("所用时间", key="elapsed", width=12)
+        self.add_column("#", key="index", width=3)
+        self.add_column("题号", key="number", width=7)
+        self.add_column("Status", key="status", width=11)
+        self.add_column("字符数", key="char", width=5)
+        self.add_column("题型", key="qtype", width=5)
+        self.add_column("输出字符数", key="output_chars", width=6)
+        self.add_column("所用时间", key="elapsed", width=8)
 
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         """禁用列标题点击排序功能。"""
@@ -117,6 +125,18 @@ class QuestionsTable(DataTable):
             "ERROR": "red",
         }
         return styles.get(status, "white")
+
+    def on_data_table_row_selected(self, event) -> None:  # type: ignore[override]
+        """Forward row selection events as high-level messages."""
+        row_key = getattr(event, "row_key", None)
+        if row_key is not None:
+            self.post_message(self.RowHighlighted(str(row_key)))
+
+    def on_data_table_row_highlighted(self, event) -> None:  # type: ignore[override]
+        """Forward highlight changes as messages so the preview can sync."""
+        row_key = getattr(event, "row_key", None)
+        if row_key is not None:
+            self.post_message(self.RowHighlighted(str(row_key)))
 
 
 __all__ = ["QuestionRow", "QuestionsTable"]

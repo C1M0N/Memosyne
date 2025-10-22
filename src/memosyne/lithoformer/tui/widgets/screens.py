@@ -53,7 +53,7 @@ from .filters import (
     OutputPathInput,
     ProviderSelectionInput,
     SequenceInput,
-    TagInput,
+    NoteInput,
     TitleInput,
 )
 from .questions_table import QuestionRow, QuestionsTable
@@ -73,6 +73,7 @@ class DetectionResult:
     title_main: str
     title_sub: str
     sequence: str
+    question_seed: int
     batch_id: str
     output_filename: str
     detected_at: datetime
@@ -84,7 +85,7 @@ class MainScreen(Screen):
 
     AUTO_INPUT_IDS = {
         "model-input",
-        "tag-input",
+        "note-input",
         "title-input",
         "sequence-input",
         "batch-input",
@@ -104,6 +105,7 @@ class MainScreen(Screen):
         self._manual_overrides: set[str] = set()
         self._auto_values: dict[str, str] = {}
         self._suspend_change_events = False
+        self._selected_row_index: int | None = None
 
         self._main_thread_id: int | None = None
         self._log_handler = None
@@ -144,8 +146,8 @@ class MainScreen(Screen):
         return self.query_one(ModelInput)
 
     @property
-    def tag_input(self) -> TagInput:
-        return self.query_one(TagInput)
+    def note_input(self) -> NoteInput:
+        return self.query_one(NoteInput)
 
     @property
     def title_input(self) -> TitleInput:
@@ -197,8 +199,10 @@ class MainScreen(Screen):
         with Horizontal(id="main-container"):
             # 左列 (0-760px): LOGO + 信息区 + 题目列表
             with Vertical(id="left-col"):
-                yield Static(ASCII_LOGO, id="logo-panel")
-                yield Static(info_text, id="info-panel")
+                # LOGO 和信息区合并在一个容器中
+                with Vertical(id="header-area"):
+                    yield Static(ASCII_LOGO, id="logo-panel")
+                    yield Static(info_text, id="info-panel")
                 yield QuestionsTable()
 
             # 右侧区域 (760-1600px): 包含中列、右列和控制台
@@ -225,7 +229,7 @@ class MainScreen(Screen):
                                     yield BatchInput()
 
                                 yield OutputFilenameInput()
-                                yield TagInput()
+                                yield NoteInput()
 
                             # 第二个选项卡：预览展示
                             with TabPane(title="预览", id="tab-preview"):
@@ -371,7 +375,7 @@ class MainScreen(Screen):
         self._set_input_value(self.command_input, event.value)
 
     @on(Input.Changed, "#model-input")
-    @on(Input.Changed, "#tag-input")
+    @on(Input.Changed, "#note-input")
     @on(Input.Changed, "#title-input")
     @on(Input.Changed, "#sequence-input")
     @on(Input.Changed, "#batch-input")
@@ -386,6 +390,17 @@ class MainScreen(Screen):
                 self._manual_overrides.add(widget_id)
             else:
                 self._manual_overrides.discard(widget_id)
+
+        if widget_id == "sequence-input":
+            seed = infer_question_seed(event.value.strip()) if event.value else 0
+            self._reassign_question_codes(seed)
+
+    @on(QuestionsTable.RowHighlighted)
+    def handle_question_row_highlighted(self, event: QuestionsTable.RowHighlighted) -> None:
+        """Update the preview area when the highlighted row changes."""
+        index = self._index_from_row_key(event.row_key)
+        if index:
+            self._show_question_preview(index)
 
     # endregion ------------------------------------------------------------------
 
@@ -435,7 +450,7 @@ class MainScreen(Screen):
             return
 
         # 在Start开始时就记录备注值，帮助调试
-        current_note = self.tag_input.value.strip()
+        current_note = self.note_input.value.strip()
         if current_note:
             self.logger.info("START开始 - 当前备注框内容：%s", current_note)
         else:
@@ -503,7 +518,7 @@ class MainScreen(Screen):
                 final_title_sub = detection.title_sub
 
             # 读取备注（用户自定义的额外说明，会附加到user prompt）
-            user_note = self.tag_input.value.strip()
+            user_note = self.note_input.value.strip()
             if user_note:
                 self.logger.info("读取到用户备注：%s", user_note)
 
@@ -599,6 +614,7 @@ class MainScreen(Screen):
             title_sub = title_sub or fallback_sub
 
         sequence = self._infer_sequence_from_path(file_path)
+        question_seed = infer_question_seed(sequence) if sequence else infer_question_seed(file_path)
 
         generator = BatchIDGenerator(
             output_dir=self.settings.lithoformer_output_dir,
@@ -615,7 +631,9 @@ class MainScreen(Screen):
 
         questions: list[QuestionRow] = []
         for index, block in enumerate(blocks, start=1):
-            number = self._guess_question_number(block, index)
+            number = self._format_question_code(question_seed, index)
+            if not number:
+                number = self._guess_question_number(block, index)
             char_count = self._measure_characters(block)
             questions.append(
                 QuestionRow(
@@ -640,6 +658,7 @@ class MainScreen(Screen):
             title_main=title_main,
             title_sub=title_sub,
             sequence=sequence,
+            question_seed=question_seed,
             batch_id=batch_id,
             output_filename=output_filename,
             detected_at=datetime.now(),
@@ -651,6 +670,15 @@ class MainScreen(Screen):
         self._detection = detection
         self._rows = {row.index: row for row in detection.questions}
         self.questions_table.questions = detection.questions
+
+        self._reassign_question_codes(detection.question_seed)
+
+        if detection.questions:
+            self._selected_row_index = 1
+            self._show_question_preview(1)
+        else:
+            self._selected_row_index = None
+            self._set_preview_text("")
 
         self._set_meta_title(detection.title_main or "—")
 
@@ -664,7 +692,7 @@ class MainScreen(Screen):
 
         self._set_auto_field(self.title_input, full_title)
         # 备注字段默认为空（不再填入title_sub）
-        # self._set_auto_field(self.tag_input, "")  # 不需要设置，保持用户输入
+        # self._set_auto_field(self.note_input, "")  # 不需要设置，保持用户输入
         self._set_auto_field(self.sequence_input, detection.sequence or "")
         self._set_auto_field(self.batch_input, detection.batch_id)
         self._set_auto_field(self.output_filename_input, detection.output_filename)
@@ -690,6 +718,9 @@ class MainScreen(Screen):
         self.action_mode = "detect"
         self._set_action_state("detect")
         self._update_analysis_summary(None)
+
+        self._selected_row_index = None
+        self._set_preview_text("")
 
         # 清理手动覆盖标记和自动值缓存，让新文件可以正确更新字段
         self._manual_overrides.clear()
@@ -719,6 +750,92 @@ class MainScreen(Screen):
     # endregion ------------------------------------------------------------------
 
     # region parsing helpers ------------------------------------------------------
+    def _reassign_question_codes(self, seed: int) -> None:
+        """Recalculate display question codes based on the provided seed."""
+        if not self._detection or not self._rows:
+            return
+
+        effective_seed = seed if seed and seed > 0 else 0
+        for index in sorted(self._rows):
+            row = self._rows[index]
+            if effective_seed > 0:
+                number = self._format_question_code(effective_seed, index)
+            else:
+                block = self._detection.blocks[index - 1]
+                number = self._guess_question_number(block, index)
+            row.number = number
+            self.questions_table.update_cell(row.row_key, "number", number)
+
+        self._detection.question_seed = effective_seed
+
+        if self._selected_row_index:
+            self._show_question_preview(self._selected_row_index)
+
+    def _show_question_preview(self, row_index: int) -> None:
+        """Render the full original question markdown in the preview tab."""
+        if not self._detection or row_index < 1 or row_index > len(self._detection.blocks):
+            self._set_preview_text("")
+            self._selected_row_index = None
+            return
+
+        self._selected_row_index = row_index
+
+        block = self._detection.blocks[row_index - 1]
+        preview_text = self._compose_block_preview(block)
+        row = self._rows.get(row_index)
+        number = row.number if row else ""
+        if number:
+            preview_text = f"{number}\n\n{preview_text}" if preview_text else number
+
+        self._set_preview_text(preview_text)
+
+    @staticmethod
+    def _compose_block_preview(block: dict[str, str]) -> str:
+        """Compose a readable preview string from the original block data."""
+        context = (block.get("context") or "").strip()
+        question = block.get("question") or ""
+        answer = block.get("answer") or ""
+
+        lines: list[str] = []
+        if context:
+            lines.append(context)
+        if question:
+            lines.append("```Question")
+            lines.append(question.rstrip())
+            lines.append("```")
+        if answer:
+            lines.append("```Answer")
+            lines.append(answer.rstrip())
+            lines.append("```")
+
+        return "\n".join(lines)
+
+    def _set_preview_text(self, text: str) -> None:
+        """Safely update the preview widget text across Textual versions."""
+        preview = self.preview_area
+        if hasattr(preview, "value"):
+            preview.value = text
+        elif hasattr(preview, "load_text"):
+            preview.load_text(text)
+        else:
+            preview.update(text)
+
+    @staticmethod
+    def _index_from_row_key(row_key: str | None) -> int:
+        """Extract the numeric index from a DataTable row key."""
+        if not row_key:
+            return 0
+        if row_key.startswith("row-"):
+            _, _, suffix = row_key.partition("-")
+            try:
+                return int(suffix)
+            except ValueError:
+                return 0
+        try:
+            return int(row_key)
+        except ValueError:
+            return 0
+
     def _apply_event_to_row(
         self,
         event: QuizProcessingEvent,
@@ -887,7 +1004,6 @@ class MainScreen(Screen):
             "输出路径": self.output_path_input.value.strip(),
             "模型": self.model_input.value.strip(),
             "标题": self.title_input.value.strip(),
-            "标签": self.tag_input.value.strip(),
             "序号": self.sequence_input.value.strip(),
             "批次号": self.batch_input.value.strip(),
             "输出文件名": self.output_filename_input.value.strip(),
@@ -943,6 +1059,13 @@ class MainScreen(Screen):
                 temperature=self.settings.default_temperature,
             )
         return LithoformerLLMAdapter.from_provider(llm_provider)
+
+    @staticmethod
+    def _format_question_code(seed: int, index: int) -> str:
+        """Format the canonical question code (e.g., L000255)."""
+        if seed <= 0:
+            return ""
+        return f"L{seed + index:06d}"
 
     @staticmethod
     def _guess_question_number(block: dict[str, str], index: int) -> str:
