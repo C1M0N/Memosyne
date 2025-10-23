@@ -57,8 +57,7 @@ class QuizItem(BaseModel):
         description="Question stem"
     )
     stem_translation: str = Field(
-        ...,
-        min_length=1,
+        default="",
         description="Stem rendered in Simplified Chinese"
     )
     steps: list[str] = Field(
@@ -95,8 +94,14 @@ class QuizItem(BaseModel):
         description="题目解析与知识点"
     )
 
-    def is_valid(self) -> bool:
-        """Check if quiz item is valid"""
+    def is_valid(self, feature_config: "FeatureConfig | None" = None) -> bool:
+        """
+        Check if quiz item is valid
+
+        Args:
+            feature_config: 功能配置，用于决定是否验证translation/analysis字段
+        """
+        # 基础验证
         if not self.stem:
             return False
 
@@ -112,23 +117,27 @@ class QuizItem(BaseModel):
         else:
             return False
 
-        if not self.analysis or not self.analysis.domain.strip():
-            return False
-        if not self.analysis.rationale.strip():
-            return False
+        # 根据feature_config决定是否验证analysis
+        if feature_config is None or feature_config.enable_parsing:
+            if not self.analysis or not self.analysis.domain.strip():
+                return False
+            if not self.analysis.rationale.strip():
+                return False
 
-        if not self.stem_translation.strip():
-            return False
+        # 根据feature_config决定是否验证translation
+        if feature_config is None or feature_config.enable_translation:
+            if not self.stem_translation.strip():
+                return False
 
-        if self.qtype == "MCQ":
-            if not any((self.options_translation.model_dump().get(letter) or "").strip() for letter in ["A", "B", "C", "D", "E", "F"]):
-                return False
-        elif self.qtype == "ORDER":
-            if len(self.steps) != len(self.steps_translation):
-                return False
-        elif self.qtype == "CLOZE":
-            if len(self.cloze_answers) != len(self.cloze_answers_translation):
-                return False
+            if self.qtype == "MCQ":
+                if not any((self.options_translation.model_dump().get(letter) or "").strip() for letter in ["A", "B", "C", "D", "E", "F"]):
+                    return False
+            elif self.qtype == "ORDER":
+                if len(self.steps) != len(self.steps_translation):
+                    return False
+            elif self.qtype == "CLOZE":
+                if len(self.cloze_answers) != len(self.cloze_answers_translation):
+                    return False
 
         return True
 

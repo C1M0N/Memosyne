@@ -74,12 +74,13 @@ def split_markdown_into_questions(markdown: str) -> list[dict[str, str]]:
     return blocks
 
 
-def is_quiz_item_valid(item: QuizItem) -> bool:
+def is_quiz_item_valid(item: QuizItem, feature_config: "FeatureConfig | None" = None) -> bool:
     """
     Check if quiz item is valid (complete)
 
     Args:
         item: Quiz item to validate
+        feature_config: 功能配置，用于决定是否验证translation/analysis字段
 
     Returns:
         True if valid, False otherwise
@@ -89,7 +90,7 @@ def is_quiz_item_valid(item: QuizItem) -> bool:
         >>> is_quiz_item_valid(item)
         True
     """
-    return item.is_valid()
+    return item.is_valid(feature_config)
 
 
 def filter_valid_items(items: list[QuizItem]) -> list[QuizItem]:

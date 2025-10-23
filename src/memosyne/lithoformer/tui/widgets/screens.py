@@ -48,13 +48,19 @@ from .filters import (
     ConfigDefaultInputDirInput,
     ConfigDefaultModelInput,
     ConfigDefaultOutputDirInput,
-    ConfigReserved1Input,
-    ConfigReserved2Input,
+    ConfigMaxConcurrentInput,
+    ConfigMaxRetriesInput,
     ConfigReserved3Input,
     ConfigReserved4Input,
     ConfigReserved5Input,
     ConfigReserved6Input,
     ConfigReserved7Input,
+    Feature001Checkbox,
+    Feature002Checkbox,
+    Feature003Checkbox,
+    FeatureConcurrentCheckbox,
+    FeatureParsingCheckbox,
+    FeatureTranslationCheckbox,
     InputPathInput,
     LithoformerDirectoryTree,
     ModelInput,
@@ -115,6 +121,7 @@ class MainScreen(Screen):
         self._manual_overrides: set[str] = set()
         self._auto_values: dict[str, str] = {}
         self._suspend_change_events = False
+        self._suspend_model_select_events = False
         self._selected_row_index: int | None = None
 
         self._main_thread_id: int | None = None
@@ -254,8 +261,8 @@ class MainScreen(Screen):
                                 default_input = config_repo.get("lithoformer_input_dir") if config_repo else ""
                                 default_output = config_repo.get("lithoformer_output_dir") if config_repo else ""
                                 default_model = config_repo.get("default_model") if config_repo else ""
-                                reserved_1 = config_repo.get("reserved_config_1") if config_repo else ""
-                                reserved_2 = config_repo.get("reserved_config_2") if config_repo else ""
+                                max_concurrent = config_repo.get("max_concurrent") if config_repo else "10"
+                                max_retries = config_repo.get("max_retries") if config_repo else "1"
                                 reserved_3 = config_repo.get("reserved_config_3") if config_repo else ""
                                 reserved_4 = config_repo.get("reserved_config_4") if config_repo else ""
                                 reserved_5 = config_repo.get("reserved_config_5") if config_repo else ""
@@ -265,13 +272,31 @@ class MainScreen(Screen):
                                 yield ConfigDefaultInputDirInput(value=default_input)
                                 yield ConfigDefaultOutputDirInput(value=default_output)
                                 yield ConfigDefaultModelInput(value=default_model)
-                                yield ConfigReserved1Input(value=reserved_1)
-                                yield ConfigReserved2Input(value=reserved_2)
+                                yield ConfigMaxConcurrentInput(value=max_concurrent)
+                                yield ConfigMaxRetriesInput(value=max_retries)
                                 yield ConfigReserved3Input(value=reserved_3)
                                 yield ConfigReserved4Input(value=reserved_4)
                                 yield ConfigReserved5Input(value=reserved_5)
                                 yield ConfigReserved6Input(value=reserved_6)
                                 yield ConfigReserved7Input(value=reserved_7)
+
+                            # 第四个选项卡：功能开关
+                            with TabPane(title="功能", id="tab-features"):
+                                # 从数据库读取功能配置
+                                from ....shared.infrastructure.config_db import get_feature_config_repository
+                                feature_repo = get_feature_config_repository(self.settings.db_dir / "config.db")
+                                feature_config = feature_repo.get()
+
+                                # 2x3网格布局
+                                with Horizontal(id="feature-row-1"):
+                                    yield FeatureTranslationCheckbox(value=feature_config.get("enable_translation", True))
+                                    yield FeatureParsingCheckbox(value=feature_config.get("enable_parsing", True))
+                                    yield Feature001Checkbox(value=feature_config.get("feature_001", False))
+
+                                with Horizontal(id="feature-row-2"):
+                                    yield FeatureConcurrentCheckbox(value=feature_config.get("enable_concurrent", False))
+                                    yield Feature002Checkbox(value=feature_config.get("feature_002", False))
+                                    yield Feature003Checkbox(value=feature_config.get("feature_003", False))
 
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):
@@ -289,6 +314,31 @@ class MainScreen(Screen):
 
         # 底部：进度条区（使用新的自定义进度条）
         yield CustomProgressBar(total=1, id="total-progress")
+
+    @staticmethod
+    def _extract_select_value(raw: object) -> str | None:
+        """Extract string value from Textual Select event payloads."""
+        if isinstance(raw, str):
+            return raw
+        value = getattr(raw, "value", None)
+        return value if isinstance(value, str) else None
+
+    def _apply_model_select_value(self, value: str) -> None:
+        """Set model select value while suppressing change side-effects."""
+        self._suspend_model_select_events = True
+        try:
+            if hasattr(self.model_select, "set_value"):
+                try:
+                    self.model_select.set_value(value)
+                    return
+                except Exception:
+                    pass
+            try:
+                self.model_select.action_select(value)
+            except Exception:
+                self.model_select.value = value
+        finally:
+            self._suspend_model_select_events = False
 
     # region lifecycle ------------------------------------------------------------
     async def on_mount(self) -> None:
@@ -338,7 +388,11 @@ class MainScreen(Screen):
         """Refresh model options when provider changes."""
         if event.select is not self.provider_select:
             return
-        provider = event.value if isinstance(event.value, str) else "openai"
+        provider = self._extract_select_value(event.value)
+        if not provider:
+            provider = self._extract_select_value(getattr(self.provider_select, "value", None)) or "openai"
+        # 切换厂商时允许默认模型覆盖先前的手动输入
+        self._manual_overrides.discard("model-input")
         self._refresh_model_options(provider)
         self.logger.info("已切换厂商为 %s", provider)
 
@@ -347,20 +401,36 @@ class MainScreen(Screen):
         """Populate model input when a model is picked from the dropdown."""
         if event.select is not self.model_select:
             return
-        if isinstance(event.value, str) and event.value:
-            # 如果选择了"Others"，显示厂商前缀供用户填写
-            if event.value == "others":
-                provider = self.provider_select.value
-                from memosyne.core.models import Configuration
-                provider_map = {"openai": "OpenAI", "anthropic": "Anthropic"}
-                provider_formatted = provider_map.get(provider, provider.capitalize())
-                self._set_input_value(self.model_input, f"{provider_formatted}::")
-            else:
-                # 否则使用新格式填充模型
-                provider = self.provider_select.value
-                from memosyne.core.models import Configuration
-                model_display = Configuration.format_model(provider, event.value)
-                self._set_input_value(self.model_input, model_display)
+        if self._suspend_model_select_events:
+            return
+
+        selected_value = self._extract_select_value(event.value)
+        if not selected_value:
+            return
+
+        provider_raw = getattr(self.provider_select, "value", None)
+        provider = self._extract_select_value(provider_raw) or "openai"
+
+        from memosyne.core.models import Configuration
+
+        if selected_value == "others":
+            provider_map = {"openai": "OpenAI", "anthropic": "Anthropic"}
+            provider_formatted = provider_map.get(provider, provider.capitalize())
+            model_display = f"{provider_formatted}::"
+            self._set_input_value(self.model_input, model_display)
+            log_value = f"{provider_formatted}:: (手动输入)"
+            should_refresh_detection = False
+        else:
+            model_display = Configuration.format_model(provider, selected_value)
+            self._set_input_value(self.model_input, model_display)
+            log_value = model_display
+            should_refresh_detection = True
+
+        # 标记为手动覆盖，防止自动流程覆盖用户的选择
+        self._manual_overrides.add(self.model_input.id)
+        self.logger.info("已切换模型为 %s", log_value)
+        if should_refresh_detection:
+            self._refresh_detection_model()
 
     @on(LithoformerDirectoryTree.FileSelected)
     async def handle_file_selected(self, event: LithoformerDirectoryTree.FileSelected) -> None:
@@ -453,19 +523,21 @@ class MainScreen(Screen):
         if widget_id == "sequence-input":
             seed = infer_question_seed(event.value.strip()) if event.value else 0
             self._reassign_question_codes(seed)
+        elif widget_id == "model-input":
+            self._refresh_detection_model()
 
     @on(Input.Changed, "#config-default-input-dir")
     @on(Input.Changed, "#config-default-output-dir")
     @on(Input.Changed, "#config-default-model")
-    @on(Input.Changed, "#config-reserved-1")
-    @on(Input.Changed, "#config-reserved-2")
+    @on(Input.Changed, "#config-max-concurrent")
+    @on(Input.Changed, "#config-max-retries")
     @on(Input.Changed, "#config-reserved-3")
     @on(Input.Changed, "#config-reserved-4")
     @on(Input.Changed, "#config-reserved-5")
     @on(Input.Changed, "#config-reserved-6")
     @on(Input.Changed, "#config-reserved-7")
     async def handle_config_changed(self, event: Input.Changed) -> None:
-        """Save configuration changes to database (real-time)."""
+        """Save configuration changes to database (real-time with validation)."""
         widget_id = event.input.id
         value = event.value.strip()
 
@@ -474,8 +546,8 @@ class MainScreen(Screen):
             "config-default-input-dir": "lithoformer_input_dir",
             "config-default-output-dir": "lithoformer_output_dir",
             "config-default-model": "default_model",
-            "config-reserved-1": "reserved_config_1",
-            "config-reserved-2": "reserved_config_2",
+            "config-max-concurrent": "max_concurrent",
+            "config-max-retries": "max_retries",
             "config-reserved-3": "reserved_config_3",
             "config-reserved-4": "reserved_config_4",
             "config-reserved-5": "reserved_config_5",
@@ -484,12 +556,49 @@ class MainScreen(Screen):
         }
 
         config_key = config_key_map.get(widget_id)
-        if config_key and self.settings._config_repo:
-            # 保存到数据库
-            self.settings.save_config(config_key, value)
+        if not config_key:
+            return
 
-            # 实时生效（Option C：立即更新Settings单例，但不改变当前已填写的输入框）
-            # 由于配置是通过property读取的，下次访问时会自动从数据库读取新值
+        # 验证逻辑
+        is_valid = True
+        error_message = ""
+
+        if config_key == "max_concurrent":
+            if value:
+                try:
+                    num = int(value)
+                    if num < 1 or num > 100:
+                        is_valid = False
+                        error_message = "并发数必须在1-100之间"
+                except ValueError:
+                    is_valid = False
+                    error_message = "并发数必须为整数"
+        elif config_key == "max_retries":
+            if value:
+                try:
+                    num = int(value)
+                    if num < 0 or num > 10:
+                        is_valid = False
+                        error_message = "重试次数必须在0-10之间"
+                except ValueError:
+                    is_valid = False
+                    error_message = "重试次数必须为整数"
+
+        # 更新输入框样式（红色高亮表示无效）
+        if not is_valid:
+            event.input.add_class("validation-error")
+            self.log_view.write(f"[red]验证失败: {error_message}[/red]")
+            # 禁用按钮
+            self.action_button.disabled = True
+            return
+        else:
+            event.input.remove_class("validation-error")
+            # 检查其他输入是否都有效，如果都有效则启用按钮
+            self._check_all_validations()
+
+        # 保存到数据库
+        if self.settings._config_repo:
+            self.settings.save_config(config_key, value)
             self.settings.reload_from_db()
 
             # 特殊处理：如果修改的是默认模型，同步更新"输入"tab（仅当用户未手动修改时）
@@ -499,19 +608,82 @@ class MainScreen(Screen):
                 provider, model = config.parse_model()
 
                 # 更新provider选择（如果provider改变了）
-                if self.provider_select.value != provider:
+                current_provider = self._extract_select_value(getattr(self.provider_select, "value", None))
+                if current_provider != provider:
                     self.provider_select.value = provider
                     self._refresh_model_options(provider)
 
                 # 更新模型下拉框（如果模型在列表中）
                 if model in self._model_option_values:
-                    self.model_select.value = model
+                    self._apply_model_select_value(model)
 
                 # 更新模型输入框
                 self._set_auto_field(self.model_input, value)
 
             # 记录日志
             self.log_view.write(f"[dim]配置已保存: {config_key} = {value}[/dim]")
+
+    def _check_all_validations(self) -> None:
+        """检查所有配置输入是否有效，如果都有效则启用按钮"""
+        try:
+            # 检查并发数
+            max_concurrent_widget = self.query_one("#config-max-concurrent", Input)
+            if max_concurrent_widget.value.strip():
+                num = int(max_concurrent_widget.value.strip())
+                if num < 1 or num > 100:
+                    self.action_button.disabled = True
+                    return
+
+            # 检查重试次数
+            max_retries_widget = self.query_one("#config-max-retries", Input)
+            if max_retries_widget.value.strip():
+                num = int(max_retries_widget.value.strip())
+                if num < 0 or num > 10:
+                    self.action_button.disabled = True
+                    return
+
+            # 所有验证通过，启用按钮
+            self.action_button.disabled = False
+        except (ValueError, Exception):
+            # 任何异常都禁用按钮
+            self.action_button.disabled = True
+
+    @on(FeatureTranslationCheckbox.Changed)
+    @on(FeatureParsingCheckbox.Changed)
+    @on(FeatureConcurrentCheckbox.Changed)
+    @on(Feature001Checkbox.Changed)
+    @on(Feature002Checkbox.Changed)
+    @on(Feature003Checkbox.Changed)
+    async def handle_feature_changed(self, event) -> None:
+        """保存功能配置到数据库（实时）"""
+        from textual.widgets import Checkbox
+        from ....shared.infrastructure.config_db import get_feature_config_repository
+
+        if not isinstance(event.checkbox, Checkbox):
+            return
+
+        widget_id = event.checkbox.id
+        is_checked = event.value
+
+        # 映射widget ID到功能字段
+        feature_key_map = {
+            "feature-translation": "enable_translation",
+            "feature-parsing": "enable_parsing",
+            "feature-concurrent": "enable_concurrent",
+            "feature-001": "feature_001",
+            "feature-002": "feature_002",
+            "feature-003": "feature_003",
+        }
+
+        feature_key = feature_key_map.get(widget_id)
+        if feature_key:
+            # 保存到数据库
+            feature_repo = get_feature_config_repository(self.settings.db_dir / "config.db")
+            feature_repo.update(**{feature_key: is_checked})
+
+            # 记录日志
+            status = "启用" if is_checked else "禁用"
+            self.log_view.write(f"[dim]功能已更新: {feature_key} = {status}[/dim]")
 
     @on(QuestionsTable.RowHighlighted)
     def handle_question_row_highlighted(self, event: QuestionsTable.RowHighlighted) -> None:
@@ -576,8 +748,39 @@ class MainScreen(Screen):
 
         detection = self._detection
 
+        # 读取功能配置
+        from ....shared.infrastructure.config_db import get_feature_config_repository, get_stats_repository
+        from ...domain.models import FeatureConfig
+
+        feature_repo = get_feature_config_repository(self.settings.db_dir / "config.db")
+        feature_dict = feature_repo.get()
+
+        # 读取并发配置
+        config_repo = self.settings._config_repo
+        max_concurrent = int(config_repo.get("max_concurrent") or "10") if config_repo else 10
+        max_retries = int(config_repo.get("max_retries") or "1") if config_repo else 1
+
+        # 构建FeatureConfig
+        feature_config = FeatureConfig(
+            enable_translation=feature_dict.get("enable_translation", True),
+            enable_parsing=feature_dict.get("enable_parsing", True),
+            enable_concurrent=feature_dict.get("enable_concurrent", False),
+            max_concurrent=max_concurrent,
+            max_retries=max_retries,
+            feature_001=feature_dict.get("feature_001", False),
+            feature_002=feature_dict.get("feature_002", False),
+            feature_003=feature_dict.get("feature_003", False),
+        )
+
+        # 获取stats repository（使用独立的stat.db）
+        stats_repo = get_stats_repository(self.settings.db_dir / "stat.db")
+
+        # 构建模型标识（格式：Provider::model）
+        from memosyne.core.models import Configuration
+        model_identifier = Configuration.format_model(detection.provider, detection.model_id)
+
         try:
-            adapter = self._create_llm_adapter(detection.provider, detection.model_id)
+            adapter = self._create_llm_adapter(detection.provider, detection.model_id, feature_config)
         except Exception as exc:
             self.logger.error("创建 LLM Provider 失败：%s", exc)
             return
@@ -589,7 +792,27 @@ class MainScreen(Screen):
         self._processed_count = 0
         self._total_tokens = 0
 
-        use_case = ParseQuizUseCase(llm=adapter)
+        # 根据并发开关选择UseCase
+        if feature_config.enable_concurrent:
+            from ...application.use_cases import ConcurrentParseQuizUseCase
+            use_case = ConcurrentParseQuizUseCase(
+                llm=adapter,
+                feature_config=feature_config,
+                stats_repo=stats_repo,
+                model_identifier=model_identifier,
+                output_filename=detection.output_filename,
+            )
+            self.logger.info(f"使用并发处理模式（并发数：{feature_config.max_concurrent}，重试次数：{feature_config.max_retries}）")
+        else:
+            use_case = ParseQuizUseCase(
+                llm=adapter,
+                stats_repo=stats_repo,
+                feature_config=feature_config,
+                model_identifier=model_identifier,
+                output_filename=detection.output_filename,
+            )
+            self.logger.info("使用顺序处理模式")
+
         formatter = FormatterAdapter.create()
         file_adapter = FileAdapter.create()
 
@@ -598,18 +821,19 @@ class MainScreen(Screen):
             return
 
         self._run_task = asyncio.create_task(
-            self._process_questions(detection, use_case, formatter, file_adapter),
+            self._process_questions(detection, use_case, formatter, file_adapter, feature_config),
             name="LithoformerRunTask",
         )
 
     async def _process_questions(
         self,
         detection: DetectionResult,
-        use_case: ParseQuizUseCase,
+        use_case,  # ParseQuizUseCase or ConcurrentParseQuizUseCase
         formatter: FormatterAdapter,
         file_adapter: FileAdapter,
+        feature_config,
     ) -> None:
-        """Background task that processes questions sequentially without freezing UI."""
+        """Background task that processes questions (sequential or concurrent)."""
         try:
             items: list = []
             total_questions = len(detection.questions)
@@ -640,39 +864,94 @@ class MainScreen(Screen):
             if user_note:
                 self.logger.info("读取到用户备注：%s", user_note)
 
-            for index, block in enumerate(detection.blocks, start=1):
-                self._mark_row_in_progress(index)
-                self._set_status(f"状态：解析第 {index}/{total_questions} 题…")
-                self._update_single_progress(reset=True)
-                await asyncio.sleep(0)
+            # 并发模式：使用回调实时更新UI
+            if feature_config.enable_concurrent:
+                from ...application.use_cases import ConcurrentParseQuizUseCase
+                if isinstance(use_case, ConcurrentParseQuizUseCase):
+                    self.logger.info("并发处理中，请稍候...")
+                    self._set_status(f"状态：并发解析中（{feature_config.max_concurrent}线程）...")
 
-                try:
-                    event, running_tokens = await asyncio.to_thread(
-                        use_case.process_block,
-                        block,
-                        index,
-                        total_questions,
-                        running_tokens,
-                        note=user_note,
-                        show_spinner=False,
-                    )
-                except Exception as exc:  # pragma: no cover - defensive
-                    self.logger.error("解析过程中发生错误：%s", exc)
-                    self._set_status("状态：解析失败")
-                    self.action_mode = "detect"
-                    self._set_action_state("detect")
+                    # 构建markdown（需要note注入到每个block）
+                    markdown_content = self._reconstruct_markdown(detection.blocks)
+
+                    # 定义回调函数，用于实时更新UI
+                    def on_event(event: QuizProcessingEvent):
+                        """每个题目处理完成时的回调"""
+                        # 更新row状态
+                        self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
+
+                        # 更新items列表（只保存成功的）
+                        if event.status == "success" and event.item:
+                            items.append(event.item)
+
+                        # 累计tokens
+                        nonlocal running_tokens
+                        running_tokens = running_tokens + event.tokens
+
+                        # 更新计数和UI
+                        self._processed_count += 1
+                        self._total_tokens = running_tokens.total_tokens
+                        self._update_total_progress(self._processed_count, total_questions)
+                        self._refresh_stats(total_questions)
+
+                    try:
+                        result = await use_case.execute_async(
+                            markdown_content,
+                            show_progress=False,
+                            on_event_callback=on_event
+                        )
+
+                        # execute_async完成后，items已经通过回调填充
+                        running_tokens = result.token_usage
+
+                        self.logger.info(f"并发处理完成：成功 {result.success_count}/{result.total_count} 题")
+
+                    except Exception as exc:
+                        self.logger.error(f"并发处理失败：{exc}")
+                        self._set_status("状态：并发解析失败")
+                        self.action_mode = "detect"
+                        self._set_action_state("detect")
+                        return
+
+                    # 跳过循环，直接到写入文件阶段
+                else:
+                    self.logger.error("并发模式但UseCase类型不匹配")
                     return
+            else:
+                # 顺序模式：原有逻辑
+                for index, block in enumerate(detection.blocks, start=1):
+                    self._mark_row_in_progress(index)
+                    self._set_status(f"状态：解析第 {index}/{total_questions} 题…")
+                    self._update_single_progress(reset=True)
+                    await asyncio.sleep(0)
 
-                self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
-                if event.status == "success" and event.item:
-                    items.append(event.item)
+                    try:
+                        event, running_tokens = await asyncio.to_thread(
+                            use_case.process_block,
+                            block,
+                            index,
+                            total_questions,
+                            running_tokens,
+                            note=user_note,
+                            show_spinner=False,
+                        )
+                    except Exception as exc:  # pragma: no cover - defensive
+                        self.logger.error("解析过程中发生错误：%s", exc)
+                        self._set_status("状态：解析失败")
+                        self.action_mode = "detect"
+                        self._set_action_state("detect")
+                        return
 
-                self._processed_count += 1
-                self._total_tokens = running_tokens.total_tokens
-                self._update_single_progress(done=True)
-                self._update_total_progress(self._processed_count, total_questions)
-                self._refresh_stats(total_questions)
-                await asyncio.sleep(0)
+                    self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
+                    if event.status == "success" and event.item:
+                        items.append(event.item)
+
+                    self._processed_count += 1
+                    self._total_tokens = running_tokens.total_tokens
+                    self._update_single_progress(done=True)
+                    self._update_total_progress(self._processed_count, total_questions)
+                    self._refresh_stats(total_questions)
+                    await asyncio.sleep(0)
 
             try:
                 output_dir_raw = self.output_path_input.value.strip()
@@ -830,9 +1109,12 @@ class MainScreen(Screen):
             self._set_auto_field(self.model_input, detection.model_code)
             # 如果model_code在下拉列表中，也更新下拉选择
             if detection.model_code in self._model_option_values:
-                self.model_select.value = detection.model_code
+                self._apply_model_select_value(detection.model_code)
 
         self._update_analysis_summary(detection)
+
+        # 确保检测结果的模型配置与当前输入保持同步
+        self._refresh_detection_model()
 
     def _reset_detection(self) -> None:
         """Reset detection-related state when switching files."""
@@ -875,6 +1157,39 @@ class MainScreen(Screen):
         ]
         # 输出到日志
         self.logger.info("检测摘要:\n" + "\n".join(summary_lines))
+
+    def _refresh_detection_model(self) -> None:
+        """Update detection model info and output filename based on current input."""
+        if not self._detection:
+            return
+        try:
+            provider, model_id, model_code = self._resolve_model()
+        except Exception as exc:
+            self.logger.debug("解析模型输入失败，保持原配置：%s", exc)
+            return
+
+        detection = self._detection
+        old_code = detection.model_code
+        old_filename = detection.output_filename
+
+        detection.provider = provider
+        detection.model_id = model_id
+        detection.model_code = model_code
+        new_output_filename = generate_output_filename(
+            batch_id=detection.batch_id,
+            model_code=model_code,
+            input_filename=detection.file_path.name,
+            ext="txt",
+        )
+        detection.output_filename = new_output_filename
+        self._set_auto_field(self.output_filename_input, detection.output_filename)
+
+        if old_code != model_code or old_filename != new_output_filename:
+            self.logger.info(
+                "检测配置已更新：模型 %s，输出文件名调整为 %s",
+                model_code,
+                detection.output_filename,
+            )
 
     # endregion ------------------------------------------------------------------
 
@@ -1011,6 +1326,14 @@ class MainScreen(Screen):
             return
         row.status = "In Progress"
         self.questions_table.update_question_status(row.row_key, "In Progress")
+
+    def _mark_row_success(self, index: int) -> None:
+        """Mark the row as successfully processed."""
+        row = self._rows.get(index)
+        if not row:
+            return
+        row.status = "Done"
+        self.questions_table.update_question_status(row.row_key, "Done")
 
     # endregion ------------------------------------------------------------------
 
@@ -1185,30 +1508,19 @@ class MainScreen(Screen):
         """Set the default model after options are refreshed."""
         from memosyne.core.models import Configuration
 
-        # 设置下拉框的值
-        if default_model in self._model_option_values:
-            if hasattr(self.model_select, "set_value"):
-                try:
-                    self.model_select.set_value(default_model)
-                except Exception:
-                    try:
-                        self.model_select.action_select(default_model)
-                    except Exception:
-                        self.model_select.value = default_model
-            else:
-                try:
-                    self.model_select.action_select(default_model)
-                except Exception:
-                    self.model_select.value = default_model
-        else:
+        if default_model not in self._model_option_values:
             self.logger.warning("默认模型 %s 不在可选列表中", default_model)
 
-        if not getattr(self.model_select, "value", None) or self.model_select.value == getattr(self.model_select, "BLANK", object()):
+        self._apply_model_select_value(default_model)
+
+        current_value = self._extract_select_value(getattr(self.model_select, "value", None))
+        if not current_value:
             self.model_select.prompt = default_model
 
         # 设置输入框的值（使用新格式）
         model_display = Configuration.format_model(provider, default_model)
         self._set_auto_field(self.model_input, model_display)
+        self._refresh_detection_model()
 
     def _resolve_model(self) -> tuple[str, str, str]:
         """
@@ -1249,7 +1561,12 @@ class MainScreen(Screen):
 
         return provider, model_id, model_code
 
-    def _create_llm_adapter(self, provider: str, model_id: str) -> LithoformerLLMAdapter:
+    def _create_llm_adapter(
+        self,
+        provider: str,
+        model_id: str,
+        feature_config=None,
+    ) -> LithoformerLLMAdapter:
         """Create LLM adapter based on provider."""
         if provider == "anthropic":
             if not self.settings.anthropic_api_key:
@@ -1265,7 +1582,7 @@ class MainScreen(Screen):
                 api_key=self.settings.openai_api_key,
                 temperature=self.settings.default_temperature,
             )
-        return LithoformerLLMAdapter.from_provider(llm_provider)
+        return LithoformerLLMAdapter.from_provider(llm_provider, feature_config=feature_config)
 
     @staticmethod
     def _format_question_code(seed: int, index: int) -> str:
@@ -1313,6 +1630,26 @@ class MainScreen(Screen):
         avg = elapsed / completed
         remaining_seconds = max((total - completed) * avg, 0)
         return MainScreen._format_seconds(remaining_seconds)
+
+    @staticmethod
+    def _reconstruct_markdown(blocks: list[dict[str, str]]) -> str:
+        """
+        重建markdown内容（用于并发处理）
+
+        Args:
+            blocks: 题目块列表
+
+        Returns:
+            重建的markdown字符串
+        """
+        parts = []
+        for block in blocks:
+            if block.get("context"):
+                parts.append(f"```Context\n{block['context']}\n```\n")
+            parts.append(f"```Question\n{block.get('question', '')}\n```\n")
+            parts.append(f"```Answer\n{block.get('answer', '')}\n```\n")
+            parts.append("\n---\n\n")
+        return "".join(parts)
 
     @staticmethod
     def _build_date_text() -> str:

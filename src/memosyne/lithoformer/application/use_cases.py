@@ -209,7 +209,7 @@ class ParseQuizUseCase:
 
             candidate = QuizItem(**_normalize_question_dict(item_dict))
 
-            if is_quiz_item_valid(candidate):
+            if is_quiz_item_valid(candidate, self.feature_config):
                 status = "success"
                 item = candidate
             else:
@@ -296,7 +296,8 @@ class ParseQuizUseCase:
         self.stats_repo.save_stat(
             question_number=block.get("index", ""),
             model=self.model_identifier,
-            char_count=len(original_text),
+            input_char_count=len(original_text),
+            output_char_count=len(output_text),
             use_translation=use_translation,
             use_parsing=use_parsing,
             original_text=original_text[:50000],  # 截断到最大长度
@@ -434,6 +435,7 @@ class ConcurrentParseQuizUseCase:
         self,
         markdown: str,
         show_progress: bool = True,
+        on_event_callback: "Callable[[QuizProcessingEvent], None] | None" = None,
     ) -> ProcessResult[QuizItem]:
         """
         异步并发执行use case
@@ -441,12 +443,14 @@ class ConcurrentParseQuizUseCase:
         Args:
             markdown: Quiz markdown content
             show_progress: 是否显示进度
+            on_event_callback: 每个题目处理完成时的回调函数（用于实时UI更新）
 
         Returns:
             ProcessResult[QuizItem]
         """
         import asyncio
         from collections import defaultdict
+        from typing import Callable
 
         question_blocks = self._split_markdown(markdown)
         total_count = len(question_blocks)
@@ -474,9 +478,9 @@ class ConcurrentParseQuizUseCase:
                         self._build_stat_dict(block, event.item.model_dump(), event.elapsed)
                     )
 
-                if show_progress:
-                    # 更新进度（这里简化处理，实际TUI中需要更复杂的进度管理）
-                    pass
+                # 实时回调通知UI
+                if on_event_callback:
+                    on_event_callback(event)
 
         # 创建所有任务
         tasks = [
@@ -502,12 +506,17 @@ class ConcurrentParseQuizUseCase:
         for event in sorted_events:
             total_tokens = total_tokens + event.tokens
 
-        return ProcessResult(
+        result = ProcessResult(
             items=valid_items,
             success_count=len(valid_items),
             total_count=total_count,
             token_usage=total_tokens,
         )
+
+        # 将events存储为result的私有属性（用于TUI更新状态）
+        result._events = sorted_events  # type: ignore
+
+        return result
 
     async def _process_block_with_retry(
         self,
@@ -555,7 +564,7 @@ class ConcurrentParseQuizUseCase:
 
                 elapsed = perf_counter() - start_time
 
-                if is_quiz_item_valid(candidate):
+                if is_quiz_item_valid(candidate, self.feature_config):
                     return QuizProcessingEvent(
                         index=index,
                         total=total_count,
@@ -640,7 +649,8 @@ class ConcurrentParseQuizUseCase:
         return {
             "question_number": block.get("index", ""),
             "model": self.model_identifier,
-            "char_count": len(original_text),
+            "input_char_count": len(original_text),
+            "output_char_count": len(output_text),
             "use_translation": self.feature_config.enable_translation,
             "use_parsing": self.feature_config.enable_parsing,
             "original_text": original_text[:50000],

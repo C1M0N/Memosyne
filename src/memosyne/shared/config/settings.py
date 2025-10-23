@@ -7,7 +7,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .path_config import get_path_config
-from memosyne.core.interfaces import ConfigRepository
+from ...core.interfaces import ConfigRepository
 
 
 def _find_project_root() -> Path:

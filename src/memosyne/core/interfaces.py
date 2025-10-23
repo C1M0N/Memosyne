@@ -199,7 +199,8 @@ class StatsRepository(Protocol):
         self,
         question_number: str,
         model: str,
-        char_count: int,
+        input_char_count: int,
+        output_char_count: int,
         use_translation: bool,
         use_parsing: bool,
         original_text: str,
@@ -213,7 +214,8 @@ class StatsRepository(Protocol):
         Args:
             question_number: 题目编号
             model: 使用的模型（格式：Provider::model）
-            char_count: 字符数
+            input_char_count: 输入字符数
+            output_char_count: 输出字符数
             use_translation: 是否启用翻译
             use_parsing: 是否启用解析
             original_text: 原始文本（最长50000字符）
