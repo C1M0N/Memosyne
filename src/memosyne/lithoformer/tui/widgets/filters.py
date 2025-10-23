@@ -295,3 +295,100 @@ class ConfigReserved7Input(Input):
             placeholder="预留配置7",
         )
         self.border_title = "预留配置7"
+
+
+# === Feature Tab Widgets ===
+
+from textual.widgets import Checkbox
+
+
+class FeatureTranslationCheckbox(Checkbox):
+    """功能Tab - 翻译功能开关"""
+
+    def __init__(self, value: bool = True):
+        super().__init__(
+            "翻译功能",
+            value=value,
+            id="feature-translation",
+        )
+
+
+class FeatureParsingCheckbox(Checkbox):
+    """功能Tab - 解析功能开关"""
+
+    def __init__(self, value: bool = True):
+        super().__init__(
+            "解析功能",
+            value=value,
+            id="feature-parsing",
+        )
+
+
+class FeatureConcurrentCheckbox(Checkbox):
+    """功能Tab - 并发处理开关"""
+
+    def __init__(self, value: bool = False):
+        super().__init__(
+            "并发处理",
+            value=value,
+            id="feature-concurrent",
+        )
+
+
+class Feature001Checkbox(Checkbox):
+    """功能Tab - 预留功能001"""
+
+    def __init__(self, value: bool = False):
+        super().__init__(
+            "预留功能001",
+            value=value,
+            id="feature-001",
+        )
+
+
+class Feature002Checkbox(Checkbox):
+    """功能Tab - 预留功能002"""
+
+    def __init__(self, value: bool = False):
+        super().__init__(
+            "预留功能002",
+            value=value,
+            id="feature-002",
+        )
+
+
+class Feature003Checkbox(Checkbox):
+    """功能Tab - 预留功能003"""
+
+    def __init__(self, value: bool = False):
+        super().__init__(
+            "预留功能003",
+            value=value,
+            id="feature-003",
+        )
+
+
+# === Config Tab - 新增并发配置 ===
+
+class ConfigMaxConcurrentInput(Input):
+    """Config widget for maximum concurrent tasks."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-max-concurrent",
+            value=value or "10",
+            placeholder="并发数（1-100）",
+        )
+        self.border_title = "并发数"
+
+
+class ConfigMaxRetriesInput(Input):
+    """Config widget for maximum retries."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="config-max-retries",
+            value=value or "1",
+            placeholder="重试次数（0-10）",
+        )
+        self.border_title = "重试次数"

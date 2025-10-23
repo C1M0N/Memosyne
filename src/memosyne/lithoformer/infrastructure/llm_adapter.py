@@ -7,6 +7,7 @@ LLM 适配器：实现 Application 层的 LLMPort 接口
 - 封装 LLM Provider（OpenAI/Anthropic）
 - 注入 Lithoformer 特定的 Prompts 和 Schemas
 - 处理 LLM 调用和错误
+- 支持动态配置（v0.11+）：根据功能开关动态生成schema和prompt
 
 DDD 原则（Phase 4.6）：
 - Prompts 和 Schemas 属于子域业务逻辑
@@ -16,19 +17,27 @@ DDD 原则（Phase 4.6）：
 from typing import Any
 
 from ...core.interfaces import LLMProvider, LLMError
-from .prompts import LITHOFORMER_SYSTEM_PROMPT, LITHOFORMER_USER_TEMPLATE
-from .schemas import QUESTION_SCHEMA
+from .prompts import (
+    LITHOFORMER_SYSTEM_PROMPT,
+    LITHOFORMER_USER_TEMPLATE,
+    get_dynamic_system_prompt,
+    get_dynamic_user_prompt,
+)
+from .schemas import QUESTION_SCHEMA, get_dynamic_schema
+from ..domain.models import FeatureConfig
 
 
 class LithoformerLLMAdapter:
     """Lithoformer LLM Adapter (implements LLMPort)"""
 
-    def __init__(self, provider: LLMProvider):
+    def __init__(self, provider: LLMProvider, feature_config: FeatureConfig | None = None):
         """
         Args:
             provider: LLM 提供商（OpenAI/Anthropic）
+            feature_config: 功能配置（可选）。如果提供，将使用动态schema和prompt
         """
         self.provider = provider
+        self.feature_config = feature_config
 
     def parse_question(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
         """
@@ -52,6 +61,17 @@ class LithoformerLLMAdapter:
             if not question:
                 raise LLMError("题目内容为空，无法解析")
 
+            # 根据feature_config选择schema和prompt
+            if self.feature_config:
+                # 使用动态schema和prompt
+                schema_type = self.feature_config.get_schema_type()
+                schema = get_dynamic_schema(schema_type)
+                system_prompt = get_dynamic_system_prompt(schema_type)
+            else:
+                # 使用默认schema和prompt（向后兼容）
+                schema = QUESTION_SCHEMA
+                system_prompt = LITHOFORMER_SYSTEM_PROMPT
+
             user_prompt = LITHOFORMER_USER_TEMPLATE.format(
                 context=context if context else "",
                 question=question,
@@ -64,10 +84,10 @@ class LithoformerLLMAdapter:
 
             # 调用底层 LLM Provider 的通用方法
             llm_response, token_usage = self.provider.complete_structured(
-                system_prompt=LITHOFORMER_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                schema=QUESTION_SCHEMA["schema"],
-                schema_name=QUESTION_SCHEMA["name"]
+                schema=schema["schema"],
+                schema_name=schema["name"]
             )
 
             if not isinstance(llm_response, dict):
@@ -90,14 +110,19 @@ class LithoformerLLMAdapter:
             raise LLMError(f"LLM 调用失败：{e}") from e
 
     @classmethod
-    def from_provider(cls, provider: LLMProvider) -> "LithoformerLLMAdapter":
+    def from_provider(
+        cls,
+        provider: LLMProvider,
+        feature_config: FeatureConfig | None = None
+    ) -> "LithoformerLLMAdapter":
         """
         工厂方法：从 LLM Provider 创建适配器
 
         Args:
             provider: LLM 提供商
+            feature_config: 功能配置（可选）
 
         Returns:
             LithoformerLLMAdapter 实例
         """
-        return cls(provider=provider)
+        return cls(provider=provider, feature_config=feature_config)

@@ -159,6 +159,59 @@ class QuizResponse(BaseModel):
         return [item for item in self.items if item.is_valid()]
 
 
+class FeatureConfig(BaseModel):
+    """
+    功能配置值对象
+
+    控制解析过程中的各项功能开关
+    """
+    enable_translation: bool = Field(
+        default=True,
+        description="是否启用翻译功能"
+    )
+    enable_parsing: bool = Field(
+        default=True,
+        description="是否启用解析功能（analysis字段）"
+    )
+    enable_concurrent: bool = Field(
+        default=False,
+        description="是否启用并发处理"
+    )
+    max_concurrent: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="最大并发数"
+    )
+    max_retries: int = Field(
+        default=1,
+        ge=0,
+        le=10,
+        description="失败重试次数"
+    )
+
+    # 预留功能开关
+    feature_001: bool = Field(default=False, description="预留功能001")
+    feature_002: bool = Field(default=False, description="预留功能002")
+    feature_003: bool = Field(default=False, description="预留功能003")
+
+    def get_schema_type(self) -> str:
+        """
+        根据功能配置返回schema类型标识
+
+        Returns:
+            schema类型：full/no_translation/no_analysis/minimal
+        """
+        if self.enable_translation and self.enable_parsing:
+            return "full"
+        elif not self.enable_translation and self.enable_parsing:
+            return "no_translation"
+        elif self.enable_translation and not self.enable_parsing:
+            return "no_analysis"
+        else:
+            return "minimal"
+
+
 # ============================================================
 # Usage examples
 # ============================================================

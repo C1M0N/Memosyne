@@ -170,6 +170,90 @@ class ConfigRepository(Protocol):
         ...
 
 
+class FeatureConfigRepository(Protocol):
+    """功能配置仓储协议（用于管理功能开关状态）"""
+
+    def get(self) -> dict[str, Any]:
+        """
+        获取功能配置（单行配置）
+
+        Returns:
+            功能配置字典，包含所有功能开关状态
+        """
+        ...
+
+    def update(self, **kwargs: bool) -> None:
+        """
+        更新功能配置
+
+        Args:
+            **kwargs: 功能字段及其值（如 enable_translation=True）
+        """
+        ...
+
+
+class StatsRepository(Protocol):
+    """处理统计仓储协议（用于记录问题处理的性能数据）"""
+
+    def save_stat(
+        self,
+        question_number: str,
+        model: str,
+        char_count: int,
+        use_translation: bool,
+        use_parsing: bool,
+        original_text: str,
+        output_text: str,
+        output_filename: str,
+        processing_time: float,
+    ) -> None:
+        """
+        保存单条处理统计
+
+        Args:
+            question_number: 题目编号
+            model: 使用的模型（格式：Provider::model）
+            char_count: 字符数
+            use_translation: 是否启用翻译
+            use_parsing: 是否启用解析
+            original_text: 原始文本（最长50000字符）
+            output_text: 输出文本（最长50000字符）
+            output_filename: 输出文件名
+            processing_time: 处理时长（秒）
+        """
+        ...
+
+    def batch_save_stats(self, stats: list[dict[str, Any]]) -> None:
+        """
+        批量保存统计数据
+
+        Args:
+            stats: 统计数据列表
+        """
+        ...
+
+    def get_estimated_time(
+        self,
+        model: str,
+        char_count: int,
+        use_translation: bool,
+        use_parsing: bool,
+    ) -> float | None:
+        """
+        获取预估处理时长（基于历史数据）
+
+        Args:
+            model: 使用的模型
+            char_count: 字符数
+            use_translation: 是否启用翻译
+            use_parsing: 是否启用解析
+
+        Returns:
+            预估时长（秒），如果没有历史数据返回 None
+        """
+        ...
+
+
 # ============================================================
 # 自定义异常
 # ============================================================
