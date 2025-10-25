@@ -9,8 +9,10 @@ Usage:
     ./scripts/LfC.sh
 """
 from pathlib import Path
+import argparse
 
 from ...shared.config import get_settings
+from ...shared.infrastructure.app_config import SQLiteAppConfigService
 from ...shared.infrastructure.llm import OpenAIProvider, AnthropicProvider
 from ...shared.utils import (
     BatchIDGenerator,
@@ -22,6 +24,8 @@ from ...shared.utils import (
 )
 from ...shared.cli.prompts import ask
 from ..application import ParseQuizUseCase
+from ..application.factory import UseCaseFactory
+from ..application.use_cases import ConcurrentParseQuizUseCase
 from ..infrastructure import LithoformerLLMAdapter, FileAdapter, FormatterAdapter
 from ..domain.services import (
     infer_titles_from_filename,
@@ -32,13 +36,32 @@ from ..domain.services import (
 
 def main():
     """CLI main function"""
-    print("=== Lithoformer | Quiz Parsing Tool (Refactored v3.0) ===")
+    print("=== Lithoformer | Quiz Parsing Tool (Refactored v3.1) ===")
+
+    parser = argparse.ArgumentParser(description="Lithoformer CLI")
+    parser.add_argument("-m", "--model", dest="model", help="Model id or 4-char code; '4' for default OpenAI; 'claude' for default Anthropic")
+    parser.add_argument("-i", "--input", dest="input", help="Input Markdown file path")
+    parser.add_argument("-o", "--output", dest="output", help="Output directory path")
+    parser.add_argument("--concurrent", dest="concurrent", action="store_true", help="Enable concurrent mode")
+    parser.add_argument("--no-concurrent", dest="concurrent", action="store_false", help="Disable concurrent mode")
+    parser.set_defaults(concurrent=None)
+    parser.add_argument("--max-concurrent", dest="max_concurrent", type=int, help="Max concurrency (1-100)")
+    parser.add_argument("--max-retries", dest="max_retries", type=int, help="Max retries (0-10)")
+    parser.add_argument("--save-default-dirs", dest="save_defaults", action="store_true", help="Save provided input/output dirs into config.db")
+    args = parser.parse_args()
 
     settings = get_settings()
     settings.ensure_dirs()
+    appcfg = SQLiteAppConfigService(settings.db_dir / "config.db")
 
-    model_input = ask("Engine (4-digit code like o4oo/cs45):")
-    input_raw = ask("Input Markdown file (default misc/input/lithoformer/...):", required=False)
+    # Resolve model input
+    if args.model:
+        model_input = args.model
+    else:
+        model_input = ask("Engine (4-digit code like o4oo/cs45):")
+
+    # Resolve input path string
+    input_raw = args.input if args.input else ask("Input Markdown file (default misc/input/lithoformer/...):", required=False)
 
     # Parse inputs
     try:
@@ -59,7 +82,10 @@ def main():
         return
 
     # Resolve input path
-    default_input = settings.lithoformer_input_dir / "Chapter 3 Quiz- Assessment and Classification of Mental Disorders.md"
+    # Default input: prefer AppConfigService path; fallback to sample
+    paths = appcfg.get_paths()
+    default_input_root = paths.input_dir if paths and paths.input_dir else settings.lithoformer_input_dir
+    default_input = default_input_root / "Chapter 3 Quiz- Assessment and Classification of Mental Disorders.md"
     input_value = input_raw.strip()
     if input_value:
         potential = Path(input_value)
@@ -100,26 +126,77 @@ def main():
         title_sub = fallback_sub
     print(f"[Title   ] {title_main} | {title_sub}")
 
-    # Create LLM Provider
-    if provider_type == "anthropic":
-        if not settings.anthropic_api_key:
-            print("Anthropic provider selected，但未配置 ANTHROPIC_API_KEY。请在 .env 中填写后重试。")
-            return
-        llm_provider = AnthropicProvider(model=model_id, api_key=settings.anthropic_api_key, temperature=settings.default_temperature)
-    else:
-        llm_provider = OpenAIProvider(model=model_id, api_key=settings.openai_api_key, temperature=settings.default_temperature)
+    # Build FeatureConfig from AppConfigService, apply CLI overrides
+    flags = appcfg.get_feature_flags()
+    tuning = appcfg.get_runtime_tuning()
+    from ..domain.models import FeatureConfig
+    feature_config = FeatureConfig(
+        enable_translation=flags.enable_translation,
+        enable_parsing=flags.enable_parsing,
+        enable_concurrent=flags.enable_concurrent,
+        max_concurrent=tuning.max_concurrent,
+        max_retries=tuning.max_retries,
+        feature_001=flags.feature_001,
+        feature_002=flags.feature_002,
+        feature_003=flags.feature_003,
+    )
 
-    # Create adapters
-    llm_adapter = LithoformerLLMAdapter.from_provider(llm_provider)
+    # CLI overrides
+    if args.concurrent is not None:
+        feature_config.enable_concurrent = bool(args.concurrent)
+    if args.max_concurrent is not None:
+        feature_config.max_concurrent = max(1, min(100, int(args.max_concurrent)))
+    if args.max_retries is not None:
+        feature_config.max_retries = max(0, min(10, int(args.max_retries)))
 
-    # Create use case
-    use_case = ParseQuizUseCase(llm=llm_adapter)
+    # Create stats repository
+    from ...shared.infrastructure.config_db import get_stats_repository
+    stats_repo = get_stats_repository(settings.db_dir / "stat.db")
+
+    # Use factory to assemble
+    factory = UseCaseFactory(settings)
+    use_case, model_identifier = factory.build_use_case(
+        provider=provider_type,
+        model_id=model_id,
+        feature_config=feature_config,
+        stats_repo=stats_repo,
+        output_filename="",
+    )
 
     # Execute
     try:
-        result = use_case.execute(markdown, show_progress=True)
-        print(f"✅ Parsed {result.success_count} questions")
-        print(f"   Token usage: {result.token_usage}")
+        if feature_config.enable_concurrent:
+            # Concurrent: stream events
+            print(f"并发解析中（{feature_config.max_concurrent} 线程，重试 {feature_config.max_retries}）...")
+            running_total = 0
+            items = []
+            async def _run_async():
+                nonlocal running_total, items
+                uc = ConcurrentParseQuizUseCase(
+                    llm=use_case.llm,
+                    feature_config=feature_config,
+                    stats_repo=stats_repo,
+                    model_identifier=model_identifier,
+                    output_filename="",
+                )
+                async for event in uc.stream_async(markdown):
+                    if event.status == "success" and event.item:
+                        items.append(event.item)
+                    running_total += event.tokens.total_tokens
+                    print(f"完成 {event.index}/{event.total} - tokens累计 {running_total}")
+                return items, running_total
+
+            import asyncio
+            items, total_tokens = asyncio.run(_run_async())
+            from ...core.models import TokenUsage
+            result_items = items
+            token_usage = TokenUsage(total_tokens=total_tokens)
+        else:
+            result = use_case.execute(markdown, show_progress=True)
+            result_items = result.items
+            token_usage = result.token_usage
+            print(f"✅ Parsed {result.success_count} questions")
+            print(f"   Token usage: {result.token_usage}")
     except Exception as e:
         import traceback
         print(f"Parsing failed: {e}")
@@ -127,7 +204,13 @@ def main():
         return
 
     # Resolve output directory (avoid read-only samples)
-    output_dir = settings.lithoformer_output_dir
+    op_paths = appcfg.get_paths()
+    if args.output:
+        output_dir = Path(args.output).expanduser()
+        if not output_dir.is_absolute():
+            output_dir = Path.cwd() / output_dir
+    else:
+        output_dir = op_paths.output_dir if op_paths and op_paths.output_dir else settings.lithoformer_output_dir
     if settings.is_sample_path(output_dir):
         print("⚠️  默认输出目录位于 misc 示例资源中（只读）。请指定实际的输出目录。")
         custom_dir = ask("Output directory (absolute or relative path):", required=True)
@@ -136,6 +219,13 @@ def main():
             output_dir = Path.cwd() / output_dir
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Optionally persist defaults
+    if args.save_defaults:
+        try:
+            appcfg.update_paths(input_dir=str(default_input_root), output_dir=str(output_dir))
+            print("[Config] 默认路径已保存到 config.db")
+        except Exception as e:
+            print(f"[Config] 保存默认路径失败: {e}")
     batch_gen = BatchIDGenerator(output_dir=output_dir, timezone=settings.batch_timezone)
     batch_id = batch_gen.generate(term_count=result.success_count)
 
@@ -146,7 +236,7 @@ def main():
     # Format output
     formatter_adapter = FormatterAdapter.create()
     output_text = formatter_adapter.format(
-        result.items,
+        result_items,
         title_main,
         title_sub,
         batch_code=batch_id,

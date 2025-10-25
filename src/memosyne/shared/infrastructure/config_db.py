@@ -50,10 +50,10 @@ class SQLiteConfigRepository:
                 """
             )
 
-            # 2. 功能状态表（单行配置）
+            # 2. 功能状态表（单行配置）— 新表名：feature
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS feature_config (
+                CREATE TABLE IF NOT EXISTS feature (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     enable_translation BOOLEAN DEFAULT 1,
                     enable_parsing BOOLEAN DEFAULT 1,
@@ -66,13 +66,36 @@ class SQLiteConfigRepository:
                 """
             )
 
-            # 初始化feature_config表（确保有且仅有一行）
+            # 初始化feature表（确保有且仅有一行）
             conn.execute(
                 """
-                INSERT OR IGNORE INTO feature_config (id, updated_at)
+                INSERT OR IGNORE INTO feature (id, updated_at)
                 VALUES (1, datetime('now'))
                 """
             )
+
+            # 3. 迁移旧表 feature_config -> feature（如存在）
+            cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='feature_config'")
+            if cur.fetchone():
+                # 将旧表数据迁移到新表
+                conn.execute(
+                    """
+                    UPDATE feature SET
+                        enable_translation = COALESCE((SELECT enable_translation FROM feature_config WHERE id = 1), enable_translation),
+                        enable_parsing = COALESCE((SELECT enable_parsing FROM feature_config WHERE id = 1), enable_parsing),
+                        enable_concurrent = COALESCE((SELECT enable_concurrent FROM feature_config WHERE id = 1), enable_concurrent),
+                        feature_001 = COALESCE((SELECT feature_001 FROM feature_config WHERE id = 1), feature_001),
+                        feature_002 = COALESCE((SELECT feature_002 FROM feature_config WHERE id = 1), feature_002),
+                        feature_003 = COALESCE((SELECT feature_003 FROM feature_config WHERE id = 1), feature_003),
+                        updated_at = datetime('now')
+                    WHERE id = 1
+                    """
+                )
+                # 删除旧表
+                conn.execute("DROP TABLE IF EXISTS feature_config")
+
+            # 4. 清理遗留统计表（已迁移到 stat.db）
+            conn.execute("DROP TABLE IF EXISTS processing_stats")
 
             conn.commit()
 
@@ -167,7 +190,7 @@ class SQLiteFeatureConfigRepository:
     """
     SQLite 功能配置仓储实现
 
-    管理单行功能配置表（feature_config）
+    管理单行功能配置表（feature）
     """
 
     def __init__(self, db_path: Path):
@@ -187,7 +210,7 @@ class SQLiteFeatureConfigRepository:
                 """
                 SELECT enable_translation, enable_parsing, enable_concurrent,
                        feature_001, feature_002, feature_003
-                FROM feature_config WHERE id = 1
+                FROM feature WHERE id = 1
                 """
             )
             row = cursor.fetchone()
@@ -237,7 +260,7 @@ class SQLiteFeatureConfigRepository:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
                 f"""
-                UPDATE feature_config
+                UPDATE feature
                 SET {set_clause}, updated_at = ?
                 WHERE id = 1
                 """,
@@ -290,6 +313,5 @@ __all__ = [
     "get_config_repository",
     "SQLiteFeatureConfigRepository",
     "get_feature_config_repository",
-    "SQLiteStatsRepository",
     "get_stats_repository",
 ]

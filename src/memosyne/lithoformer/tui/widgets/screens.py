@@ -258,9 +258,12 @@ class MainScreen(Screen):
                             with TabPane(title="配置", id="tab-config"):
                                 # 从数据库读取配置值
                                 config_repo = self.settings._config_repo
-                                default_input = config_repo.get("lithoformer_input_dir") if config_repo else ""
-                                default_output = config_repo.get("lithoformer_output_dir") if config_repo else ""
-                                default_model = config_repo.get("default_model") if config_repo else ""
+                                from ....shared.infrastructure.app_config import SQLiteAppConfigService
+                                appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+                                paths = appcfg.get_paths()
+                                default_input = str(paths.input_dir) if paths.input_dir else ""
+                                default_output = str(paths.output_dir) if paths.output_dir else ""
+                                default_model = appcfg.get_default_model()
                                 max_concurrent = config_repo.get("max_concurrent") if config_repo else "10"
                                 max_retries = config_repo.get("max_retries") if config_repo else "1"
                                 reserved_3 = config_repo.get("reserved_config_3") if config_repo else ""
@@ -282,21 +285,21 @@ class MainScreen(Screen):
 
                             # 第四个选项卡：功能开关
                             with TabPane(title="功能", id="tab-features"):
-                                # 从数据库读取功能配置
-                                from ....shared.infrastructure.config_db import get_feature_config_repository
-                                feature_repo = get_feature_config_repository(self.settings.db_dir / "config.db")
-                                feature_config = feature_repo.get()
+                                # 读取功能配置（统一服务）
+                                from ....shared.infrastructure.app_config import SQLiteAppConfigService
+                                appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+                                flags = appcfg.get_feature_flags()
 
                                 # 2x3网格布局
                                 with Horizontal(id="feature-row-1"):
-                                    yield FeatureTranslationCheckbox(value=feature_config.get("enable_translation", True))
-                                    yield FeatureParsingCheckbox(value=feature_config.get("enable_parsing", True))
-                                    yield Feature001Checkbox(value=feature_config.get("feature_001", False))
+                                    yield FeatureTranslationCheckbox(value=flags.enable_translation)
+                                    yield FeatureParsingCheckbox(value=flags.enable_parsing)
+                                    yield Feature001Checkbox(value=flags.feature_001)
 
                                 with Horizontal(id="feature-row-2"):
-                                    yield FeatureConcurrentCheckbox(value=feature_config.get("enable_concurrent", False))
-                                    yield Feature002Checkbox(value=feature_config.get("feature_002", False))
-                                    yield Feature003Checkbox(value=feature_config.get("feature_003", False))
+                                    yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
+                                    yield Feature002Checkbox(value=flags.feature_002)
+                                    yield Feature003Checkbox(value=flags.feature_003)
 
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):
@@ -596,10 +599,16 @@ class MainScreen(Screen):
             # 检查其他输入是否都有效，如果都有效则启用按钮
             self._check_all_validations()
 
-        # 保存到数据库
-        if self.settings._config_repo:
-            self.settings.save_config(config_key, value)
-            self.settings.reload_from_db()
+        # 保存到数据库（统一服务）
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+        if config_key in {"lithoformer_input_dir", "lithoformer_output_dir"}:
+            if config_key == "lithoformer_input_dir":
+                appcfg.update_paths(input_dir=value)
+            else:
+                appcfg.update_paths(output_dir=value)
+        else:
+            appcfg.set_config(config_key, value)
 
             # 特殊处理：如果修改的是默认模型，同步更新"输入"tab（仅当用户未手动修改时）
             if config_key == "default_model" and value and "model-input" not in self._manual_overrides:
@@ -607,17 +616,14 @@ class MainScreen(Screen):
                 config = Configuration(default_model=value)
                 provider, model = config.parse_model()
 
-                # 更新provider选择（如果provider改变了）
                 current_provider = self._extract_select_value(getattr(self.provider_select, "value", None))
                 if current_provider != provider:
                     self.provider_select.value = provider
                     self._refresh_model_options(provider)
 
-                # 更新模型下拉框（如果模型在列表中）
                 if model in self._model_option_values:
                     self._apply_model_select_value(model)
 
-                # 更新模型输入框
                 self._set_auto_field(self.model_input, value)
 
             # 记录日志
@@ -657,7 +663,7 @@ class MainScreen(Screen):
     async def handle_feature_changed(self, event) -> None:
         """保存功能配置到数据库（实时）"""
         from textual.widgets import Checkbox
-        from ....shared.infrastructure.config_db import get_feature_config_repository
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
 
         if not isinstance(event.checkbox, Checkbox):
             return
@@ -677,9 +683,9 @@ class MainScreen(Screen):
 
         feature_key = feature_key_map.get(widget_id)
         if feature_key:
-            # 保存到数据库
-            feature_repo = get_feature_config_repository(self.settings.db_dir / "config.db")
-            feature_repo.update(**{feature_key: is_checked})
+            # 保存到数据库（统一服务）
+            appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+            appcfg.update_feature_flags(**{feature_key: is_checked})
 
             # 记录日志
             status = "启用" if is_checked else "禁用"
@@ -748,28 +754,25 @@ class MainScreen(Screen):
 
         detection = self._detection
 
-        # 读取功能配置
-        from ....shared.infrastructure.config_db import get_feature_config_repository, get_stats_repository
+        # 读取功能配置（统一服务）
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
         from ...domain.models import FeatureConfig
+        from ....shared.infrastructure.config_db import get_stats_repository
 
-        feature_repo = get_feature_config_repository(self.settings.db_dir / "config.db")
-        feature_dict = feature_repo.get()
-
-        # 读取并发配置
-        config_repo = self.settings._config_repo
-        max_concurrent = int(config_repo.get("max_concurrent") or "10") if config_repo else 10
-        max_retries = int(config_repo.get("max_retries") or "1") if config_repo else 1
+        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+        flags = appcfg.get_feature_flags()
+        tuning = appcfg.get_runtime_tuning()
 
         # 构建FeatureConfig
         feature_config = FeatureConfig(
-            enable_translation=feature_dict.get("enable_translation", True),
-            enable_parsing=feature_dict.get("enable_parsing", True),
-            enable_concurrent=feature_dict.get("enable_concurrent", False),
-            max_concurrent=max_concurrent,
-            max_retries=max_retries,
-            feature_001=feature_dict.get("feature_001", False),
-            feature_002=feature_dict.get("feature_002", False),
-            feature_003=feature_dict.get("feature_003", False),
+            enable_translation=flags.enable_translation,
+            enable_parsing=flags.enable_parsing,
+            enable_concurrent=flags.enable_concurrent,
+            max_concurrent=tuning.max_concurrent,
+            max_retries=tuning.max_retries,
+            feature_001=flags.feature_001,
+            feature_002=flags.feature_002,
+            feature_003=flags.feature_003,
         )
 
         # 获取stats repository（使用独立的stat.db）
@@ -780,9 +783,18 @@ class MainScreen(Screen):
         model_identifier = Configuration.format_model(detection.provider, detection.model_id)
 
         try:
-            adapter = self._create_llm_adapter(detection.provider, detection.model_id, feature_config)
+            from ...application.factory import UseCaseFactory
+            factory = UseCaseFactory(self.settings)
+            # 先构建顺序 use case，后续根据开关选择并发路径（事件消费处区分）
+            use_case, model_identifier = factory.build_use_case(
+                provider=detection.provider,
+                model_id=detection.model_id,
+                feature_config=feature_config,
+                stats_repo=stats_repo,
+                output_filename=detection.output_filename,
+            )
         except Exception as exc:
-            self.logger.error("创建 LLM Provider 失败：%s", exc)
+            self.logger.error("创建 UseCase 失败：%s", exc)
             return
 
         self.action_mode = "running"
@@ -791,27 +803,6 @@ class MainScreen(Screen):
         self._run_start_time = perf_counter()
         self._processed_count = 0
         self._total_tokens = 0
-
-        # 根据并发开关选择UseCase
-        if feature_config.enable_concurrent:
-            from ...application.use_cases import ConcurrentParseQuizUseCase
-            use_case = ConcurrentParseQuizUseCase(
-                llm=adapter,
-                feature_config=feature_config,
-                stats_repo=stats_repo,
-                model_identifier=model_identifier,
-                output_filename=detection.output_filename,
-            )
-            self.logger.info(f"使用并发处理模式（并发数：{feature_config.max_concurrent}，重试次数：{feature_config.max_retries}）")
-        else:
-            use_case = ParseQuizUseCase(
-                llm=adapter,
-                stats_repo=stats_repo,
-                feature_config=feature_config,
-                model_identifier=model_identifier,
-                output_filename=detection.output_filename,
-            )
-            self.logger.info("使用顺序处理模式")
 
         formatter = FormatterAdapter.create()
         file_adapter = FileAdapter.create()
@@ -864,59 +855,76 @@ class MainScreen(Screen):
             if user_note:
                 self.logger.info("读取到用户备注：%s", user_note)
 
-            # 并发模式：使用回调实时更新UI
+            # 并发模式：统一异步事件流
             if feature_config.enable_concurrent:
                 from ...application.use_cases import ConcurrentParseQuizUseCase
                 if isinstance(use_case, ConcurrentParseQuizUseCase):
                     self.logger.info("并发处理中，请稍候...")
                     self._set_status(f"状态：并发解析中（{feature_config.max_concurrent}线程）...")
 
-                    # 构建markdown（需要note注入到每个block）
                     markdown_content = self._reconstruct_markdown(detection.blocks)
 
-                    # 定义回调函数，用于实时更新UI
-                    def on_event(event: QuizProcessingEvent):
-                        """每个题目处理完成时的回调"""
-                        # 更新row状态
-                        self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
-
-                        # 更新items列表（只保存成功的）
-                        if event.status == "success" and event.item:
-                            items.append(event.item)
-
-                        # 累计tokens
-                        nonlocal running_tokens
-                        running_tokens = running_tokens + event.tokens
-
-                        # 更新计数和UI
-                        self._processed_count += 1
-                        self._total_tokens = running_tokens.total_tokens
-                        self._update_total_progress(self._processed_count, total_questions)
-                        self._refresh_stats(total_questions)
-
                     try:
-                        result = await use_case.execute_async(
-                            markdown_content,
-                            show_progress=False,
-                            on_event_callback=on_event
+                        async for event in use_case.stream_async(markdown_content):
+                            # 更新row状态
+                            self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
+
+                            # 更新items列表（只保存成功的）
+                            if event.status == "success" and event.item:
+                                items.append(event.item)
+
+                            # 累计tokens
+                            running_tokens = running_tokens + event.tokens
+
+                            # 更新计数和UI
+                            self._processed_count += 1
+                            self._total_tokens = running_tokens.total_tokens
+                            self._update_total_progress(self._processed_count, total_questions)
+                            self._refresh_stats(total_questions)
+
+                        # 汇总token
+                        # 注意：并发模式的总token可按累计计算
+                        self.logger.info(
+                            f"并发处理完成：成功 {len(items)}/{total_questions} 题"
                         )
-
-                        # execute_async完成后，items已经通过回调填充
-                        running_tokens = result.token_usage
-
-                        self.logger.info(f"并发处理完成：成功 {result.success_count}/{result.total_count} 题")
-
                     except Exception as exc:
                         self.logger.error(f"并发处理失败：{exc}")
                         self._set_status("状态：并发解析失败")
                         self.action_mode = "detect"
                         self._set_action_state("detect")
                         return
-
-                    # 跳过循环，直接到写入文件阶段
                 else:
-                    self.logger.error("并发模式但UseCase类型不匹配")
-                    return
+                    # factory 默认返回顺序用例；并发事件由独立构造
+                    self.logger.info("切换为并发流模式")
+                    from ...application.use_cases import ConcurrentParseQuizUseCase
+                    use_case = ConcurrentParseQuizUseCase(
+                        llm=use_case.llm,  # 复用 adapter
+                        feature_config=feature_config,
+                        stats_repo=stats_repo,
+                        model_identifier=model_identifier,
+                        output_filename=detection.output_filename,
+                    )
+                    self._set_status(f"状态：并发解析中（{feature_config.max_concurrent}线程）...")
+                    markdown_content = self._reconstruct_markdown(detection.blocks)
+                    try:
+                        async for event in use_case.stream_async(markdown_content):
+                            self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
+                            if event.status == "success" and event.item:
+                                items.append(event.item)
+                            running_tokens = running_tokens + event.tokens
+                            self._processed_count += 1
+                            self._total_tokens = running_tokens.total_tokens
+                            self._update_total_progress(self._processed_count, total_questions)
+                            self._refresh_stats(total_questions)
+                        self.logger.info(
+                            f"并发处理完成：成功 {len(items)}/{total_questions} 题"
+                        )
+                    except Exception as exc:
+                        self.logger.error(f"并发处理失败：{exc}")
+                        self._set_status("状态：并发解析失败")
+                        self.action_mode = "detect"
+                        self._set_action_state("detect")
+                        return
             else:
                 # 顺序模式：原有逻辑
                 for index, block in enumerate(detection.blocks, start=1):

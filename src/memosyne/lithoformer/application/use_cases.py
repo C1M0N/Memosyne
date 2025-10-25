@@ -435,7 +435,6 @@ class ConcurrentParseQuizUseCase:
         self,
         markdown: str,
         show_progress: bool = True,
-        on_event_callback: "Callable[[QuizProcessingEvent], None] | None" = None,
     ) -> ProcessResult[QuizItem]:
         """
         异步并发执行use case
@@ -450,7 +449,6 @@ class ConcurrentParseQuizUseCase:
         """
         import asyncio
         from collections import defaultdict
-        from typing import Callable
 
         question_blocks = self._split_markdown(markdown)
         total_count = len(question_blocks)
@@ -477,10 +475,6 @@ class ConcurrentParseQuizUseCase:
                     stats_buffer.append(
                         self._build_stat_dict(block, event.item.model_dump(), event.elapsed)
                     )
-
-                # 实时回调通知UI
-                if on_event_callback:
-                    on_event_callback(event)
 
         # 创建所有任务
         tasks = [
@@ -517,6 +511,30 @@ class ConcurrentParseQuizUseCase:
         result._events = sorted_events  # type: ignore
 
         return result
+
+    async def stream_async(self, markdown: str):
+        """
+        并发流式事件接口：统一与顺序版的事件消费模式。
+
+        Yields:
+            QuizProcessingEvent
+        """
+        import asyncio
+
+        question_blocks = self._split_markdown(markdown)
+        total_count = len(question_blocks)
+
+        semaphore = asyncio.Semaphore(self.feature_config.max_concurrent)
+
+        async def task_for(index: int, block: dict[str, str]):
+            async with semaphore:
+                return await self._process_block_with_retry(block, index, total_count)
+
+        tasks = [asyncio.create_task(task_for(i, b)) for i, b in enumerate(question_blocks, start=1)]
+
+        for coro in asyncio.as_completed(tasks):
+            event = await coro
+            yield event
 
     async def _process_block_with_retry(
         self,

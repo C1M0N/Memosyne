@@ -30,14 +30,14 @@ class Settings(BaseSettings):
     """
     应用配置（从环境变量和数据库加载）
 
-    配置优先级：
-    1. 数据库配置（SQLite）
-    2. 环境变量
-    3. path_config.json（已废弃）
+    配置优先级（v0.12+）：
+    1. 数据库（SQLite，config/feature，通过 AppConfigService 统一访问）
+    2. 环境变量（仅 API Key / 温度等敏感或会话级参数）
+    3. path_config.json（只读样本路径辅助；不作为可写默认）
     4. 默认值
     """
 
-    # 配置仓储（用于持久化配置）
+    # 已废弃：直接使用 AppConfigService 统一访问配置
     _config_repo: ConfigRepository | None = None
 
     # === LLM API 配置 ===
@@ -137,19 +137,18 @@ class Settings(BaseSettings):
         """
         Lithoformer 输入目录
 
-        优先级：数据库 > 环境变量 > path_config.json
+        优先级：数据库(AppConfig) > 环境变量覆盖 > path_config.json
         """
-        # 1. 优先从数据库读取
-        if self._config_repo:
-            db_value = self._config_repo.get("lithoformer_input_dir")
-            if db_value:
-                return Path(db_value)
-
-        # 2. 使用环境变量 override
+        try:
+            from memosyne.shared.infrastructure.app_config import SQLiteAppConfigService
+            appcfg = SQLiteAppConfigService(self.db_dir / "config.db")
+            paths = appcfg.get_paths()
+            if paths and paths.input_dir:
+                return paths.input_dir
+        except Exception:
+            pass
         if self.lithoformer_input_dir_override:
             return self._normalize_path(self.lithoformer_input_dir_override, _PATH_CONFIG.lithoformer_input)
-
-        # 3. fallback 到 path_config.json
         return _PATH_CONFIG.lithoformer_input
 
     @property
@@ -157,19 +156,18 @@ class Settings(BaseSettings):
         """
         Lithoformer 输出目录
 
-        优先级：数据库 > 环境变量 > path_config.json
+        优先级：数据库(AppConfig) > 环境变量覆盖 > path_config.json
         """
-        # 1. 优先从数据库读取
-        if self._config_repo:
-            db_value = self._config_repo.get("lithoformer_output_dir")
-            if db_value:
-                return Path(db_value)
-
-        # 2. 使用环境变量 override
+        try:
+            from memosyne.shared.infrastructure.app_config import SQLiteAppConfigService
+            appcfg = SQLiteAppConfigService(self.db_dir / "config.db")
+            paths = appcfg.get_paths()
+            if paths and paths.output_dir:
+                return paths.output_dir
+        except Exception:
+            pass
         if self.lithoformer_output_dir_override:
             return self._normalize_path(self.lithoformer_output_dir_override, _PATH_CONFIG.lithoformer_output)
-
-        # 3. fallback 到 path_config.json
         return _PATH_CONFIG.lithoformer_output
 
     @property
@@ -205,12 +203,7 @@ class Settings(BaseSettings):
         return default
 
     def set_config_repository(self, repo: ConfigRepository) -> None:
-        """
-        设置配置仓储（用于从数据库读取/写入配置）
-
-        Args:
-            repo: ConfigRepository 实现
-        """
+        """已废弃：请使用 AppConfigService 进行读写。保留此方法以避免旧代码报错。"""
         self._config_repo = repo
 
     def get_default_model(self) -> str:
@@ -220,10 +213,15 @@ class Settings(BaseSettings):
         Returns:
             默认模型字符串，如 "OpenAI::gpt-4o-mini"
         """
-        if self._config_repo:
-            db_value = self._config_repo.get("default_model")
-            if db_value:
-                return db_value
+        # 优先从 AppConfigService
+        try:
+            from memosyne.shared.infrastructure.app_config import SQLiteAppConfigService
+            appcfg = SQLiteAppConfigService(self.db_dir / "config.db")
+            value = appcfg.get_default_model()
+            if value:
+                return value
+        except Exception:
+            pass
         # fallback 到环境变量或默认值
         from memosyne.core.models import Configuration
         provider = self.default_llm_provider
@@ -238,9 +236,9 @@ class Settings(BaseSettings):
             key: 配置键
             value: 配置值
         """
-        if not self._config_repo:
-            raise ValueError("ConfigRepository 未初始化，请先调用 set_config_repository")
-        self._config_repo.set(key, value)
+        from memosyne.shared.infrastructure.app_config import SQLiteAppConfigService
+        appcfg = SQLiteAppConfigService(self.db_dir / "config.db")
+        appcfg.set_config(key, value)
 
     def reload_from_db(self) -> None:
         """从数据库重新加载配置（实时生效）"""
@@ -271,16 +269,6 @@ def get_settings(reload: bool = False) -> Settings:
     global _settings_instance
     if _settings_instance is None or reload:
         _settings_instance = Settings()
-
-        # 初始化配置仓储（从 SQLite 读取配置）
-        from memosyne.shared.infrastructure.config_db import get_config_repository
-        db_path = _settings_instance.db_dir / "config.db"
-        try:
-            config_repo = get_config_repository(db_path)
-            _settings_instance.set_config_repository(config_repo)
-        except Exception:
-            # 如果配置仓储初始化失败，继续使用默认配置
-            pass
 
     return _settings_instance
 

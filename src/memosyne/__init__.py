@@ -1,7 +1,7 @@
 """
 Memosyne - LLM-based terminology and quiz processing toolkit
 
-Version: 0.10.5a
+Version: 0.12.0a
 
 Quick Start:
     >>> from memosyne import reanimate, lithoform
@@ -22,7 +22,7 @@ Quick Start:
     >>> print(f"Token 使用: {result['token_usage']}")
 """
 
-__version__ = "0.10.5a"
+__version__ = "0.12.0a"
 __author__ = "Memosyne Team"
 
 # 导出主要 API

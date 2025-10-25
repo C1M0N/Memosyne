@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.10.5a-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.12.0a-orange.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-DDD%20%2B%20Hexagonal-purple.svg)]()
 
 *领域驱动设计、类型安全、生产就绪的 LLM 工作流工具*
@@ -140,6 +140,15 @@ python -m memosyne.lithoformer.cli.main
 ./scripts/LfT.sh
 ```
 
+### 配置
+
+- `.env` 仅包含敏感密钥（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 可选、`DEFAULT_TEMPERATURE` 可选）。
+- 其它运行参数统一保存在 `db/config.db`：
+  - `config` 表：`default_model`, `max_concurrent`, `max_retries`, `lithoformer_input_dir`, `lithoformer_output_dir` 等
+  - `feature` 表（单行）：`enable_translation`, `enable_parsing`, `enable_concurrent`, `feature_001..003`
+- TUI 的“配置/功能”选项卡读写上述配置；默认模型仅在“配置”Tab保存（下拉切换不落库）。
+- 统计数据在 `db/stat.db` 的 `processing_stats` 中。
+
 ### 方式 3：编程 API
 
 ```python
@@ -163,6 +172,27 @@ result = lithoform(
 print(f"✅ 解析了 {result['item_count']} 道题")
 print(f"📁 输出: {result['output_path']}")
 print(f"📊 Token 使用: {result['token_usage']['total_tokens']}")
+```
+
+### CLI 参数示例（并发/目录/默认保存）
+
+```bash
+# 并发开启 + 指定并发度/重试
+python -m memosyne.lithoformer.cli.main \
+  --model o4om \
+  --input ./my_quiz.md \
+  --output ./output \
+  --concurrent --max-concurrent 8 --max-retries 2
+
+# 关闭并发
+python -m memosyne.lithoformer.cli.main --model cs45 --no-concurrent --input quiz.md
+
+# 同时保存默认目录到 config.db（TUI/CLI 共享）
+python -m memosyne.lithoformer.cli.main \
+  --model 4 \
+  --input ./data/input/lithoformer/quiz.md \
+  --output ./data/output/lithoformer \
+  --save-default-dirs
 ```
 
 ### 方式 4：TUI 控制台

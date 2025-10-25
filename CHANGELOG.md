@@ -2,6 +2,24 @@
 
 All notable changes to this project are recorded here. Detailed iteration notes for the Lithoformer TUI live in `TUI_design_note/` and have been distilled into the entries below.
 
+## [v0.12.0a] - 2025-10-24
+
+### Changed
+- Consolidated all parameters into SQLite `config` table; feature flags moved to single-row `feature` table (auto-migrated from `feature_config`).
+- Removed `processing_stats` from `config.db` (stats live in `stat.db`).
+- Introduced `AppConfigService` (SQLite-backed) exposing typed models: `FeatureFlags`, `RuntimeTuning`, `AppConfigBundle`, `LithoformerPaths`.
+- TUI “配置/功能” tabs now read/write via `AppConfigService`; default model is persisted only from the “配置” tab (model dropdown does not persist).
+- Unified concurrent/sequential pipelines behind a single async event interface: `ConcurrentParseQuizUseCase.stream_async()`; TUI consumes events to update rows/progress/tokens.
+- Added `UseCaseFactory` to assemble provider/adapter/use case in the Application layer; TUI/CLI reuse the factory.
+- CLI reads defaults (paths, flags, tuning) from `AppConfigService`; supports concurrent mode and streams progress per question.
+- Settings refactor: only API keys (and temp) remain from `.env`; default dirs and model now resolved via `AppConfigService` with sample-dir safeguards.
+
+### Fixed
+- Model switching in TUI updates Detection snapshot (provider/model_code) and recomputes output filename immediately.
+
+### Notes
+- This release focuses on DDD + Hexagonal alignment: UI is thin, Application owns orchestration, Infrastructure centralizes persistence. Backward compatibility for old feature table is dropped in favor of auto-migration on startup.
+
 ## [v0.10.5a] - 2025-10-21
 
 ### Added

@@ -157,22 +157,22 @@ def main():
     # 3. Parse inputs
     try:
         provider_type, model_id, model_code, model_display = resolve_model_choice(model_input, settings)
-    input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimator_input_dir)
-    if not input_path.exists():
-        print("⚠️  未找到默认示例术语表。请提供要处理的 CSV 路径。")
-        user_path = ask("Input CSV path (absolute or relative):", required=True)
-        input_path = Path(user_path).expanduser()
-        if not input_path.is_absolute():
-            input_path = Path.cwd() / input_path
-        memo_str = ask("Starting Memo number (integer, e.g., 2700 for M002701):")
-        try:
-            start_memo = int(memo_str)
-        except ValueError:
-            print("Starting Memo number must be an integer")
-            return
+        input_path, start_memo = resolve_input_and_memo(path_input, settings.reanimator_input_dir)
+        if not input_path.exists():
+            print("⚠️  未找到默认示例术语表。请提供要处理的 CSV 路径。")
+            user_path = ask("Input CSV path (absolute or relative):", required=True)
+            input_path = Path(user_path).expanduser()
+            if not input_path.is_absolute():
+                input_path = Path.cwd() / input_path
+            memo_str = ask("Starting Memo number (integer, e.g., 2700 for M002701):")
+            try:
+                start_memo = int(memo_str)
+            except ValueError:
+                print("Starting Memo number must be an integer")
+                return
 
-    if settings.is_sample_path(input_path):
-        print("ℹ️  当前使用的是 misc 中的示例 CSV（只读）。如需处理自定义术语表，请在 TUI 的配置选项卡中修改默认路径或在此输入自定义路径。")
+        if settings.is_sample_path(input_path):
+            print("ℹ️  当前使用的是 misc 中的示例 CSV（只读）。如需处理自定义术语表，请在 TUI 的配置选项卡中修改默认路径或在此输入自定义路径。")
     except Exception as e:
         print(f"Parsing failed: {e}")
         return
