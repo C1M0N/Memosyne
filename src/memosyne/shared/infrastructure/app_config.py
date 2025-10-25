@@ -16,6 +16,13 @@ class SQLiteAppConfigService:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
+        self._ensure_db_exists()
+
+    def _ensure_db_exists(self) -> None:
+        """确保数据库表已初始化（使用全局单例）"""
+        from .config_db import get_config_repository
+        # 使用全局单例来初始化数据库，避免重复创建实例
+        get_config_repository(self.db_path)
 
     # --- feature flags ---
     def get_feature_flags(self) -> FeatureFlags:

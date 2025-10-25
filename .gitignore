@@ -50,3 +50,5 @@ src/memosyne/cli/lit/
 src/memosyne/cli/*.txt
 src/memosyne/cli/*.csv
 jiratui-main/
+
+test.txt

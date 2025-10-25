@@ -812,7 +812,7 @@ class MainScreen(Screen):
             return
 
         self._run_task = asyncio.create_task(
-            self._process_questions(detection, use_case, formatter, file_adapter, feature_config),
+            self._process_questions(detection, use_case, formatter, file_adapter, feature_config, stats_repo, model_identifier),
             name="LithoformerRunTask",
         )
 
@@ -823,9 +823,12 @@ class MainScreen(Screen):
         formatter: FormatterAdapter,
         file_adapter: FileAdapter,
         feature_config,
+        stats_repo,  # StatsRepository
+        model_identifier: str,
     ) -> None:
         """Background task that processes questions (sequential or concurrent)."""
         try:
+            self.logger.info("开始处理题目，模式：%s", "并发" if feature_config.enable_concurrent else "顺序")
             items: list = []
             total_questions = len(detection.questions)
             running_tokens = TokenUsage()
@@ -858,45 +861,9 @@ class MainScreen(Screen):
             # 并发模式：统一异步事件流
             if feature_config.enable_concurrent:
                 from ...application.use_cases import ConcurrentParseQuizUseCase
-                if isinstance(use_case, ConcurrentParseQuizUseCase):
-                    self.logger.info("并发处理中，请稍候...")
-                    self._set_status(f"状态：并发解析中（{feature_config.max_concurrent}线程）...")
 
-                    markdown_content = self._reconstruct_markdown(detection.blocks)
-
-                    try:
-                        async for event in use_case.stream_async(markdown_content):
-                            # 更新row状态
-                            self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
-
-                            # 更新items列表（只保存成功的）
-                            if event.status == "success" and event.item:
-                                items.append(event.item)
-
-                            # 累计tokens
-                            running_tokens = running_tokens + event.tokens
-
-                            # 更新计数和UI
-                            self._processed_count += 1
-                            self._total_tokens = running_tokens.total_tokens
-                            self._update_total_progress(self._processed_count, total_questions)
-                            self._refresh_stats(total_questions)
-
-                        # 汇总token
-                        # 注意：并发模式的总token可按累计计算
-                        self.logger.info(
-                            f"并发处理完成：成功 {len(items)}/{total_questions} 题"
-                        )
-                    except Exception as exc:
-                        self.logger.error(f"并发处理失败：{exc}")
-                        self._set_status("状态：并发解析失败")
-                        self.action_mode = "detect"
-                        self._set_action_state("detect")
-                        return
-                else:
-                    # factory 默认返回顺序用例；并发事件由独立构造
-                    self.logger.info("切换为并发流模式")
-                    from ...application.use_cases import ConcurrentParseQuizUseCase
+                # 如果工厂返回的不是并发用例，则手动构造
+                if not isinstance(use_case, ConcurrentParseQuizUseCase):
                     use_case = ConcurrentParseQuizUseCase(
                         llm=use_case.llm,  # 复用 adapter
                         feature_config=feature_config,
@@ -904,27 +871,45 @@ class MainScreen(Screen):
                         model_identifier=model_identifier,
                         output_filename=detection.output_filename,
                     )
-                    self._set_status(f"状态：并发解析中（{feature_config.max_concurrent}线程）...")
-                    markdown_content = self._reconstruct_markdown(detection.blocks)
-                    try:
-                        async for event in use_case.stream_async(markdown_content):
-                            self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
-                            if event.status == "success" and event.item:
-                                items.append(event.item)
-                            running_tokens = running_tokens + event.tokens
-                            self._processed_count += 1
-                            self._total_tokens = running_tokens.total_tokens
-                            self._update_total_progress(self._processed_count, total_questions)
-                            self._refresh_stats(total_questions)
-                        self.logger.info(
-                            f"并发处理完成：成功 {len(items)}/{total_questions} 题"
-                        )
-                    except Exception as exc:
-                        self.logger.error(f"并发处理失败：{exc}")
-                        self._set_status("状态：并发解析失败")
-                        self.action_mode = "detect"
-                        self._set_action_state("detect")
-                        return
+
+                self.logger.info("并发处理中，请稍候...")
+                self._set_status(f"状态：并发解析中（{feature_config.max_concurrent}线程）...")
+
+                markdown_content = self._reconstruct_markdown(detection.blocks)
+
+                # 使用字典按index存储items，避免乱序
+                items_dict: dict[int, QuizItem] = {}
+
+                try:
+                    async for event in use_case.stream_async(markdown_content):
+                        # 更新row状态
+                        self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
+
+                        # 按index存储成功的items
+                        if event.status == "success" and event.item:
+                            items_dict[event.index] = event.item
+
+                        # 累计tokens
+                        running_tokens = running_tokens + event.tokens
+
+                        # 更新计数和UI
+                        self._processed_count += 1
+                        self._total_tokens = running_tokens.total_tokens
+                        self._update_total_progress(self._processed_count, total_questions)
+                        self._refresh_stats(total_questions)
+
+                    # 按index排序items
+                    items = [items_dict[i] for i in sorted(items_dict.keys())]
+
+                    self.logger.info(
+                        f"并发处理完成：成功 {len(items)}/{total_questions} 题"
+                    )
+                except Exception as exc:
+                    self.logger.error(f"并发处理失败：{exc}")
+                    self._set_status("状态：并发解析失败")
+                    self.action_mode = "detect"
+                    self._set_action_state("detect")
+                    return
             else:
                 # 顺序模式：原有逻辑
                 for index, block in enumerate(detection.blocks, start=1):
@@ -1002,7 +987,15 @@ class MainScreen(Screen):
                 f"{self._total_tokens:,}",
             )
             self._set_status("状态：解析完成")
+        except Exception as exc:
+            # 捕获所有未处理的异常，确保被记录
+            self.logger.error("处理题目时发生未预期的错误：%s", exc, exc_info=True)
+            self._set_status(f"状态：处理失败 - {str(exc)[:50]}")
+            self.action_mode = "detect"
+            self._set_action_state("detect")
         finally:
+            # 无论如何都清理task引用，避免下次无法启动
+            self.logger.info("清理任务状态")
             self._run_start_time = None
             self.action_mode = "detect"
             self._set_action_state("detect")
@@ -1334,14 +1327,6 @@ class MainScreen(Screen):
             return
         row.status = "In Progress"
         self.questions_table.update_question_status(row.row_key, "In Progress")
-
-    def _mark_row_success(self, index: int) -> None:
-        """Mark the row as successfully processed."""
-        row = self._rows.get(index)
-        if not row:
-            return
-        row.status = "Done"
-        self.questions_table.update_question_status(row.row_key, "Done")
 
     # endregion ------------------------------------------------------------------
 

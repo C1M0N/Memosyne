@@ -403,8 +403,9 @@ class ConcurrentParseQuizUseCase:
 
     Features:
     - 支持max_concurrent限制并发数
-    - 失败重试（retry once）
-    - 429错误等待5秒
+    - 失败重试（retry with exponential backoff）
+    - 429错误使用指数退避（15秒起，每次翻倍，最长2分钟）
+    - 添加随机抖动避免并发请求同时重试
     - 内存缓冲+排序保证顺序
     - 进度条按完成数更新
     """
@@ -545,6 +546,8 @@ class ConcurrentParseQuizUseCase:
         """
         异步处理单个题目块（支持重试）
 
+        注意：成功时会实时保存统计数据
+
         Args:
             block: 题目块
             index: 题目索引
@@ -583,6 +586,26 @@ class ConcurrentParseQuizUseCase:
                 elapsed = perf_counter() - start_time
 
                 if is_quiz_item_valid(candidate, self.feature_config):
+                    # 实时保存统计（异步环境下，实时保存比批量保存更合适）
+                    if self.stats_repo:
+                        stat_dict = self._build_stat_dict(block, item_dict, elapsed)
+                        # 在asyncio环境中，使用线程池执行同步的数据库写入
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(
+                            None,
+                            self.stats_repo.save_stat,
+                            stat_dict["question_number"],
+                            stat_dict["model"],
+                            stat_dict["input_char_count"],
+                            stat_dict["output_char_count"],
+                            stat_dict["use_translation"],
+                            stat_dict["use_parsing"],
+                            stat_dict["original_text"],
+                            stat_dict["output_text"],
+                            stat_dict["output_filename"],
+                            stat_dict["processing_time"],
+                        )
+
                     return QuizProcessingEvent(
                         index=index,
                         total=total_count,
@@ -612,7 +635,22 @@ class ConcurrentParseQuizUseCase:
                 if "429" in str(exc) or "rate" in str(exc).lower():
                     if retry_count < max_retries:
                         retry_count += 1
-                        await asyncio.sleep(5)  # 等待5秒后重试
+                        # 指数退避 + 随机抖动（参考OpenAI最佳实践）
+                        # 基础等待时间：15秒（OpenAI建议的最小暂停时间）
+                        # 每次重试翻倍，并添加随机抖动避免同时重试
+                        import random
+                        base_delay = 15
+                        exponential_delay = base_delay * (2 ** (retry_count - 1))
+                        jitter = random.uniform(0, exponential_delay * 0.5)
+                        wait_time = min(exponential_delay + jitter, 120)  # 最多等待2分钟
+
+                        from logging import getLogger
+                        logger = getLogger("memosyne.lithoformer.application")
+                        logger.warning(
+                            f"题目#{index} 遇到429 Rate Limit错误 (第{retry_count}/{max_retries}次重试)，"
+                            f"等待{wait_time:.1f}秒后重试..."
+                        )
+                        await asyncio.sleep(wait_time)
                         continue
 
                 # 其他LLM错误或重试次数用尽
