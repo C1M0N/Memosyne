@@ -60,7 +60,8 @@ class RateLimitBar(Static):
 
         Returns:
             str: 格式化的rate limit进度条，例如：
-                "可用请求数：｜/////     ｜  59/500  可用tokens数：｜/         ｜149k/2.0M"
+                普通模型："可用请求数：｜/////     ｜  59/500  可用tokens数：｜/         ｜149k/2.0M"
+                4o-mini： "剩余请求数：9919  可用tokens数：｜////      ｜190k/200k"
         """
         if not self._rate_limit_info:
             return ""
@@ -70,28 +71,38 @@ class RateLimitBar(Static):
             limit_requests = self._rate_limit_info["limit_requests"]
             remaining_tokens = self._rate_limit_info["remaining_tokens"]
             limit_tokens = self._rate_limit_info["limit_tokens"]
+            model = self._rate_limit_info.get("model", "")
 
-            # 计算进度百分比
-            req_percentage = remaining_requests / limit_requests if limit_requests > 0 else 0
+            # 检测是否是gpt-4o-mini（OpenAI API返回的是RPD，不是RPM，容易误导）
+            is_4o_mini = "gpt-4o-mini" in model.lower()
+
+            # Tokens部分：所有模型都正常显示进度条
             tok_percentage = remaining_tokens / limit_tokens if limit_tokens > 0 else 0
-
-            # 生成8字符宽度的mini进度条
-            req_filled = int(req_percentage * 8)
-            req_bar = "/" * req_filled + " " * (8 - req_filled)
-
             tok_filled = int(tok_percentage * 8)
             tok_bar = "/" * tok_filled + " " * (8 - tok_filled)
-
-            # 格式化数字（4字符对齐）
-            req_remaining_str = self._format_number_compact(remaining_requests)
-            req_limit_str = self._format_number_compact(limit_requests)
             tok_remaining_str = self._format_number_compact(remaining_tokens)
             tok_limit_str = self._format_number_compact(limit_tokens)
+            tokens_part = f"可用tokens数：｜{tok_bar}｜{tok_remaining_str}/{tok_limit_str}"
 
-            return (
-                f"可用请求数：｜{req_bar}｜{req_remaining_str}/{req_limit_str}"
-                f"  可用tokens数：｜{tok_bar}｜{tok_remaining_str}/{tok_limit_str}"
-            )
+            # Requests部分：4o-mini特殊处理
+            if is_4o_mini:
+                # 4o-mini：只显示剩余数量，不显示进度条和总数（因为API返回的是RPD）
+                req_remaining_str = self._format_number_compact(remaining_requests)
+                requests_part = f"剩余请求数：{req_remaining_str}"
+            else:
+                # 其他模型：正常显示进度条
+                req_percentage = remaining_requests / limit_requests if limit_requests > 0 else 0
+                req_filled = int(req_percentage * 8)
+                req_bar = "/" * req_filled + " " * (8 - req_filled)
+                req_remaining_str = self._format_number_compact(remaining_requests)
+                req_limit_str = self._format_number_compact(limit_requests)
+                requests_part = f"可用请求数：｜{req_bar}｜{req_remaining_str}/{req_limit_str}"
+
+            # Reset时间部分（用于debug）
+            reset_seconds = self._rate_limit_info.get("reset_tokens_seconds")
+            reset_part = f"  重置：{reset_seconds}s" if reset_seconds is not None else ""
+
+            return f"{requests_part}  {tokens_part}{reset_part}"
 
         except (KeyError, TypeError, ZeroDivisionError):
             # 数据不完整或无效，返回空字符串

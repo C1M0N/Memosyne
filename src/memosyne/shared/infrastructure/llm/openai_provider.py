@@ -209,8 +209,7 @@ class OpenAIProvider(BaseLLMProvider):
             # 如果没有 usage 信息，返回全 0
             return TokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
-    @staticmethod
-    def _extract_rate_limit_info(headers) -> dict | None:
+    def _extract_rate_limit_info(self, headers) -> dict | None:
         """从响应headers中提取rate limit信息
 
         OpenAI API返回的headers格式：
@@ -224,23 +223,64 @@ class OpenAIProvider(BaseLLMProvider):
         """
         try:
             import time
+            from logging import getLogger
+
+            logger = getLogger("memosyne.shared.infrastructure.llm.openai")
+
+            # 调试：将所有rate limit相关的headers写入文件（首次调用）
+            rate_limit_headers = {k: v for k, v in headers.items() if k.lower().startswith("x-ratelimit")}
+            if rate_limit_headers:
+                # 使用类变量记录已打印次数
+                if not hasattr(OpenAIProvider, '_rate_limit_debug_count'):
+                    OpenAIProvider._rate_limit_debug_count = 0
+
+                OpenAIProvider._rate_limit_debug_count += 1
+
+                # 仅首次调用时写入文件（供调试用）
+                if OpenAIProvider._rate_limit_debug_count == 1:
+                    try:
+                        from pathlib import Path
+                        debug_file = Path.cwd() / "openai_rate_limit_headers_debug.txt"
+                        with open(debug_file, "w", encoding="utf-8") as f:
+                            f.write("=" * 60 + "\n")
+                            f.write(f"OpenAI API Rate Limit Headers (首次调用)\n")
+                            f.write(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                            f.write("=" * 60 + "\n\n")
+                            for key, value in sorted(rate_limit_headers.items()):
+                                f.write(f"{key}: {value}\n")
+                            f.write("\n" + "=" * 60 + "\n")
+                        logger.info(f"Rate limit headers已写入文件: {debug_file}")
+                    except Exception as e:
+                        logger.warning(f"无法写入调试文件: {e}")
 
             # 从headers提取rate limit信息
             remaining_requests = headers.get("x-ratelimit-remaining-requests")
             remaining_tokens = headers.get("x-ratelimit-remaining-tokens")
             limit_requests = headers.get("x-ratelimit-limit-requests")
             limit_tokens = headers.get("x-ratelimit-limit-tokens")
+            reset_tokens = headers.get("x-ratelimit-reset-tokens")
 
             # 如果任何一个关键值缺失，返回None
             if not all([remaining_requests, remaining_tokens, limit_requests, limit_tokens]):
                 return None
+
+            # 解析reset时间（格式："2.989s" -> 2秒）
+            reset_tokens_seconds = None
+            if reset_tokens:
+                try:
+                    # 移除"s"后缀，转换为float并取整
+                    reset_tokens_seconds = int(float(reset_tokens.rstrip('s')))
+                except (ValueError, AttributeError):
+                    reset_tokens_seconds = None
 
             return {
                 "remaining_requests": int(remaining_requests),
                 "limit_requests": int(limit_requests),
                 "remaining_tokens": int(remaining_tokens),
                 "limit_tokens": int(limit_tokens),
+                "reset_tokens_seconds": reset_tokens_seconds,  # 添加reset时间（用于debug）
                 "provider": "openai",
+                "model": self.model,  # 添加model信息，用于4o-mini特殊处理
                 "timestamp": time.time(),
             }
 
