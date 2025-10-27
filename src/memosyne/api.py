@@ -1,5 +1,5 @@
 """
-Memosyne API - 编程接口
+Memosyne API - 编程接口 
 
 提供简单的函数调用接口，用于在其他程序中使用 Reanimator 和 Lithoformer 功能
 
