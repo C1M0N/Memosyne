@@ -44,7 +44,10 @@ class QuestionsTable(DataTable):
             cursor_type="row",
             zebra_stripes=True,
         )
-        self.border_title = "题目列表"
+        # 禁用边框，占满空间
+        self.show_header = True
+        self.styles.border = ("none", "transparent")
+        self.styles.height = "1fr"
         self._setup_columns()
 
     def _setup_columns(self) -> None:

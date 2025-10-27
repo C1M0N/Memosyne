@@ -39,10 +39,19 @@ class ProviderSelectionInput(Select):
     """Selection widget for choosing the LLM provider."""
 
     def __init__(self, value: str | None = None):
-        options = [
-            ("OpenAI", "openai"),
-            ("Anthropic", "anthropic"),
-        ]
+        # 从数据库动态加载提供商列表（不再硬编码）
+        from ....shared.config import get_settings
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+
+        settings = get_settings()
+        db_path = settings.db_dir / "config.db"
+        service = SQLiteAppConfigService(db_path)
+        options = service.get_providers_list()
+
+        # 如果数据库为空，使用默认值
+        if not options:
+            options = [("OpenAI", "openai"), ("Anthropic", "anthropic")]
+
         super().__init__(
             options=options,
             value=value or "openai",
@@ -237,28 +246,46 @@ class ConfigReserved2Input(Input):
         self.border_title = "预留配置2"
 
 
-class ConfigReserved3Input(Input):
-    """Config widget for reserved configuration 3."""
+class ConfigOpenAITierSelect(Select):
+    """Config widget for OpenAI API Tier selection (1-5)."""
 
-    def __init__(self, value: str | None = None):
+    def __init__(self, value: int = 1):
+        tier_options = [
+            ("Tier 1", "1"),
+            ("Tier 2", "2"),
+            ("Tier 3", "3"),
+            ("Tier 4", "4"),
+            ("Tier 5", "5"),
+        ]
         super().__init__(
-            id="config-reserved-3",
-            value=value or "",
-            placeholder="预留配置3",
+            tier_options,
+            value=str(value),
+            allow_blank=False,
+            id="config-openai-tier",
+            classes="tight-select",
         )
-        self.border_title = "预留配置3"
+        self.border_title = "OpenAI Tier"
 
 
-class ConfigReserved4Input(Input):
-    """Config widget for reserved configuration 4."""
+class ConfigAnthropicTierSelect(Select):
+    """Config widget for Anthropic API Tier selection (1-5)."""
 
-    def __init__(self, value: str | None = None):
+    def __init__(self, value: int = 1):
+        tier_options = [
+            ("Tier 1", "1"),
+            ("Tier 2", "2"),
+            ("Tier 3", "3"),
+            ("Tier 4", "4"),
+            ("Tier 5", "5"),
+        ]
         super().__init__(
-            id="config-reserved-4",
-            value=value or "",
-            placeholder="预留配置4",
+            tier_options,
+            value=str(value),
+            allow_blank=False,
+            id="config-anthropic-tier",
+            classes="tight-select",
         )
-        self.border_title = "预留配置4"
+        self.border_title = "Anthropic Tier"
 
 
 class ConfigReserved5Input(Input):

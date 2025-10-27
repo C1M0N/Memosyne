@@ -15,6 +15,7 @@ from .filters import (
     TitleInput,
 )
 from .questions_table import QuestionRow, QuestionsTable
+from .rate_limit_bar import RateLimitBar
 from .screens import MainScreen
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "ProviderSelectionInput",
     "QuestionRow",
     "QuestionsTable",
+    "RateLimitBar",
     "SequenceInput",
     "NoteInput",
     "TitleInput",

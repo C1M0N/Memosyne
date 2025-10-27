@@ -15,6 +15,42 @@ from typing import Any
 from memosyne.core.interfaces import ConfigRepository, ConfigError
 
 
+def _populate_default_configs(conn: sqlite3.Connection) -> None:
+    """填充默认配置值到config表（替代硬编码）
+
+    此函数将原本硬编码在代码中的配置值存入数据库，便于后续修改。
+    包括：
+    - 批处理配置（timezone, max_batch_runs_per_day）
+    - 429重试策略配置（base_delay, max_wait, max_retries）
+    - 提供商特定配置（anthropic_max_tokens, openai_max_retries）
+    """
+    configs = [
+        # 批处理配置
+        ("batch_timezone", "America/New_York"),
+        ("max_batch_runs_per_day", "26"),
+        ("reanimator_term_list_version", "v1"),
+
+        # 429错误重试策略
+        ("rate_limit_max_retries", "100"),  # 429错误最大重试次数
+        ("rate_limit_base_delay", "15"),     # 基础延迟（秒）
+        ("rate_limit_max_wait", "120"),      # 最大等待时间（秒）
+
+        # 提供商特定配置
+        ("anthropic_max_tokens", "16384"),
+        ("openai_max_retries", "2"),
+
+        # 其他错误重试间隔
+        ("other_error_retry_delay", "2"),    # 非429错误的重试间隔（秒）
+    ]
+
+    now = datetime.now().isoformat()
+    for key, value in configs:
+        conn.execute("""
+            INSERT OR IGNORE INTO config (key, value, updated_at)
+            VALUES (?, ?, ?)
+        """, (key, value, now))
+
+
 class SQLiteConfigRepository:
     """
     SQLite 配置仓储实现
@@ -58,8 +94,8 @@ class SQLiteConfigRepository:
                     enable_translation BOOLEAN DEFAULT 1,
                     enable_parsing BOOLEAN DEFAULT 1,
                     enable_concurrent BOOLEAN DEFAULT 0,
-                    feature_001 BOOLEAN DEFAULT 0,
-                    feature_002 BOOLEAN DEFAULT 0,
+                    openai_tier INTEGER DEFAULT 1 CHECK(openai_tier >= 1 AND openai_tier <= 5),
+                    anthropic_tier INTEGER DEFAULT 1 CHECK(anthropic_tier >= 1 AND anthropic_tier <= 5),
                     feature_003 BOOLEAN DEFAULT 0,
                     updated_at TEXT NOT NULL
                 )
@@ -77,15 +113,13 @@ class SQLiteConfigRepository:
             # 3. 迁移旧表 feature_config -> feature（如存在）
             cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='feature_config'")
             if cur.fetchone():
-                # 将旧表数据迁移到新表
+                # 将旧表数据迁移到新表（注意：feature_001/002已改为tier配置，不迁移）
                 conn.execute(
                     """
                     UPDATE feature SET
                         enable_translation = COALESCE((SELECT enable_translation FROM feature_config WHERE id = 1), enable_translation),
                         enable_parsing = COALESCE((SELECT enable_parsing FROM feature_config WHERE id = 1), enable_parsing),
                         enable_concurrent = COALESCE((SELECT enable_concurrent FROM feature_config WHERE id = 1), enable_concurrent),
-                        feature_001 = COALESCE((SELECT feature_001 FROM feature_config WHERE id = 1), feature_001),
-                        feature_002 = COALESCE((SELECT feature_002 FROM feature_config WHERE id = 1), feature_002),
                         feature_003 = COALESCE((SELECT feature_003 FROM feature_config WHERE id = 1), feature_003),
                         updated_at = datetime('now')
                     WHERE id = 1
@@ -94,7 +128,48 @@ class SQLiteConfigRepository:
                 # 删除旧表
                 conn.execute("DROP TABLE IF EXISTS feature_config")
 
-            # 4. 清理遗留统计表（已迁移到 stat.db）
+            # 4. 迁移feature表：从feature_001/002到tier配置
+            cur = conn.execute("PRAGMA table_info(feature)")
+            columns = {row[1] for row in cur.fetchall()}
+
+            # 如果存在旧列feature_001/002，进行迁移
+            if "feature_001" in columns or "feature_002" in columns:
+                # 添加新列（如果不存在）
+                if "openai_tier" not in columns:
+                    conn.execute("ALTER TABLE feature ADD COLUMN openai_tier INTEGER DEFAULT 1 CHECK(openai_tier >= 1 AND openai_tier <= 5)")
+                if "anthropic_tier" not in columns:
+                    conn.execute("ALTER TABLE feature ADD COLUMN anthropic_tier INTEGER DEFAULT 1 CHECK(anthropic_tier >= 1 AND anthropic_tier <= 5)")
+
+                # SQLite不支持直接DROP COLUMN，需要重建表
+                # 创建临时表
+                conn.execute("""
+                    CREATE TABLE feature_temp (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        enable_translation BOOLEAN DEFAULT 1,
+                        enable_parsing BOOLEAN DEFAULT 1,
+                        enable_concurrent BOOLEAN DEFAULT 0,
+                        openai_tier INTEGER DEFAULT 1 CHECK(openai_tier >= 1 AND openai_tier <= 5),
+                        anthropic_tier INTEGER DEFAULT 1 CHECK(anthropic_tier >= 1 AND anthropic_tier <= 5),
+                        feature_003 BOOLEAN DEFAULT 0,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+
+                # 复制数据（跳过feature_001/002）
+                conn.execute("""
+                    INSERT INTO feature_temp (id, enable_translation, enable_parsing, enable_concurrent,
+                                             openai_tier, anthropic_tier, feature_003, updated_at)
+                    SELECT id, enable_translation, enable_parsing, enable_concurrent,
+                           COALESCE(openai_tier, 1), COALESCE(anthropic_tier, 1),
+                           COALESCE(feature_003, 0), updated_at
+                    FROM feature
+                """)
+
+                # 删除旧表并重命名
+                conn.execute("DROP TABLE feature")
+                conn.execute("ALTER TABLE feature_temp RENAME TO feature")
+
+            # 5. 清理遗留统计表（已迁移到 stat.db）
             conn.execute("DROP TABLE IF EXISTS processing_stats")
 
             # 5. LLM模型信息表
@@ -130,6 +205,7 @@ class SQLiteConfigRepository:
                     otpm_limit_tier5 INTEGER,
                     is_active BOOLEAN DEFAULT 1,
                     is_default BOOLEAN DEFAULT 0,
+                    is_display BOOLEAN DEFAULT 0,
                     created_at TEXT NOT NULL,
                     UNIQUE(provider, model_id)
                 )
@@ -153,18 +229,18 @@ class SQLiteConfigRepository:
         # OpenAI 模型数据
         openai_models = [
             # (model_id, display_name, alias, price_input, price_output, rpm_t1-5, tpm_t1-5)
-            ("gpt-5", "GPT-5", None, 1.25, 10.00, 500, 5000, 5000, 10000, 15000, 500000, 1000000, 2000000, 4000000, 40000000),
-            ("gpt-5-mini", "GPT-5 Mini", None, 0.25, 2.00, 500, 5000, 5000, 10000, 30000, 500000, 2000000, 4000000, 10000000, 180000000),
-            ("gpt-5-nano", "GPT-5 Nano", None, 0.05, 0.40, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-5", "GPT-5", "o50o", 1.25, 10.00, 500, 5000, 5000, 10000, 15000, 500000, 1000000, 2000000, 4000000, 40000000),
+            ("gpt-5-mini", "GPT-5 Mini", "o50m", 0.25, 2.00, 500, 5000, 5000, 10000, 30000, 500000, 2000000, 4000000, 10000000, 180000000),
+            ("gpt-5-nano", "GPT-5 Nano", "o50n", 0.05, 0.40, None, None, None, None, None, None, None, None, None, None),
             ("gpt-5-chat-latest", "GPT-5 Chat Latest", None, 1.25, 10.00, None, None, None, None, None, None, None, None, None, None),
-            ("gpt-5-codex", "GPT-5 Codex", None, 1.25, 10.00, None, None, None, None, None, None, None, None, None, None),
-            ("gpt-5-pro", "GPT-5 Pro", None, 15.00, 120.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-5-codex", "GPT-5 Codex", "o50c", 1.25, 10.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-5-pro", "GPT-5 Pro", "o50p", 15.00, 120.00, None, None, None, None, None, None, None, None, None, None),
             ("gpt-4.1", "GPT-4.1", None, 2.00, 8.00, None, None, None, None, None, None, None, None, None, None),
             ("gpt-4.1-mini", "GPT-4.1 Mini", None, 0.40, 1.60, None, None, None, None, None, None, None, None, None, None),
             ("gpt-4.1-nano", "GPT-4.1 Nano", None, 0.10, 0.40, None, None, None, None, None, None, None, None, None, None),
-            ("gpt-4o", "GPT-4o", None, 2.50, 10.00, 500, 5000, 5000, 10000, 10000, 30000, 450000, 800000, 2000000, 30000000),
+            ("gpt-4o", "GPT-4o", "o4oo", 2.50, 10.00, 500, 5000, 5000, 10000, 10000, 30000, 450000, 800000, 2000000, 30000000),
             ("gpt-4o-2024-05-13", "GPT-4o (2024-05-13)", None, 5.00, 15.00, None, None, None, None, None, None, None, None, None, None),
-            ("gpt-4o-mini", "GPT-4o Mini", None, 0.15, 0.60, 500, 5000, 5000, 10000, 30000, 200000, 2000000, 4000000, 10000000, 150000000),
+            ("gpt-4o-mini", "GPT-4o Mini", "o4om", 0.15, 0.60, 500, 5000, 5000, 10000, 30000, 200000, 2000000, 4000000, 10000000, 150000000),
             ("gpt-realtime", "GPT Realtime", None, 4.00, 16.00, None, None, None, None, None, None, None, None, None, None),
             ("gpt-realtime-mini", "GPT Realtime Mini", None, 0.60, 2.40, None, None, None, None, None, None, None, None, None, None),
             ("gpt-4o-realtime-preview", "GPT-4o Realtime Preview", None, 5.00, 20.00, None, None, None, None, None, None, None, None, None, None),
@@ -178,16 +254,18 @@ class SQLiteConfigRepository:
             ("o1-mini", "o1 Mini", None, 1.10, 4.40, None, None, None, None, None, None, None, None, None, None),
             ("o3", "o3", None, 2.00, 8.00, None, None, None, None, None, None, None, None, None, None),
             ("o3-pro", "o3 Pro", None, 20.00, 80.00, None, None, None, None, None, None, None, None, None, None),
-            ("o3-deep-research", "o3 Deep Research", None, 10.00, 40.00, None, None, None, None, None, None, None, None, None, None),
+            ("o3-deep-research", "o3 Deep Research", "oo3d", 10.00, 40.00, None, None, None, None, None, None, None, None, None, None),
             ("o3-mini", "o3 Mini", None, 1.10, 4.40, None, None, None, None, None, None, None, None, None, None),
-            ("o4-mini", "o4 Mini", None, 1.10, 4.40, None, None, None, None, None, None, None, None, None, None),
-            ("o4-mini-deep-research", "o4 Mini Deep Research", None, 2.00, 8.00, None, None, None, None, None, None, None, None, None, None),
+            ("o4-mini", "o4 Mini", "oo4m", 1.10, 4.40, None, None, None, None, None, None, None, None, None, None),
+            ("o4-mini-deep-research", "o4 Mini Deep Research", "oo4d", 2.00, 8.00, None, None, None, None, None, None, None, None, None, None),
         ]
 
         for model_data in openai_models:
             model_id, display_name, alias, price_in, price_out = model_data[:5]
             rpm_limits = model_data[5:10]
             tpm_limits = model_data[10:15]
+            # 有alias的模型在下拉菜单中显示
+            is_display = 1 if alias else 0
 
             conn.execute(
                 """
@@ -196,18 +274,18 @@ class SQLiteConfigRepository:
                     price_input, price_output,
                     rpm_limit_tier1, rpm_limit_tier2, rpm_limit_tier3, rpm_limit_tier4, rpm_limit_tier5,
                     tpm_limit_tier1, tpm_limit_tier2, tpm_limit_tier3, tpm_limit_tier4, tpm_limit_tier5,
-                    is_active, is_default, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                    is_active, is_default, is_display, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
                 """,
                 ("openai", model_id, display_name, alias, price_in, price_out,
-                 *rpm_limits, *tpm_limits, now)
+                 *rpm_limits, *tpm_limits, is_display, now)
             )
 
         # Anthropic 模型数据
         anthropic_models = [
             # (model_id, display_name, alias, price_input, price_output,
             #  rpm_t1-5, itpm_t1-5, otpm_t1-5)
-            ("claude-opus-4.1", "Claude Opus 4.1", None, 15.00, 75.00,
+            ("claude-opus-4.1", "Claude Opus 4.1", "co41", 15.00, 75.00,
              50, 1000, 2000, 4000, None,
              30000, 450000, 800000, 2000000, None,
              8000, 90000, 160000, 400000, None),
@@ -215,7 +293,7 @@ class SQLiteConfigRepository:
              50, 1000, 2000, 4000, None,
              30000, 450000, 800000, 2000000, None,
              8000, 90000, 160000, 400000, None),
-            ("claude-sonnet-4.5", "Claude Sonnet 4.5", None, 3.00, 15.00,
+            ("claude-sonnet-4.5", "Claude Sonnet 4.5", "cs45", 3.00, 15.00,
              50, 1000, 2000, 4000, None,
              30000, 450000, 800000, 2000000, None,
              8000, 90000, 160000, 400000, None),
@@ -231,7 +309,7 @@ class SQLiteConfigRepository:
              50, 1000, 2000, 4000, None,
              40000, 80000, 160000, 400000, None,
              8000, 16000, 32000, 80000, None),
-            ("claude-haiku-4.5", "Claude Haiku 4.5", None, 1.00, 5.00,
+            ("claude-haiku-4.5", "Claude Haiku 4.5", "ch45", 1.00, 5.00,
              50, 1000, 2000, 4000, None,
              50000, 450000, 1000000, 4000000, None,
              10000, 90000, 200000, 800000, None),
@@ -254,6 +332,8 @@ class SQLiteConfigRepository:
             rpm_limits = model_data[5:10]
             itpm_limits = model_data[10:15]
             otpm_limits = model_data[15:20]
+            # 有alias的模型在下拉菜单中显示
+            is_display = 1 if alias else 0
 
             conn.execute(
                 """
@@ -263,11 +343,11 @@ class SQLiteConfigRepository:
                     rpm_limit_tier1, rpm_limit_tier2, rpm_limit_tier3, rpm_limit_tier4, rpm_limit_tier5,
                     itpm_limit_tier1, itpm_limit_tier2, itpm_limit_tier3, itpm_limit_tier4, itpm_limit_tier5,
                     otpm_limit_tier1, otpm_limit_tier2, otpm_limit_tier3, otpm_limit_tier4, otpm_limit_tier5,
-                    is_active, is_default, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                    is_active, is_default, is_display, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
                 """,
                 ("anthropic", model_id, display_name, alias, price_in, price_out,
-                 *rpm_limits, *itpm_limits, *otpm_limits, now)
+                 *rpm_limits, *itpm_limits, *otpm_limits, is_display, now)
             )
 
         # 设置默认模型（gpt-4o）
@@ -277,6 +357,9 @@ class SQLiteConfigRepository:
             WHERE provider = 'openai' AND model_id = 'gpt-4o'
             """
         )
+
+        # 填充默认配置值（替代硬编码）
+        _populate_default_configs(conn)
 
     def get(self, key: str) -> str | None:
         """获取配置项"""
@@ -388,7 +471,7 @@ class SQLiteFeatureConfigRepository:
             cursor = conn.execute(
                 """
                 SELECT enable_translation, enable_parsing, enable_concurrent,
-                       feature_001, feature_002, feature_003
+                       openai_tier, anthropic_tier, feature_003
                 FROM feature WHERE id = 1
                 """
             )
@@ -398,8 +481,8 @@ class SQLiteFeatureConfigRepository:
                     "enable_translation": bool(row["enable_translation"]),
                     "enable_parsing": bool(row["enable_parsing"]),
                     "enable_concurrent": bool(row["enable_concurrent"]),
-                    "feature_001": bool(row["feature_001"]),
-                    "feature_002": bool(row["feature_002"]),
+                    "openai_tier": int(row["openai_tier"]),
+                    "anthropic_tier": int(row["anthropic_tier"]),
                     "feature_003": bool(row["feature_003"]),
                 }
             # 返回默认值
@@ -407,13 +490,13 @@ class SQLiteFeatureConfigRepository:
                 "enable_translation": True,
                 "enable_parsing": True,
                 "enable_concurrent": False,
-                "feature_001": False,
-                "feature_002": False,
+                "openai_tier": 1,
+                "anthropic_tier": 1,
                 "feature_003": False,
             }
 
-    def update(self, **kwargs: bool) -> None:
-        """更新功能配置"""
+    def update(self, **kwargs) -> None:
+        """更新功能配置（支持bool和int类型）"""
         if not kwargs:
             return
 
@@ -422,8 +505,8 @@ class SQLiteFeatureConfigRepository:
             "enable_translation",
             "enable_parsing",
             "enable_concurrent",
-            "feature_001",
-            "feature_002",
+            "openai_tier",
+            "anthropic_tier",
             "feature_003",
         }
         fields_to_update = {k: v for k, v in kwargs.items() if k in valid_fields}

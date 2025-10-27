@@ -32,7 +32,15 @@ class AnthropicProvider(BaseLLMProvider):
         # Anthropic API 要求必须提供 max_tokens（与 OpenAI 不同）
         # 设置为足够大的值，让 API 自己决定实际能用多少
         # Claude 3.5 Sonnet 最大输出约 8192 tokens，但设置更大值也安全
-        self.max_tokens = max_tokens if max_tokens is not None else 16384
+        # 从数据库读取默认值（不再硬编码，默认16384）
+        if max_tokens is None:
+            from ...config import get_settings
+            from ..app_config import SQLiteAppConfigService
+            settings = get_settings()
+            appcfg = SQLiteAppConfigService(settings.db_dir / "config.db")
+            provider_config = appcfg.get_provider_config()
+            max_tokens = provider_config["anthropic_max_tokens"]
+        self.max_tokens = max_tokens
 
     @classmethod
     def from_settings(cls, settings) -> "AnthropicProvider":
@@ -49,8 +57,15 @@ class AnthropicProvider(BaseLLMProvider):
         user_prompt: str,
         schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> tuple[dict[str, Any], TokenUsage]:
-        """调用 Anthropic API 生成结构化 JSON 响应（使用 Tool Use）"""
+    ) -> tuple[dict[str, Any], TokenUsage, dict | None]:
+        """调用 Anthropic API 生成结构化 JSON 响应（使用 Tool Use）
+
+        Returns:
+            tuple: (response_data, token_usage, rate_limit_info)
+                - response_data: 解析后的JSON数据
+                - token_usage: token使用情况
+                - rate_limit_info: rate limit信息（Anthropic暂不支持，返回None）
+        """
         tool = {
             "name": schema_name,
             "description": f"Structured response format: {schema_name}",
@@ -88,6 +103,9 @@ class AnthropicProvider(BaseLLMProvider):
             total_tokens=(usage.input_tokens + usage.output_tokens) if usage else 0,
         )
 
+        # Anthropic API目前不提供rate limit headers，返回None
+        rate_limit_info = None
+
         # 解析 tool_use 区块
         for block in (resp.content or []):
             btype = getattr(block, "type", None) if hasattr(block, "type") else block.get("type")
@@ -95,7 +113,7 @@ class AnthropicProvider(BaseLLMProvider):
             if btype == "tool_use" and bname == schema_name:
                 binput = getattr(block, "input", None) if hasattr(block, "input") else block.get("input")
                 if isinstance(binput, dict):
-                    return binput, tokens
+                    return binput, tokens, rate_limit_info
 
         # 容错：尝试从文本提取 JSON
         text_parts = []
@@ -107,11 +125,11 @@ class AnthropicProvider(BaseLLMProvider):
         text = "".join(text_parts).strip()
 
         try:
-            return json.loads(text), tokens
+            return json.loads(text), tokens, rate_limit_info
         except json.JSONDecodeError:
             s, e = text.find("{"), text.rfind("}")
             if s != -1 and e != -1 and e > s:
-                return json.loads(text[s:e+1]), tokens
+                return json.loads(text[s:e+1]), tokens, rate_limit_info
             raise LLMError("Claude 未返回可解析的结构化结果")
 
     def _validate_config(self) -> None:

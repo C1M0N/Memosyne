@@ -42,6 +42,7 @@ class QuizProcessingEvent:
         error: 解析失败原因
         elapsed: 本题耗时（秒）
         retry_wait_remaining: 429等待剩余秒数（仅当status="waiting_429"时有值）
+        rate_limit_info: rate limit信息（如果LLM provider提供）
     """
 
     index: int
@@ -54,6 +55,7 @@ class QuizProcessingEvent:
     error: str | None
     elapsed: float
     retry_wait_remaining: int | None = None  # 429等待剩余秒数
+    rate_limit_info: dict | None = None  # rate limit信息
 
 
 class ParseQuizUseCase:
@@ -196,13 +198,14 @@ class ParseQuizUseCase:
         item: QuizItem | None = None
         error_message: str | None = None
         token_usage = TokenUsage()
+        rate_limit_info: dict | None = None
 
         try:
             with indeterminate_progress(
                 f"Calling LLM for item #{index}...",
                 enabled=show_spinner,
             ):
-                item_dict, token_dict = self.llm.parse_question(
+                item_dict, token_dict, rate_limit_info = self.llm.parse_question(
                     {
                         "context": block.get("context", ""),
                         "question": block.get("question", ""),
@@ -240,6 +243,7 @@ class ParseQuizUseCase:
             total_tokens=new_total_tokens,
             error=error_message,
             elapsed=elapsed,
+            rate_limit_info=rate_limit_info,
         )
 
         # 保存统计数据（如果配置了stats_repo）
@@ -434,11 +438,20 @@ class ConcurrentParseQuizUseCase:
             model_identifier: 模型标识
             output_filename: 输出文件名
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         self.llm = llm
         self.feature_config = feature_config
         self.stats_repo = stats_repo
         self.model_identifier = model_identifier
         self.output_filename = output_filename
+
+        # 创建自定义线程池，支持真正的max_concurrent并发
+        # （默认executor只有32个线程，无法支持更高并发）
+        self._executor = ThreadPoolExecutor(
+            max_workers=feature_config.max_concurrent,
+            thread_name_prefix="LLMWorker",
+        )
 
     async def execute_async(
         self,
@@ -539,7 +552,9 @@ class ConcurrentParseQuizUseCase:
         async def task_for(index: int, block: dict[str, str]):
             """处理单个题目，并将所有事件（包括中间状态）发送到queue"""
             async with semaphore:
-                await self._process_block_with_retry(block, index, total_count, event_queue)
+                await self._process_block_with_retry(
+                    block, index, total_count, event_queue, self._executor
+                )
 
         # 创建所有任务
         tasks = [asyncio.create_task(task_for(i, b)) for i, b in enumerate(question_blocks, start=1)]
@@ -563,6 +578,7 @@ class ConcurrentParseQuizUseCase:
         index: int,
         total_count: int,
         event_queue: asyncio.Queue,
+        executor,
     ) -> None:
         """
         异步处理单个题目块（支持重试）
@@ -578,17 +594,25 @@ class ConcurrentParseQuizUseCase:
             index: 题目索引
             total_count: 总题目数
             event_queue: 事件队列，用于发送中间状态和最终结果
+            executor: 自定义ThreadPoolExecutor，支持真正的max_concurrent并发
 
         Returns:
             None（通过event_queue发送所有事件）
         """
         import asyncio
         from ...core.interfaces import LLMError
+        from ...shared.infrastructure.app_config import SQLiteAppConfigService
+        from ...shared.config import get_settings
+
+        # 从数据库读取重试配置（不再硬编码）
+        settings = get_settings()
+        appcfg = SQLiteAppConfigService(settings.db_dir / "config.db")
+        retry_config = appcfg.get_retry_config()
 
         max_retries = self.feature_config.max_retries
         retry_count = 0
         rate_limit_retry_count = 0  # 429错误单独计数
-        max_rate_limit_retries = 100  # 429错误最多重试100次
+        max_rate_limit_retries = retry_config["rate_limit_max_retries"]  # 从数据库读取（默认100）
 
         # 发送"processing"事件（开始处理）
         await event_queue.put(QuizProcessingEvent(
@@ -606,12 +630,12 @@ class ConcurrentParseQuizUseCase:
 
         while True:  # 无限循环，由内部逻辑控制退出
             try:
-                start_time = perf_counter()
-
                 # 调用LLM（同步方法，需要在executor中运行）
+                # 注意：start_time必须在LLM调用之前记录，才能排除队列等待时间
                 loop = asyncio.get_event_loop()
-                item_dict, token_dict = await loop.run_in_executor(
-                    None,
+                start_time = perf_counter()  # 在executor调用前记录时间
+                item_dict, token_dict, rate_limit_info = await loop.run_in_executor(
+                    executor,  # 使用自定义executor，支持max_concurrent并发
                     self.llm.parse_question,
                     {
                         "context": block.get("context", ""),
@@ -621,11 +645,10 @@ class ConcurrentParseQuizUseCase:
                         "index": str(index),
                     },
                 )
+                elapsed = perf_counter() - start_time  # LLM调用后立即计算耗时
 
                 token_usage = TokenUsage(**token_dict)
                 candidate = QuizItem(**_normalize_question_dict(item_dict))
-
-                elapsed = perf_counter() - start_time
 
                 if is_quiz_item_valid(candidate, self.feature_config):
                     # 实时保存统计（异步环境下，实时保存比批量保存更合适）
@@ -660,6 +683,7 @@ class ConcurrentParseQuizUseCase:
                         error=None,
                         elapsed=elapsed,
                         retry_wait_remaining=None,
+                        rate_limit_info=rate_limit_info,
                     ))
                     return  # 处理完成，退出
                 else:
@@ -675,6 +699,7 @@ class ConcurrentParseQuizUseCase:
                         error="LLM 输出未通过业务规则校验",
                         elapsed=elapsed,
                         retry_wait_remaining=None,
+                        rate_limit_info=rate_limit_info,
                     ))
                     return  # 处理完成，退出
 
@@ -684,7 +709,7 @@ class ConcurrentParseQuizUseCase:
                     # 429错误：无限重试（最多100次，使用单独计数器）
                     rate_limit_retry_count += 1
                     if rate_limit_retry_count > max_rate_limit_retries:
-                        elapsed = perf_counter() - start_time
+                        # 429错误超过最大重试次数，elapsed设为0（因为没有成功的LLM调用）
                         await event_queue.put(QuizProcessingEvent(
                             index=index,
                             total=total_count,
@@ -694,19 +719,20 @@ class ConcurrentParseQuizUseCase:
                             tokens=TokenUsage(),
                             total_tokens=TokenUsage(),
                             error=f"429错误重试{max_rate_limit_retries}次后仍然失败: {exc}",
-                            elapsed=elapsed,
+                            elapsed=0.0,
                             retry_wait_remaining=None,
                         ))
                         return  # 处理失败，退出
 
                     # 指数退避 + 随机抖动（参考OpenAI最佳实践）
-                    # 基础等待时间：15秒（OpenAI建议的最小暂停时间）
+                    # 基础等待时间、最大等待时间从数据库读取（不再硬编码）
                     # 每次重试翻倍，并添加随机抖动避免同时重试
                     import random
-                    base_delay = 15
+                    base_delay = retry_config["rate_limit_base_delay"]  # 从数据库读取（默认15秒）
+                    max_wait_time = retry_config["rate_limit_max_wait"]  # 从数据库读取（默认120秒）
                     exponential_delay = base_delay * (2 ** (rate_limit_retry_count - 1))
                     jitter = random.uniform(0, exponential_delay * 0.5)
-                    wait_time = min(exponential_delay + jitter, 120)  # 最多等待2分钟
+                    wait_time = min(exponential_delay + jitter, max_wait_time)
                     wait_time_int = int(wait_time)  # 向下取整
 
                     from logging import getLogger
@@ -755,10 +781,11 @@ class ConcurrentParseQuizUseCase:
                     logger.warning(
                         f"题目#{index} 遇到LLM错误: {exc} (第{retry_count}/{max_retries}次重试)"
                     )
-                    await asyncio.sleep(2)  # 其他错误简单等待2秒
+                    # 从数据库读取重试延迟（不再硬编码，默认2秒）
+                    await asyncio.sleep(retry_config["other_error_retry_delay"])
                     continue
                 else:
-                    elapsed = perf_counter() - start_time
+                    # 重试失败，elapsed设为0（因为没有成功的LLM调用）
                     await event_queue.put(QuizProcessingEvent(
                         index=index,
                         total=total_count,
@@ -768,7 +795,7 @@ class ConcurrentParseQuizUseCase:
                         tokens=TokenUsage(),
                         total_tokens=TokenUsage(),
                         error=f"重试{max_retries}次后仍然失败: {exc}",
-                        elapsed=elapsed,
+                        elapsed=0.0,
                         retry_wait_remaining=None,
                     ))
                     return  # 处理失败，退出
@@ -782,10 +809,11 @@ class ConcurrentParseQuizUseCase:
                     logger.warning(
                         f"题目#{index} 遇到异常: {exc} (第{retry_count}/{max_retries}次重试)"
                     )
-                    await asyncio.sleep(2)
+                    # 从数据库读取重试延迟（不再硬编码，默认2秒）
+                    await asyncio.sleep(retry_config["other_error_retry_delay"])
                     continue
                 else:
-                    elapsed = perf_counter() - start_time
+                    # 重试失败，elapsed设为0（因为没有成功的LLM调用）
                     await event_queue.put(QuizProcessingEvent(
                         index=index,
                         total=total_count,
@@ -795,7 +823,7 @@ class ConcurrentParseQuizUseCase:
                         tokens=TokenUsage(),
                         total_tokens=TokenUsage(),
                         error=f"重试{max_retries}次后仍然失败: {exc}",
-                        elapsed=elapsed,
+                        elapsed=0.0,
                         retry_wait_remaining=None,
                     ))
                     return  # 处理失败，退出
@@ -824,6 +852,23 @@ class ConcurrentParseQuizUseCase:
             "output_filename": self.output_filename,
             "processing_time": processing_time,
         }
+
+    def cleanup(self) -> None:
+        """
+        清理资源（关闭线程池）
+
+        Note: 通常由TUI在处理完成后调用，或在异常时自动清理
+        """
+        if hasattr(self, "_executor") and self._executor:
+            self._executor.shutdown(wait=False)
+            self._executor = None
+
+    def __del__(self):
+        """析构函数：确保线程池被关闭（fallback机制）"""
+        try:
+            self.cleanup()
+        except Exception:
+            pass  # 忽略析构时的异常
 
     @staticmethod
     def _split_markdown(markdown: str) -> list[dict[str, str]]:

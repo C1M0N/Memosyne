@@ -12,8 +12,8 @@ class FeatureFlags(BaseModel):
     enable_translation: bool = Field(default=True)
     enable_parsing: bool = Field(default=True)
     enable_concurrent: bool = Field(default=False)
-    feature_001: bool = Field(default=False)
-    feature_002: bool = Field(default=False)
+    openai_tier: int = Field(default=1, ge=1, le=5, description="OpenAI API Tier (1-5)")
+    anthropic_tier: int = Field(default=1, ge=1, le=5, description="Anthropic API Tier (1-5)")
     feature_003: bool = Field(default=False)
 
 
@@ -68,3 +68,4 @@ class LLMModelInfo(BaseModel):
     otpm_limit_tier5: int | None = None
     is_active: bool = True
     is_default: bool = False
+    is_display: bool = False  # 是否在下拉菜单中显示

@@ -30,7 +30,7 @@ class SQLiteAppConfigService:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT enable_translation, enable_parsing, enable_concurrent,"
-                "       feature_001, feature_002, feature_003"
+                "       openai_tier, anthropic_tier, feature_003"
                 "  FROM feature WHERE id = 1"
             ).fetchone()
             if not row:
@@ -39,20 +39,21 @@ class SQLiteAppConfigService:
                 enable_translation=bool(row["enable_translation"]),
                 enable_parsing=bool(row["enable_parsing"]),
                 enable_concurrent=bool(row["enable_concurrent"]),
-                feature_001=bool(row["feature_001"]),
-                feature_002=bool(row["feature_002"]),
+                openai_tier=int(row["openai_tier"]),
+                anthropic_tier=int(row["anthropic_tier"]),
                 feature_003=bool(row["feature_003"]),
             )
 
-    def update_feature_flags(self, **kwargs: bool) -> None:
+    def update_feature_flags(self, **kwargs) -> None:
+        """更新功能配置（支持bool和int类型）"""
         if not kwargs:
             return
         valid = {
             "enable_translation",
             "enable_parsing",
             "enable_concurrent",
-            "feature_001",
-            "feature_002",
+            "openai_tier",
+            "anthropic_tier",
             "feature_003",
         }
         fields = {k: v for k, v in kwargs.items() if k in valid}
@@ -166,6 +167,15 @@ class SQLiteAppConfigService:
             ).fetchone()
             return self._row_to_model_info(row) if row else None
 
+    def get_display_models(self) -> list[LLMModelInfo]:
+        """获取下拉菜单显示的模型（is_display=1）"""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM llm_models WHERE is_display = 1 ORDER BY provider, model_id"
+            ).fetchall()
+            return [self._row_to_model_info(row) for row in rows]
+
     def set_default_model(self, provider: str, model_id: str) -> None:
         """设置默认模型"""
         with sqlite3.connect(str(self.db_path)) as conn:
@@ -210,4 +220,133 @@ class SQLiteAppConfigService:
             otpm_limit_tier5=row["otpm_limit_tier5"],
             is_active=bool(row["is_active"]),
             is_default=bool(row["is_default"]),
+            is_display=bool(row["is_display"]),
         )
+
+    def get_model_code_mappings(self) -> tuple[dict[str, str], dict[str, str]]:
+        """从数据库获取模型代码映射（替代硬编码字典）
+
+        Returns:
+            tuple: (model_to_code, code_to_model)
+                - model_to_code: {model_id: alias}
+                - code_to_model: {alias: model_id}
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT model_id, alias
+                FROM llm_models
+                WHERE alias IS NOT NULL AND alias != ''
+            """)
+            rows = cursor.fetchall()
+
+            model_to_code = {row["model_id"]: row["alias"] for row in rows}
+            code_to_model = {row["alias"]: row["model_id"] for row in rows}
+
+            return model_to_code, code_to_model
+
+    def get_providers_list(self) -> list[tuple[str, str]]:
+        """从数据库获取提供商列表（替代硬编码列表）
+
+        Returns:
+            list: [(display_name, provider_value), ...]
+                例如：[("OpenAI", "openai"), ("Anthropic", "anthropic")]
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.execute("""
+                SELECT DISTINCT provider FROM llm_models ORDER BY provider
+            """)
+            providers = cursor.fetchall()
+
+            # 返回格式：[(display_name, value), ...]
+            return [(p[0].title(), p[0].lower()) for p in providers]
+
+    def get_provider_display_name(self, provider: str) -> str:
+        """获取提供商的显示名称
+
+        Args:
+            provider: 提供商标识（如 "openai"）
+
+        Returns:
+            str: 显示名称（如 "OpenAI"）
+        """
+        return provider.title()
+
+    def get_batch_config(self) -> dict[str, Any]:
+        """获取批处理配置（从数据库读取，替代硬编码）
+
+        Returns:
+            dict: 包含批处理配置的字典
+                - batch_timezone: str
+                - max_batch_runs_per_day: int
+                - reanimator_term_list_version: str
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT key, value FROM config
+                WHERE key IN ('batch_timezone', 'max_batch_runs_per_day', 'reanimator_term_list_version')
+            """)
+            rows = cursor.fetchall()
+
+            config = {row["key"]: row["value"] for row in rows}
+
+            # 转换类型并提供默认值
+            return {
+                "batch_timezone": config.get("batch_timezone", "America/New_York"),
+                "max_batch_runs_per_day": int(config.get("max_batch_runs_per_day", "26")),
+                "reanimator_term_list_version": config.get("reanimator_term_list_version", "v1"),
+            }
+
+    def get_retry_config(self) -> dict[str, Any]:
+        """获取重试策略配置（从数据库读取，替代硬编码）
+
+        Returns:
+            dict: 包含重试配置的字典
+                - rate_limit_max_retries: int
+                - rate_limit_base_delay: int
+                - rate_limit_max_wait: int
+                - other_error_retry_delay: int
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT key, value FROM config
+                WHERE key IN ('rate_limit_max_retries', 'rate_limit_base_delay',
+                             'rate_limit_max_wait', 'other_error_retry_delay')
+            """)
+            rows = cursor.fetchall()
+
+            config = {row["key"]: row["value"] for row in rows}
+
+            # 转换类型并提供默认值
+            return {
+                "rate_limit_max_retries": int(config.get("rate_limit_max_retries", "100")),
+                "rate_limit_base_delay": int(config.get("rate_limit_base_delay", "15")),
+                "rate_limit_max_wait": int(config.get("rate_limit_max_wait", "120")),
+                "other_error_retry_delay": int(config.get("other_error_retry_delay", "2")),
+            }
+
+    def get_provider_config(self) -> dict[str, Any]:
+        """获取提供商特定配置（从数据库读取，替代硬编码）
+
+        Returns:
+            dict: 包含提供商配置的字典
+                - anthropic_max_tokens: int
+                - openai_max_retries: int
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT key, value FROM config
+                WHERE key IN ('anthropic_max_tokens', 'openai_max_retries')
+            """)
+            rows = cursor.fetchall()
+
+            config = {row["key"]: row["value"] for row in rows}
+
+            # 转换类型并提供默认值
+            return {
+                "anthropic_max_tokens": int(config.get("anthropic_max_tokens", "16384")),
+                "openai_max_retries": int(config.get("openai_max_retries", "2")),
+            }

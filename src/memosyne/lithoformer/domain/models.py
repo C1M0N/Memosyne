@@ -199,9 +199,7 @@ class FeatureConfig(BaseModel):
         description="失败重试次数"
     )
 
-    # 预留功能开关
-    feature_001: bool = Field(default=False, description="预留功能001")
-    feature_002: bool = Field(default=False, description="预留功能002")
+    # 预留功能开关（feature_001/002已改为tier配置）
     feature_003: bool = Field(default=False, description="预留功能003")
 
     def get_schema_type(self) -> str:

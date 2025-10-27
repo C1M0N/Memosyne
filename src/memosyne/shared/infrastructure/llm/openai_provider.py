@@ -31,8 +31,17 @@ class OpenAIProvider(BaseLLMProvider):
         model: str,
         api_key: str,
         temperature: float | None = None,
-        max_retries: int = 2
+        max_retries: int | None = None
     ):
+        # 从数据库读取max_retries默认值（不再硬编码，默认2）
+        if max_retries is None:
+            from ...config import get_settings
+            from ..app_config import SQLiteAppConfigService
+            settings = get_settings()
+            appcfg = SQLiteAppConfigService(settings.db_dir / "config.db")
+            provider_config = appcfg.get_provider_config()
+            max_retries = provider_config["openai_max_retries"]
+
         self.client = OpenAI(api_key=api_key, max_retries=max_retries)
         super().__init__(model=model, temperature=temperature)
 
@@ -51,8 +60,15 @@ class OpenAIProvider(BaseLLMProvider):
         user_prompt: str,
         schema: dict[str, Any],
         schema_name: str = "Response"
-    ) -> tuple[dict[str, Any], TokenUsage]:
-        """调用 OpenAI API 生成结构化 JSON 响应"""
+    ) -> tuple[dict[str, Any], TokenUsage, dict | None]:
+        """调用 OpenAI API 生成结构化 JSON 响应
+
+        Returns:
+            tuple: (response_data, token_usage, rate_limit_info)
+                - response_data: 解析后的JSON数据
+                - token_usage: token使用情况
+                - rate_limit_info: rate limit信息（如果可用）
+        """
         schema_payload = {
             "name": schema_name,
             "strict": True,
@@ -81,8 +97,12 @@ class OpenAIProvider(BaseLLMProvider):
         user_prompt: str,
         schema_payload: dict[str, Any],
         system_role: str = "system",
-    ) -> tuple[dict[str, Any], TokenUsage]:
-        """向 Chat Completions 请求结构化 JSON。"""
+    ) -> tuple[dict[str, Any], TokenUsage, dict | None]:
+        """向 Chat Completions 请求结构化 JSON。
+
+        Returns:
+            tuple: (data, tokens, rate_limit_info)
+        """
 
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -100,18 +120,29 @@ class OpenAIProvider(BaseLLMProvider):
             kwargs["temperature"] = self.temperature
 
         try:
-            response = self.client.chat.completions.create(**kwargs)
+            # 使用with_raw_response()获取原始响应（包含headers）
+            raw_response = self.client.chat.completions.with_raw_response.create(**kwargs)
+            response = raw_response.parse()  # 解析为ChatCompletion对象
+
             data = self._extract_chat_output(response)
             tokens = self._extract_token_usage(response)
-            return data, tokens
+            rate_limit_info = self._extract_rate_limit_info(raw_response.headers)
+
+            return data, tokens, rate_limit_info
+
         except BadRequestError as exc:
             error_msg = str(exc).lower()
             if "temperature" in error_msg and "unsupported" in error_msg:
                 kwargs.pop("temperature", None)
-                response = self.client.chat.completions.create(**kwargs)
+                raw_response = self.client.chat.completions.with_raw_response.create(**kwargs)
+                response = raw_response.parse()
+
                 data = self._extract_chat_output(response)
                 tokens = self._extract_token_usage(response)
-                return data, tokens
+                rate_limit_info = self._extract_rate_limit_info(raw_response.headers)
+
+                return data, tokens, rate_limit_info
+
             raise LLMError(f"OpenAI API 错误：{exc}") from exc
         except Exception as exc:  # noqa: BLE001
             raise LLMError(f"调用 OpenAI 时发生意外错误：{exc}") from exc
@@ -177,3 +208,42 @@ class OpenAIProvider(BaseLLMProvider):
         except (AttributeError, TypeError):
             # 如果没有 usage 信息，返回全 0
             return TokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+
+    @staticmethod
+    def _extract_rate_limit_info(headers) -> dict | None:
+        """从响应headers中提取rate limit信息
+
+        OpenAI API返回的headers格式：
+        - x-ratelimit-remaining-requests: 剩余请求数
+        - x-ratelimit-remaining-tokens: 剩余token数
+        - x-ratelimit-limit-requests: 请求数限制
+        - x-ratelimit-limit-tokens: token数限制
+
+        Returns:
+            dict | None: rate limit信息，如果headers不可用则返回None
+        """
+        try:
+            import time
+
+            # 从headers提取rate limit信息
+            remaining_requests = headers.get("x-ratelimit-remaining-requests")
+            remaining_tokens = headers.get("x-ratelimit-remaining-tokens")
+            limit_requests = headers.get("x-ratelimit-limit-requests")
+            limit_tokens = headers.get("x-ratelimit-limit-tokens")
+
+            # 如果任何一个关键值缺失，返回None
+            if not all([remaining_requests, remaining_tokens, limit_requests, limit_tokens]):
+                return None
+
+            return {
+                "remaining_requests": int(remaining_requests),
+                "limit_requests": int(limit_requests),
+                "remaining_tokens": int(remaining_tokens),
+                "limit_tokens": int(limit_tokens),
+                "provider": "openai",
+                "timestamp": time.time(),
+            }
+
+        except (AttributeError, TypeError, ValueError, KeyError):
+            # 如果提取失败，返回None
+            return None

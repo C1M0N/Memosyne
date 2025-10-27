@@ -11,7 +11,7 @@ from ..domain.models import QuizItem
 class LLMPort(Protocol):
     """LLM calling capability (implemented by Infrastructure)"""
 
-    def parse_question(self, payload: dict[str, str]) -> tuple[dict, dict]:
+    def parse_question(self, payload: dict[str, str]) -> tuple[dict, dict, dict | None]:
         """
         Analyse a single quiz question using LLM
 
@@ -19,7 +19,10 @@ class LLMPort(Protocol):
             payload: Dict containing context/question/answer texts
 
         Returns:
-            (question_dict, token_usage_dict)
+            (question_dict, token_usage_dict, rate_limit_info)
+            - question_dict: 解析后的题目字典
+            - token_usage_dict: token使用情况
+            - rate_limit_info: rate limit信息（如果LLM provider提供）
 
         Raises:
             LLMError: LLM call failed

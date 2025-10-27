@@ -18,7 +18,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
-from textual.widgets import Button, Input, ProgressBar, RichLog, Static, TabbedContent, TabPane, TextArea
+from textual.widgets import Button, Input, ProgressBar, RichLog, Select, Static, TabbedContent, TabPane, TextArea
 
 from ....core.models import TokenUsage
 from ....shared.config import get_settings
@@ -50,13 +50,11 @@ from .filters import (
     ConfigDefaultOutputDirInput,
     ConfigMaxConcurrentInput,
     ConfigMaxRetriesInput,
-    ConfigReserved3Input,
-    ConfigReserved4Input,
+    ConfigOpenAITierSelect,
+    ConfigAnthropicTierSelect,
     ConfigReserved5Input,
     ConfigReserved6Input,
     ConfigReserved7Input,
-    Feature001Checkbox,
-    Feature002Checkbox,
     Feature003Checkbox,
     FeatureConcurrentCheckbox,
     FeatureParsingCheckbox,
@@ -74,6 +72,7 @@ from .filters import (
 )
 from .questions_table import QuestionRow, QuestionsTable
 from .custom_progress import CustomProgressBar
+from .rate_limit_bar import RateLimitBar
 
 
 @dataclass(slots=True)
@@ -98,6 +97,29 @@ class DetectionResult:
 
 class MainScreen(Screen):
     """Main screen of the Lithoformer TUI application."""
+
+    DEFAULT_CSS = """
+    #left-col {
+        height: 100%;
+    }
+
+    #header-area {
+        height: auto;
+    }
+
+    #questions-area {
+        height: 1fr;
+        border: round $primary;
+        padding: 0;
+    }
+
+    #rate-limit-bar {
+        height: 1;
+        min-height: 1;
+        max-height: 1;
+        padding: 0 1;
+    }
+    """
 
     AUTO_INPUT_IDS = {
         "model-input",
@@ -135,8 +157,10 @@ class MainScreen(Screen):
         self._processed_count: int = 0
         self._model_price_input: float = 0.0  # 当前模型输入价格（$/M tokens）
         self._model_price_output: float = 0.0  # 当前模型输出价格（$/M tokens）
+        self._rate_limit_cache: dict | None = None  # rate limit信息缓存
 
         self._run_task: asyncio.Task[None] | None = None
+        self._rate_limit_timer_task: asyncio.Task[None] | None = None
 
         self.logger = logging.getLogger("memosyne.lithoformer.tui")
 
@@ -253,7 +277,12 @@ class MainScreen(Screen):
                 with Vertical(id="header-area"):
                     yield Static(ASCII_LOGO, id="logo-panel")
                     yield Static(info_text, id="info-panel")
-                yield QuestionsTable()
+                # 题目列表区域：题目表格 + rate limit进度条
+                questions_area = Vertical(id="questions-area")
+                questions_area.border_title = "题目列表"
+                with questions_area:
+                    yield QuestionsTable()
+                    yield RateLimitBar()
 
             # 右侧区域 (760-1600px): 包含中列、右列和控制台
             with Vertical(id="right-area"):
@@ -299,8 +328,14 @@ class MainScreen(Screen):
                                 default_model = appcfg.get_default_model()
                                 max_concurrent = config_repo.get("max_concurrent") if config_repo else "10"
                                 max_retries = config_repo.get("max_retries") if config_repo else "1"
-                                reserved_3 = config_repo.get("reserved_config_3") if config_repo else ""
-                                reserved_4 = config_repo.get("reserved_config_4") if config_repo else ""
+
+                                # 读取Tier配置（从feature表）
+                                from ....shared.infrastructure.app_config import SQLiteAppConfigService
+                                appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+                                flags = appcfg.get_feature_flags()
+                                openai_tier = flags.openai_tier
+                                anthropic_tier = flags.anthropic_tier
+
                                 reserved_5 = config_repo.get("reserved_config_5") if config_repo else ""
                                 reserved_6 = config_repo.get("reserved_config_6") if config_repo else ""
                                 reserved_7 = config_repo.get("reserved_config_7") if config_repo else ""
@@ -310,8 +345,8 @@ class MainScreen(Screen):
                                 yield ConfigDefaultModelInput(value=default_model)
                                 yield ConfigMaxConcurrentInput(value=max_concurrent)
                                 yield ConfigMaxRetriesInput(value=max_retries)
-                                yield ConfigReserved3Input(value=reserved_3)
-                                yield ConfigReserved4Input(value=reserved_4)
+                                yield ConfigOpenAITierSelect(value=openai_tier)
+                                yield ConfigAnthropicTierSelect(value=anthropic_tier)
                                 yield ConfigReserved5Input(value=reserved_5)
                                 yield ConfigReserved6Input(value=reserved_6)
                                 yield ConfigReserved7Input(value=reserved_7)
@@ -323,15 +358,13 @@ class MainScreen(Screen):
                                 appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
                                 flags = appcfg.get_feature_flags()
 
-                                # 2x3网格布局
+                                # 2x2网格布局（feature_001/002已移至配置Tab的Tier选择）
                                 with Horizontal(id="feature-row-1"):
                                     yield FeatureTranslationCheckbox(value=flags.enable_translation)
                                     yield FeatureParsingCheckbox(value=flags.enable_parsing)
-                                    yield Feature001Checkbox(value=flags.feature_001)
 
                                 with Horizontal(id="feature-row-2"):
                                     yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
-                                    yield Feature002Checkbox(value=flags.feature_002)
                                     yield Feature003Checkbox(value=flags.feature_003)
 
                     # 右列 (1320-1600px): 文件树 + 按钮
@@ -450,8 +483,11 @@ class MainScreen(Screen):
         from memosyne.core.models import Configuration
 
         if selected_value == "others":
-            provider_map = {"openai": "OpenAI", "anthropic": "Anthropic"}
-            provider_formatted = provider_map.get(provider, provider.capitalize())
+            # 从数据库获取提供商显示名称（不再硬编码）
+            from ....shared.infrastructure.app_config import SQLiteAppConfigService
+            appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+            provider_formatted = appcfg.get_provider_display_name(provider)
+
             model_display = f"{provider_formatted}::"
             self._set_input_value(self.model_input, model_display)
             log_value = f"{provider_formatted}:: (手动输入)"
@@ -567,8 +603,6 @@ class MainScreen(Screen):
     @on(Input.Changed, "#config-default-model")
     @on(Input.Changed, "#config-max-concurrent")
     @on(Input.Changed, "#config-max-retries")
-    @on(Input.Changed, "#config-reserved-3")
-    @on(Input.Changed, "#config-reserved-4")
     @on(Input.Changed, "#config-reserved-5")
     @on(Input.Changed, "#config-reserved-6")
     @on(Input.Changed, "#config-reserved-7")
@@ -584,8 +618,6 @@ class MainScreen(Screen):
             "config-default-model": "default_model",
             "config-max-concurrent": "max_concurrent",
             "config-max-retries": "max_retries",
-            "config-reserved-3": "reserved_config_3",
-            "config-reserved-4": "reserved_config_4",
             "config-reserved-5": "reserved_config_5",
             "config-reserved-6": "reserved_config_6",
             "config-reserved-7": "reserved_config_7",
@@ -640,11 +672,23 @@ class MainScreen(Screen):
                 appcfg.update_paths(input_dir=value)
             else:
                 appcfg.update_paths(output_dir=value)
-        else:
+        elif config_key == "default_model":
+            # 特殊处理：更新llm_models表的is_default标记
+            if value and "::" in value:
+                from memosyne.core.models import Configuration
+                config = Configuration(default_model=value)
+                provider, model_id = config.parse_model()
+                try:
+                    appcfg.set_default_model(provider, model_id)
+                    self.log_view.write(f"[green]✓ 默认模型已更新为: {value}[/green]")
+                except Exception as e:
+                    self.logger.error(f"更新默认模型失败: {e}")
+                    self.log_view.write(f"[red]✗ 更新默认模型失败: {e}[/red]")
+            # 同时保存到config表（向后兼容）
             appcfg.set_config(config_key, value)
 
-            # 特殊处理：如果修改的是默认模型，同步更新"输入"tab（仅当用户未手动修改时）
-            if config_key == "default_model" and value and "model-input" not in self._manual_overrides:
+            # 同步更新"输入"tab（仅当用户未手动修改时）
+            if value and "model-input" not in self._manual_overrides:
                 from memosyne.core.models import Configuration
                 config = Configuration(default_model=value)
                 provider, model = config.parse_model()
@@ -658,9 +702,40 @@ class MainScreen(Screen):
                     self._apply_model_select_value(model)
 
                 self._set_auto_field(self.model_input, value)
-
+        else:
+            appcfg.set_config(config_key, value)
             # 记录日志
             self.log_view.write(f"[dim]配置已保存: {config_key} = {value}[/dim]")
+
+    @on(Select.Changed, "#config-openai-tier")
+    @on(Select.Changed, "#config-anthropic-tier")
+    async def handle_tier_changed(self, event: Select.Changed) -> None:
+        """处理Tier选择变化，保存到feature表"""
+        widget_id = event.select.id
+        tier_value = event.value
+
+        if not tier_value or tier_value == Select.BLANK:
+            return
+
+        try:
+            tier_int = int(tier_value)
+            if tier_int < 1 or tier_int > 5:
+                self.log_view.write("[red]✗ Tier值必须在1-5之间[/red]")
+                return
+        except ValueError:
+            self.log_view.write("[red]✗ Tier值必须为整数[/red]")
+            return
+
+        # 更新feature表
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+
+        if widget_id == "config-openai-tier":
+            appcfg.update_feature_flags(openai_tier=tier_int)
+            self.log_view.write(f"[green]✓ OpenAI Tier已更新为: {tier_int}[/green]")
+        elif widget_id == "config-anthropic-tier":
+            appcfg.update_feature_flags(anthropic_tier=tier_int)
+            self.log_view.write(f"[green]✓ Anthropic Tier已更新为: {tier_int}[/green]")
 
     def _check_all_validations(self) -> None:
         """检查所有配置输入是否有效，如果都有效则启用按钮"""
@@ -690,8 +765,6 @@ class MainScreen(Screen):
     @on(FeatureTranslationCheckbox.Changed)
     @on(FeatureParsingCheckbox.Changed)
     @on(FeatureConcurrentCheckbox.Changed)
-    @on(Feature001Checkbox.Changed)
-    @on(Feature002Checkbox.Changed)
     @on(Feature003Checkbox.Changed)
     async def handle_feature_changed(self, event) -> None:
         """保存功能配置到数据库（实时）"""
@@ -709,8 +782,6 @@ class MainScreen(Screen):
             "feature-translation": "enable_translation",
             "feature-parsing": "enable_parsing",
             "feature-concurrent": "enable_concurrent",
-            "feature-001": "feature_001",
-            "feature-002": "feature_002",
             "feature-003": "feature_003",
         }
 
@@ -803,8 +874,6 @@ class MainScreen(Screen):
             enable_concurrent=flags.enable_concurrent,
             max_concurrent=tuning.max_concurrent,
             max_retries=tuning.max_retries,
-            feature_001=flags.feature_001,
-            feature_002=flags.feature_002,
             feature_003=flags.feature_003,
         )
 
@@ -837,6 +906,7 @@ class MainScreen(Screen):
         self._processed_count = 0
         self._total_tokens = 0
         self._running_tokens = TokenUsage()
+        self._rate_limit_cache = None  # 重置rate limit缓存
 
         # 获取当前模型的价格信息
         self._load_model_pricing(model_identifier)
@@ -851,6 +921,14 @@ class MainScreen(Screen):
         self._run_task = asyncio.create_task(
             self._process_questions(detection, use_case, formatter, file_adapter, feature_config, stats_repo, model_identifier),
             name="LithoformerRunTask",
+        )
+
+        # 启动rate limit定时器任务
+        if self._rate_limit_timer_task:
+            self._rate_limit_timer_task.cancel()
+        self._rate_limit_timer_task = asyncio.create_task(
+            self._rate_limit_update_loop(),
+            name="RateLimitTimerTask",
         )
 
     async def _process_questions(
@@ -932,6 +1010,10 @@ class MainScreen(Screen):
                             running_tokens = running_tokens + event.tokens
                             self._running_tokens = running_tokens  # 同步更新实例变量
 
+                            # 更新rate limit缓存（如果有）
+                            if event.rate_limit_info:
+                                self._rate_limit_cache = event.rate_limit_info
+
                             # 更新计数和UI
                             self._processed_count += 1
                             self._total_tokens = running_tokens.total_tokens
@@ -978,6 +1060,10 @@ class MainScreen(Screen):
                     self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
                     if event.status == "success" and event.item:
                         items.append(event.item)
+
+                    # 更新rate limit缓存（如果有）
+                    if event.rate_limit_info:
+                        self._rate_limit_cache = event.rate_limit_info
 
                     self._processed_count += 1
                     self._total_tokens = running_tokens.total_tokens
@@ -1041,6 +1127,19 @@ class MainScreen(Screen):
             self.action_mode = "detect"
             self._set_action_state("detect")
             self._run_task = None
+
+            # 停止rate limit定时器任务
+            if self._rate_limit_timer_task:
+                self._rate_limit_timer_task.cancel()
+                self._rate_limit_timer_task = None
+
+            # 清除rate limit缓存并更新显示
+            self._rate_limit_cache = None
+            try:
+                rate_limit_bar = self.query_one("#rate-limit-bar", RateLimitBar)
+                rate_limit_bar.update_rate_limit(None)
+            except Exception:
+                pass
 
     # region detection helpers ----------------------------------------------------
     def _detect_worker(
@@ -1227,6 +1326,9 @@ class MainScreen(Screen):
             ext="txt",
         )
         detection.output_filename = new_output_filename
+
+        # 切换模型时，允许自动更新输出文件名（清除手动覆盖标记）
+        self._manual_overrides.discard("output-filename-input")
         self._set_auto_field(self.output_filename_input, detection.output_filename)
 
         if old_code != model_code or old_filename != new_output_filename:
@@ -1497,6 +1599,22 @@ class MainScreen(Screen):
         # 统计信息现在显示在进度条中
         pass
 
+    async def _rate_limit_update_loop(self) -> None:
+        """每秒更新一次rate limit进度条（后台任务）"""
+        try:
+            while True:
+                await asyncio.sleep(1.0)
+                # 更新rate limit bar中的显示
+                try:
+                    rate_limit_bar = self.query_one("#rate-limit-bar", RateLimitBar)
+                    rate_limit_bar.update_rate_limit(self._rate_limit_cache)
+                except Exception:
+                    # 如果widget还没有挂载或出错，忽略
+                    pass
+        except asyncio.CancelledError:
+            # 任务被取消，正常退出
+            pass
+
     def _write_log(self, markup: str) -> None:
         """Thread-safe log sink for the custom logging handler."""
         if threading.get_ident() == self._main_thread_id:
@@ -1565,14 +1683,21 @@ class MainScreen(Screen):
 
     def _refresh_model_options(self, provider: str) -> None:
         """Refresh model options based on provider."""
-        models = list_all_models()
-        provider_models = models.get(provider)
-        if provider_models is None:
-            self.logger.warning("未知厂商 %s，保持现有模型列表", provider)
+        # 从数据库读取is_display=1的模型
+        from memosyne.shared.infrastructure.app_config import SQLiteAppConfigService
+        config_db = self.settings.db_dir / "config.db"
+        app_config = SQLiteAppConfigService(config_db)
+
+        display_models = app_config.get_display_models()
+        # 过滤当前provider的模型
+        provider_models = [m for m in display_models if m.provider == provider]
+
+        if not provider_models:
+            self.logger.warning("未找到厂商 %s 的可显示模型，保持现有模型列表", provider)
             return
 
         # 添加所有模型选项 + "Others"选项
-        options = [(model, model) for model in provider_models]
+        options = [(model.display_name, model.model_id) for model in provider_models]
         options.append(("Others (手动输入)", "others"))
 
         # 从数据库读取默认模型

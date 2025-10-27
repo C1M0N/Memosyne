@@ -39,7 +39,7 @@ class LithoformerLLMAdapter:
         self.provider = provider
         self.feature_config = feature_config
 
-    def parse_question(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int]]:
+    def parse_question(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int], dict | None]:
         """
         解析并分析单个题目（实现 LLMPort.parse_question）
 
@@ -47,7 +47,10 @@ class LithoformerLLMAdapter:
             payload: 包含 context/question/answer/note 的字典
 
         Returns:
-            (question_dict, token_usage_dict)
+            (question_dict, token_usage_dict, rate_limit_info)
+            - question_dict: 解析后的题目字典
+            - token_usage_dict: token使用情况
+            - rate_limit_info: rate limit信息（如果LLM provider提供）
 
         Raises:
             LLMError: LLM 调用失败
@@ -82,8 +85,8 @@ class LithoformerLLMAdapter:
             if note:
                 user_prompt += f"\n\n备注：{note}"
 
-            # 调用底层 LLM Provider 的通用方法
-            llm_response, token_usage = self.provider.complete_structured(
+            # 调用底层 LLM Provider 的通用方法（现在返回3个值）
+            llm_response, token_usage, rate_limit_info = self.provider.complete_structured(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 schema=schema["schema"],
@@ -99,7 +102,7 @@ class LithoformerLLMAdapter:
                 "total_tokens": token_usage.total_tokens,
             }
 
-            return llm_response, token_dict
+            return llm_response, token_dict, rate_limit_info
 
         except LLMError:
             # LLM 错误直接向上传播
