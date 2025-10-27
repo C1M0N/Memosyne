@@ -130,12 +130,45 @@ class MainScreen(Screen):
         self._selected_file: Path | None = None
 
         self._run_start_time: float | None = None
-        self._total_tokens: int = 0
+        self._total_tokens: int = 0  # 向后兼容，保留用于日志
+        self._running_tokens: TokenUsage = TokenUsage()  # 详细的token跟踪
         self._processed_count: int = 0
+        self._model_price_input: float = 0.0  # 当前模型输入价格（$/M tokens）
+        self._model_price_output: float = 0.0  # 当前模型输出价格（$/M tokens）
 
         self._run_task: asyncio.Task[None] | None = None
 
         self.logger = logging.getLogger("memosyne.lithoformer.tui")
+
+    def _load_model_pricing(self, model_identifier: str) -> None:
+        """加载模型价格信息（格式：OpenAI::gpt-4o）"""
+        try:
+            if "::" in model_identifier:
+                provider_str, model_id = model_identifier.split("::", 1)
+                provider = provider_str.lower()  # OpenAI -> openai
+
+                # 从AppConfigService获取模型信息
+                from memosyne.shared.infrastructure.app_config import SQLiteAppConfigService
+                config_db = self.settings.db_dir / "config.db"
+                app_config = SQLiteAppConfigService(config_db)
+
+                model_info = app_config.get_model_by_id(provider, model_id)
+                if model_info:
+                    self._model_price_input = model_info.price_input
+                    self._model_price_output = model_info.price_output
+                    self.logger.debug(f"加载模型价格: {model_id} - 输入${self._model_price_input}/M, 输出${self._model_price_output}/M")
+                else:
+                    self.logger.warning(f"未找到模型价格信息: {model_identifier}")
+                    self._model_price_input = 0.0
+                    self._model_price_output = 0.0
+            else:
+                self.logger.warning(f"模型标识符格式错误: {model_identifier}")
+                self._model_price_input = 0.0
+                self._model_price_output = 0.0
+        except Exception as e:
+            self.logger.error(f"加载模型价格失败: {e}")
+            self._model_price_input = 0.0
+            self._model_price_output = 0.0
 
     # region convenience accessors -------------------------------------------------
     @property
@@ -803,6 +836,10 @@ class MainScreen(Screen):
         self._run_start_time = perf_counter()
         self._processed_count = 0
         self._total_tokens = 0
+        self._running_tokens = TokenUsage()
+
+        # 获取当前模型的价格信息
+        self._load_model_pricing(model_identifier)
 
         formatter = FormatterAdapter.create()
         file_adapter = FileAdapter.create()
@@ -893,6 +930,7 @@ class MainScreen(Screen):
 
                             # 累计tokens
                             running_tokens = running_tokens + event.tokens
+                            self._running_tokens = running_tokens  # 同步更新实例变量
 
                             # 更新计数和UI
                             self._processed_count += 1
@@ -943,6 +981,7 @@ class MainScreen(Screen):
 
                     self._processed_count += 1
                     self._total_tokens = running_tokens.total_tokens
+                    self._running_tokens = running_tokens  # 同步更新实例变量
                     self._update_single_progress(done=True)
                     self._update_total_progress(self._processed_count, total_questions)
                     self._refresh_stats(total_questions)
@@ -1127,6 +1166,9 @@ class MainScreen(Screen):
         self._reset_progress_bars()
         self._processed_count = 0
         self._total_tokens = 0
+        self._running_tokens = TokenUsage()
+        self._model_price_input = 0.0
+        self._model_price_output = 0.0
         self._set_status("状态：待机")
         self._set_stats_text(0, 0, 0.0, "--:--", 0)
         self.action_mode = "detect"
@@ -1397,6 +1439,28 @@ class MainScreen(Screen):
         if total > 0:
             self.total_progress._total = total
 
+    def _format_token_info(self) -> str:
+        """格式化token信息字符串：Input: 100K ($1.25/M) | Output: 50K ($10.00/M) | Cost: $0.625"""
+        input_tokens = self._running_tokens.input_tokens
+        output_tokens = self._running_tokens.output_tokens
+
+        # 格式化token数量（以K为单位）
+        def format_tokens(count: int) -> str:
+            if count >= 1000:
+                return f"{count / 1000:.1f}K"
+            return str(count)
+
+        # 计算成本
+        input_cost = (input_tokens / 1_000_000) * self._model_price_input
+        output_cost = (output_tokens / 1_000_000) * self._model_price_output
+        total_cost = input_cost + output_cost
+
+        return (
+            f"Input: {format_tokens(input_tokens)} (${self._model_price_input:.2f}/M) | "
+            f"Output: {format_tokens(output_tokens)} (${self._model_price_output:.2f}/M) | "
+            f"Cost: ${total_cost:.3f}"
+        )
+
     def _update_single_progress(self, *, reset: bool = False, done: bool = False) -> None:
         """Deprecated: Single progress bar no longer exists."""
         pass
@@ -1406,12 +1470,16 @@ class MainScreen(Screen):
         elapsed = (perf_counter() - self._run_start_time) if self._run_start_time else 0.0
         remaining = self._estimate_remaining_time(elapsed, completed, total)
 
+        # 生成详细的token信息字符串
+        token_info = self._format_token_info()
+
         self.total_progress.update_progress(
             current=completed,
             total=total,
             elapsed_time=self._format_seconds(elapsed),
             remaining_time=remaining,
-            tokens=self._total_tokens
+            tokens=self._total_tokens,  # 向后兼容
+            token_info=token_info,  # 详细信息
         )
 
     def _set_status(self, text: str) -> None:
