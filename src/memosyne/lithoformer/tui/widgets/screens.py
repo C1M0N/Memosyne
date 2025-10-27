@@ -73,6 +73,7 @@ from .filters import (
 from .questions_table import QuestionRow, QuestionsTable
 from .custom_progress import CustomProgressBar
 from .rate_limit_bar import RateLimitBar
+from .rate_limit_manager import RateLimitManager
 
 
 @dataclass(slots=True)
@@ -157,7 +158,9 @@ class MainScreen(Screen):
         self._processed_count: int = 0
         self._model_price_input: float = 0.0  # 当前模型输入价格（$/M tokens）
         self._model_price_output: float = 0.0  # 当前模型输出价格（$/M tokens）
-        self._rate_limit_cache: dict | None = None  # rate limit信息缓存
+
+        # Rate limit管理器（替代原来的_rate_limit_cache）
+        self._rate_limit_manager = RateLimitManager()
 
         self._run_task: asyncio.Task[None] | None = None
         self._rate_limit_timer_task: asyncio.Task[None] | None = None
@@ -906,7 +909,7 @@ class MainScreen(Screen):
         self._processed_count = 0
         self._total_tokens = 0
         self._running_tokens = TokenUsage()
-        self._rate_limit_cache = None  # 重置rate limit缓存
+        self._rate_limit_manager.clear()  # 清除rate limit缓存
 
         # 获取当前模型的价格信息
         self._load_model_pricing(model_identifier)
@@ -1010,9 +1013,9 @@ class MainScreen(Screen):
                             running_tokens = running_tokens + event.tokens
                             self._running_tokens = running_tokens  # 同步更新实例变量
 
-                            # 更新rate limit缓存（如果有）
+                            # 更新rate limit manager（如果有新数据）
                             if event.rate_limit_info:
-                                self._rate_limit_cache = event.rate_limit_info
+                                self._rate_limit_manager.update(event.rate_limit_info)
 
                             # 更新计数和UI
                             self._processed_count += 1
@@ -1061,9 +1064,9 @@ class MainScreen(Screen):
                     if event.status == "success" and event.item:
                         items.append(event.item)
 
-                    # 更新rate limit缓存（如果有）
+                    # 更新rate limit manager（如果有新数据）
                     if event.rate_limit_info:
-                        self._rate_limit_cache = event.rate_limit_info
+                        self._rate_limit_manager.update(event.rate_limit_info)
 
                     self._processed_count += 1
                     self._total_tokens = running_tokens.total_tokens
@@ -1133,8 +1136,8 @@ class MainScreen(Screen):
                 self._rate_limit_timer_task.cancel()
                 self._rate_limit_timer_task = None
 
-            # 清除rate limit缓存并更新显示
-            self._rate_limit_cache = None
+            # 清除rate limit管理器并更新显示
+            self._rate_limit_manager.clear()
             try:
                 rate_limit_bar = self.query_one("#rate-limit-bar", RateLimitBar)
                 rate_limit_bar.update_rate_limit(None)
@@ -1604,10 +1607,12 @@ class MainScreen(Screen):
         try:
             while True:
                 await asyncio.sleep(1.0)
+                # 从manager获取当前信息（包含动态计算的reset倒计时）
+                current_info = self._rate_limit_manager.get_current_info()
                 # 更新rate limit bar中的显示
                 try:
                     rate_limit_bar = self.query_one("#rate-limit-bar", RateLimitBar)
-                    rate_limit_bar.update_rate_limit(self._rate_limit_cache)
+                    rate_limit_bar.update_rate_limit(current_info)
                 except Exception:
                     # 如果widget还没有挂载或出错，忽略
                     pass
