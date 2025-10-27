@@ -31,3 +31,40 @@ class AppConfigBundle(BaseModel):
 class LithoformerPaths(BaseModel):
     input_dir: Path | None = Field(default=None)
     output_dir: Path | None = Field(default=None)
+
+
+class LLMModelInfo(BaseModel):
+    """LLM模型信息"""
+    id: int
+    provider: str  # openai, anthropic
+    model_id: str  # gpt-4o, claude-sonnet-4.5
+    display_name: str  # GPT-4o, Claude Sonnet 4.5
+    alias: str | None = None
+    price_input: float  # 每百万tokens的价格（美元）
+    price_output: float  # 每百万tokens的价格（美元）
+    # RPM限制
+    rpm_limit_tier1: int | None = None
+    rpm_limit_tier2: int | None = None
+    rpm_limit_tier3: int | None = None
+    rpm_limit_tier4: int | None = None
+    rpm_limit_tier5: int | None = None
+    # TPM限制（OpenAI使用）
+    tpm_limit_tier1: int | None = None
+    tpm_limit_tier2: int | None = None
+    tpm_limit_tier3: int | None = None
+    tpm_limit_tier4: int | None = None
+    tpm_limit_tier5: int | None = None
+    # ITPM限制（Anthropic使用）
+    itpm_limit_tier1: int | None = None
+    itpm_limit_tier2: int | None = None
+    itpm_limit_tier3: int | None = None
+    itpm_limit_tier4: int | None = None
+    itpm_limit_tier5: int | None = None
+    # OTPM限制（Anthropic使用）
+    otpm_limit_tier1: int | None = None
+    otpm_limit_tier2: int | None = None
+    otpm_limit_tier3: int | None = None
+    otpm_limit_tier4: int | None = None
+    otpm_limit_tier5: int | None = None
+    is_active: bool = True
+    is_default: bool = False

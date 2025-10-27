@@ -43,7 +43,8 @@ class TextualLogHandler(logging.Handler):
 def build_textual_handler(sink: LogSink) -> TextualLogHandler:
     """Create a handler configured with the project's preferred log format."""
     handler = TextualLogHandler(sink)
-    formatter = logging.Formatter("%(name)s :: %(message)s")
+    # 简化格式：只显示消息，不显示模块名称前缀
+    formatter = logging.Formatter("%(message)s")
     handler.setFormatter(formatter)
     return handler
 

@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..config.app_config import FeatureFlags, RuntimeTuning, AppConfigBundle, LithoformerPaths
+from ..config.app_config import FeatureFlags, RuntimeTuning, AppConfigBundle, LithoformerPaths, LLMModelInfo
 
 
 class SQLiteAppConfigService:
@@ -92,8 +92,20 @@ class SQLiteAppConfigService:
         )
 
     def get_default_model(self) -> str:
+        """获取默认模型（格式：provider::model_id）"""
+        # 优先从数据库的is_default标记读取
+        model_info = self.get_default_model_info()
+        if model_info:
+            provider = model_info.provider.capitalize()  # openai -> OpenAI
+            if provider == "Openai":
+                provider = "OpenAI"
+            elif provider == "Anthropic":
+                provider = "Anthropic"
+            return f"{provider}::{model_info.model_id}"
+
+        # 降级到配置表（向后兼容）
         value = self.get_config("default_model")
-        return value or "OpenAI::gpt-4o-mini"
+        return value or "OpenAI::gpt-4o"
 
     def get_bundle(self) -> AppConfigBundle:
         return AppConfigBundle(
@@ -118,3 +130,84 @@ class SQLiteAppConfigService:
             self.set_config("lithoformer_input_dir", str(Path(input_dir).expanduser().resolve()))
         if output_dir is not None:
             self.set_config("lithoformer_output_dir", str(Path(output_dir).expanduser().resolve()))
+
+    # --- LLM models ---
+    def get_all_models(self, active_only: bool = True) -> list[LLMModelInfo]:
+        """获取所有LLM模型信息"""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            query = """
+                SELECT * FROM llm_models
+                WHERE is_active = 1
+                ORDER BY provider, model_id
+            """ if active_only else """
+                SELECT * FROM llm_models
+                ORDER BY provider, model_id
+            """
+            rows = conn.execute(query).fetchall()
+            return [self._row_to_model_info(row) for row in rows]
+
+    def get_model_by_id(self, provider: str, model_id: str) -> LLMModelInfo | None:
+        """根据provider和model_id获取模型信息"""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM llm_models WHERE provider = ? AND model_id = ?",
+                (provider, model_id)
+            ).fetchone()
+            return self._row_to_model_info(row) if row else None
+
+    def get_default_model_info(self) -> LLMModelInfo | None:
+        """获取默认模型信息"""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM llm_models WHERE is_default = 1"
+            ).fetchone()
+            return self._row_to_model_info(row) if row else None
+
+    def set_default_model(self, provider: str, model_id: str) -> None:
+        """设置默认模型"""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            # 清除所有默认标记
+            conn.execute("UPDATE llm_models SET is_default = 0")
+            # 设置新的默认模型
+            conn.execute(
+                "UPDATE llm_models SET is_default = 1 WHERE provider = ? AND model_id = ?",
+                (provider, model_id)
+            )
+            conn.commit()
+
+    def _row_to_model_info(self, row: sqlite3.Row) -> LLMModelInfo:
+        """将数据库行转换为LLMModelInfo对象"""
+        return LLMModelInfo(
+            id=row["id"],
+            provider=row["provider"],
+            model_id=row["model_id"],
+            display_name=row["display_name"],
+            alias=row["alias"],
+            price_input=row["price_input"],
+            price_output=row["price_output"],
+            rpm_limit_tier1=row["rpm_limit_tier1"],
+            rpm_limit_tier2=row["rpm_limit_tier2"],
+            rpm_limit_tier3=row["rpm_limit_tier3"],
+            rpm_limit_tier4=row["rpm_limit_tier4"],
+            rpm_limit_tier5=row["rpm_limit_tier5"],
+            tpm_limit_tier1=row["tpm_limit_tier1"],
+            tpm_limit_tier2=row["tpm_limit_tier2"],
+            tpm_limit_tier3=row["tpm_limit_tier3"],
+            tpm_limit_tier4=row["tpm_limit_tier4"],
+            tpm_limit_tier5=row["tpm_limit_tier5"],
+            itpm_limit_tier1=row["itpm_limit_tier1"],
+            itpm_limit_tier2=row["itpm_limit_tier2"],
+            itpm_limit_tier3=row["itpm_limit_tier3"],
+            itpm_limit_tier4=row["itpm_limit_tier4"],
+            itpm_limit_tier5=row["itpm_limit_tier5"],
+            otpm_limit_tier1=row["otpm_limit_tier1"],
+            otpm_limit_tier2=row["otpm_limit_tier2"],
+            otpm_limit_tier3=row["otpm_limit_tier3"],
+            otpm_limit_tier4=row["otpm_limit_tier4"],
+            otpm_limit_tier5=row["otpm_limit_tier5"],
+            is_active=bool(row["is_active"]),
+            is_default=bool(row["is_default"]),
+        )

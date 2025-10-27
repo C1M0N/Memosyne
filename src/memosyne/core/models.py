@@ -15,14 +15,26 @@ class TokenUsage(BaseModel):
     Token 使用统计
 
     Attributes:
-        prompt_tokens: 提示词 Token 数
-        completion_tokens: 补全 Token 数
+        prompt_tokens: 提示词 Token 数（OpenAI命名）
+        completion_tokens: 补全 Token 数（OpenAI命名）
         total_tokens: 总 Token 数
+
+    注：input_tokens和output_tokens是别名（Anthropic命名）
     """
 
     prompt_tokens: int = Field(default=0, ge=0)
     completion_tokens: int = Field(default=0, ge=0)
     total_tokens: int = Field(default=0, ge=0)
+
+    @property
+    def input_tokens(self) -> int:
+        """Anthropic风格别名：input_tokens = prompt_tokens"""
+        return self.prompt_tokens
+
+    @property
+    def output_tokens(self) -> int:
+        """Anthropic风格别名：output_tokens = completion_tokens"""
+        return self.completion_tokens
 
     def __add__(self, other: "TokenUsage") -> "TokenUsage":
         """支持 TokenUsage 相加"""

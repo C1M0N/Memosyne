@@ -885,18 +885,20 @@ class MainScreen(Screen):
                         # 更新row状态
                         self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
 
-                        # 按index存储成功的items
-                        if event.status == "success" and event.item:
-                            items_dict[event.index] = event.item
+                        # 只有最终状态才计入进度
+                        if event.status in ["success", "error", "invalid"]:
+                            # 按index存储成功的items
+                            if event.status == "success" and event.item:
+                                items_dict[event.index] = event.item
 
-                        # 累计tokens
-                        running_tokens = running_tokens + event.tokens
+                            # 累计tokens
+                            running_tokens = running_tokens + event.tokens
 
-                        # 更新计数和UI
-                        self._processed_count += 1
-                        self._total_tokens = running_tokens.total_tokens
-                        self._update_total_progress(self._processed_count, total_questions)
-                        self._refresh_stats(total_questions)
+                            # 更新计数和UI
+                            self._processed_count += 1
+                            self._total_tokens = running_tokens.total_tokens
+                            self._update_total_progress(self._processed_count, total_questions)
+                            self._refresh_stats(total_questions)
 
                     # 按index排序items
                     items = [items_dict[i] for i in sorted(items_dict.keys())]
@@ -1289,6 +1291,8 @@ class MainScreen(Screen):
         title_sub: str,
     ) -> None:
         """Apply a processing event to the table row and log on failure."""
+        from rich.text import Text
+
         row = self._rows.get(event.index)
         if not row:
             return
@@ -1300,22 +1304,54 @@ class MainScreen(Screen):
             row.output_chars = len(rendered)
             row.elapsed = event.elapsed
             row.error = None
+            self.questions_table.update_question_status(
+                row.row_key,
+                row.status,
+                row.qtype,
+                row.output_chars,
+                row.elapsed,
+            )
         elif event.status == "invalid":
             row.status = "ERROR"
             row.error = event.error or "输出校验失败"
             row.elapsed = event.elapsed
-        else:
+            self.questions_table.update_question_status(
+                row.row_key,
+                row.status,
+                row.qtype,
+                row.output_chars,
+                row.elapsed,
+            )
+        elif event.status == "error":
             row.status = "ERROR"
             row.error = event.error or "解析失败"
             row.elapsed = event.elapsed
+            self.questions_table.update_question_status(
+                row.row_key,
+                row.status,
+                row.qtype,
+                row.output_chars,
+                row.elapsed,
+            )
+        elif event.status == "processing":
+            # 正在处理中
+            row.status = "In Progress"
+            self.questions_table.update_question_status(
+                row.row_key,
+                row.status,
+            )
+        elif event.status == "waiting_429":
+            # 429等待中 - 显示倒计时
+            # 格式："429 [秒数]" - "429"用洋红色，"[秒数]"用白色
+            remaining = event.retry_wait_remaining or 0
+            status_text = Text()
+            status_text.append("429 ", style="magenta")
+            status_text.append(f"[{remaining}]", style="white")
 
-        self.questions_table.update_question_status(
-            row.row_key,
-            row.status,
-            row.qtype,
-            row.output_chars,
-            row.elapsed,
-        )
+            self.questions_table.update_question_status(
+                row.row_key,
+                status_text,  # 传递Text对象
+            )
 
         if row.error:
             self.logger.error("题目 #%s 解析失败：%s", row.number, row.error)

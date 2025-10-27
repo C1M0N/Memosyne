@@ -59,6 +59,7 @@ class CustomProgressBar(Widget):
         self._elapsed_time = "0:00"
         self._remaining_time = "--:--"
         self._tokens = 0
+        self._token_info: str | None = None
 
     def compose(self) -> ComposeResult:
         """Compose the progress bar widgets."""
@@ -73,6 +74,7 @@ class CustomProgressBar(Widget):
         elapsed_time: str = "0:00",
         remaining_time: str = "--:--",
         tokens: int = 0,
+        token_info: str | None = None,
     ) -> None:
         """更新进度条显示。
 
@@ -81,7 +83,8 @@ class CustomProgressBar(Widget):
             total: 总数（如果提供则更新）
             elapsed_time: 已运行时间（格式：m:ss 或 h:mm）
             remaining_time: 剩余时间（格式：m:ss 或 h:mm）
-            tokens: 已使用的 tokens 数量
+            tokens: 已使用的 tokens 数量（向后兼容）
+            token_info: 详细token信息字符串（如果提供，将替代tokens字段）
         """
         if total is not None:
             self._total = total
@@ -90,6 +93,7 @@ class CustomProgressBar(Widget):
         self._elapsed_time = elapsed_time
         self._remaining_time = remaining_time
         self._tokens = tokens
+        self._token_info = token_info
 
         self._refresh_display()
 
@@ -102,11 +106,20 @@ class CustomProgressBar(Widget):
             percentage = 0
 
         # 第一行：时间和 tokens 信息
-        info_line = (
-            f"运行时间：{self._elapsed_time}  "
-            f"剩余时间：{self._remaining_time}  "
-            f"已使用tokens：{self._tokens}"
-        )
+        if self._token_info:
+            # 使用详细token信息
+            info_line = (
+                f"运行时间：{self._elapsed_time}  "
+                f"剩余时间：{self._remaining_time}  "
+                f"{self._token_info}"
+            )
+        else:
+            # 向后兼容：使用简单的tokens数值
+            info_line = (
+                f"运行时间：{self._elapsed_time}  "
+                f"剩余时间：{self._remaining_time}  "
+                f"已使用tokens：{self._tokens}"
+            )
 
         # 第二行：进度条
         # 根据终端宽度动态调整进度条长度
@@ -157,4 +170,5 @@ class CustomProgressBar(Widget):
         self._elapsed_time = "0:00"
         self._remaining_time = "--:--"
         self._tokens = 0
+        self._token_info = None
         self._refresh_display()

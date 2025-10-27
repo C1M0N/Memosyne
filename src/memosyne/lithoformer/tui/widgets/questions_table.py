@@ -97,15 +97,20 @@ class QuestionsTable(DataTable):
     def update_question_status(
         self,
         row_key: str,
-        status: str,
+        status: str | Text,  # 支持Text对象（用于429倒计时的混合颜色）
         qtype: str | None = None,
         output_chars: int | None = None,
         elapsed: float | None = None,
     ) -> None:
         """Update the status and other fields of a question row."""
-        style = self._get_status_style(status)
+        # 如果status已经是Text对象，直接使用；否则应用样式
+        if isinstance(status, Text):
+            status_text = status
+        else:
+            style = self._get_status_style(status)
+            status_text = Text(status, style=style)
 
-        self.update_cell(row_key, "status", Text(status, style=style))
+        self.update_cell(row_key, "status", status_text)
 
         if qtype is not None:
             self.update_cell(row_key, "qtype", qtype)
@@ -124,6 +129,7 @@ class QuestionsTable(DataTable):
             "In Progress": "medium_purple3",
             "Done": "green3",
             "ERROR": "red",
+            "Waiting 429": "magenta",  # 429等待状态（洋红色）
         }
         return styles.get(status, "white")
 

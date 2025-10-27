@@ -97,7 +97,186 @@ class SQLiteConfigRepository:
             # 4. 清理遗留统计表（已迁移到 stat.db）
             conn.execute("DROP TABLE IF EXISTS processing_stats")
 
+            # 5. LLM模型信息表
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS llm_models (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    alias TEXT,
+                    price_input REAL NOT NULL,
+                    price_output REAL NOT NULL,
+                    rpm_limit_tier1 INTEGER,
+                    rpm_limit_tier2 INTEGER,
+                    rpm_limit_tier3 INTEGER,
+                    rpm_limit_tier4 INTEGER,
+                    rpm_limit_tier5 INTEGER,
+                    tpm_limit_tier1 INTEGER,
+                    tpm_limit_tier2 INTEGER,
+                    tpm_limit_tier3 INTEGER,
+                    tpm_limit_tier4 INTEGER,
+                    tpm_limit_tier5 INTEGER,
+                    itpm_limit_tier1 INTEGER,
+                    itpm_limit_tier2 INTEGER,
+                    itpm_limit_tier3 INTEGER,
+                    itpm_limit_tier4 INTEGER,
+                    itpm_limit_tier5 INTEGER,
+                    otpm_limit_tier1 INTEGER,
+                    otpm_limit_tier2 INTEGER,
+                    otpm_limit_tier3 INTEGER,
+                    otpm_limit_tier4 INTEGER,
+                    otpm_limit_tier5 INTEGER,
+                    is_active BOOLEAN DEFAULT 1,
+                    is_default BOOLEAN DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(provider, model_id)
+                )
+                """
+            )
+
+            # 初始化LLM模型数据
+            self._populate_llm_models(conn)
+
             conn.commit()
+
+    def _populate_llm_models(self, conn: sqlite3.Connection) -> None:
+        """填充LLM模型数据（仅在表为空时执行）"""
+        # 检查表是否已有数据
+        cursor = conn.execute("SELECT COUNT(*) FROM llm_models")
+        if cursor.fetchone()[0] > 0:
+            return  # 已有数据，跳过
+
+        now = datetime.now().isoformat()
+
+        # OpenAI 模型数据
+        openai_models = [
+            # (model_id, display_name, alias, price_input, price_output, rpm_t1-5, tpm_t1-5)
+            ("gpt-5", "GPT-5", None, 1.25, 10.00, 500, 5000, 5000, 10000, 15000, 500000, 1000000, 2000000, 4000000, 40000000),
+            ("gpt-5-mini", "GPT-5 Mini", None, 0.25, 2.00, 500, 5000, 5000, 10000, 30000, 500000, 2000000, 4000000, 10000000, 180000000),
+            ("gpt-5-nano", "GPT-5 Nano", None, 0.05, 0.40, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-5-chat-latest", "GPT-5 Chat Latest", None, 1.25, 10.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-5-codex", "GPT-5 Codex", None, 1.25, 10.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-5-pro", "GPT-5 Pro", None, 15.00, 120.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4.1", "GPT-4.1", None, 2.00, 8.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4.1-mini", "GPT-4.1 Mini", None, 0.40, 1.60, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4.1-nano", "GPT-4.1 Nano", None, 0.10, 0.40, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4o", "GPT-4o", None, 2.50, 10.00, 500, 5000, 5000, 10000, 10000, 30000, 450000, 800000, 2000000, 30000000),
+            ("gpt-4o-2024-05-13", "GPT-4o (2024-05-13)", None, 5.00, 15.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4o-mini", "GPT-4o Mini", None, 0.15, 0.60, 500, 5000, 5000, 10000, 30000, 200000, 2000000, 4000000, 10000000, 150000000),
+            ("gpt-realtime", "GPT Realtime", None, 4.00, 16.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-realtime-mini", "GPT Realtime Mini", None, 0.60, 2.40, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4o-realtime-preview", "GPT-4o Realtime Preview", None, 5.00, 20.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4o-mini-realtime-preview", "GPT-4o Mini Realtime Preview", None, 0.60, 2.40, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-audio", "GPT Audio", None, 2.50, 10.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-audio-mini", "GPT Audio Mini", None, 0.60, 2.40, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4o-audio-preview", "GPT-4o Audio Preview", None, 2.50, 10.00, None, None, None, None, None, None, None, None, None, None),
+            ("gpt-4o-mini-audio-preview", "GPT-4o Mini Audio Preview", None, 0.15, 0.60, None, None, None, None, None, None, None, None, None, None),
+            ("o1", "o1", None, 15.00, 60.00, None, None, None, None, None, None, None, None, None, None),
+            ("o1-pro", "o1 Pro", None, 150.00, 600.00, None, None, None, None, None, None, None, None, None, None),
+            ("o1-mini", "o1 Mini", None, 1.10, 4.40, None, None, None, None, None, None, None, None, None, None),
+            ("o3", "o3", None, 2.00, 8.00, None, None, None, None, None, None, None, None, None, None),
+            ("o3-pro", "o3 Pro", None, 20.00, 80.00, None, None, None, None, None, None, None, None, None, None),
+            ("o3-deep-research", "o3 Deep Research", None, 10.00, 40.00, None, None, None, None, None, None, None, None, None, None),
+            ("o3-mini", "o3 Mini", None, 1.10, 4.40, None, None, None, None, None, None, None, None, None, None),
+            ("o4-mini", "o4 Mini", None, 1.10, 4.40, None, None, None, None, None, None, None, None, None, None),
+            ("o4-mini-deep-research", "o4 Mini Deep Research", None, 2.00, 8.00, None, None, None, None, None, None, None, None, None, None),
+        ]
+
+        for model_data in openai_models:
+            model_id, display_name, alias, price_in, price_out = model_data[:5]
+            rpm_limits = model_data[5:10]
+            tpm_limits = model_data[10:15]
+
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO llm_models (
+                    provider, model_id, display_name, alias,
+                    price_input, price_output,
+                    rpm_limit_tier1, rpm_limit_tier2, rpm_limit_tier3, rpm_limit_tier4, rpm_limit_tier5,
+                    tpm_limit_tier1, tpm_limit_tier2, tpm_limit_tier3, tpm_limit_tier4, tpm_limit_tier5,
+                    is_active, is_default, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                """,
+                ("openai", model_id, display_name, alias, price_in, price_out,
+                 *rpm_limits, *tpm_limits, now)
+            )
+
+        # Anthropic 模型数据
+        anthropic_models = [
+            # (model_id, display_name, alias, price_input, price_output,
+            #  rpm_t1-5, itpm_t1-5, otpm_t1-5)
+            ("claude-opus-4.1", "Claude Opus 4.1", None, 15.00, 75.00,
+             50, 1000, 2000, 4000, None,
+             30000, 450000, 800000, 2000000, None,
+             8000, 90000, 160000, 400000, None),
+            ("claude-opus-4", "Claude Opus 4", None, 15.00, 75.00,
+             50, 1000, 2000, 4000, None,
+             30000, 450000, 800000, 2000000, None,
+             8000, 90000, 160000, 400000, None),
+            ("claude-sonnet-4.5", "Claude Sonnet 4.5", None, 3.00, 15.00,
+             50, 1000, 2000, 4000, None,
+             30000, 450000, 800000, 2000000, None,
+             8000, 90000, 160000, 400000, None),
+            ("claude-sonnet-4", "Claude Sonnet 4", None, 3.00, 15.00,
+             50, 1000, 2000, 4000, None,
+             30000, 450000, 800000, 2000000, None,
+             8000, 90000, 160000, 400000, None),
+            ("claude-sonnet-3.7", "Claude Sonnet 3.7", None, 3.00, 15.00,
+             50, 1000, 2000, 4000, None,
+             20000, 40000, 80000, 200000, None,
+             8000, 16000, 32000, 80000, None),
+            ("claude-sonnet-3.5", "Claude Sonnet 3.5 (deprecated)", None, 3.00, 15.00,
+             50, 1000, 2000, 4000, None,
+             40000, 80000, 160000, 400000, None,
+             8000, 16000, 32000, 80000, None),
+            ("claude-haiku-4.5", "Claude Haiku 4.5", None, 1.00, 5.00,
+             50, 1000, 2000, 4000, None,
+             50000, 450000, 1000000, 4000000, None,
+             10000, 90000, 200000, 800000, None),
+            ("claude-haiku-3.5", "Claude Haiku 3.5", None, 0.80, 4.00,
+             50, 1000, 2000, 4000, None,
+             50000, 100000, 200000, 400000, None,
+             10000, 20000, 40000, 80000, None),
+            ("claude-haiku-3", "Claude Haiku 3", None, 0.25, 1.25,
+             50, 1000, 2000, 4000, None,
+             50000, 100000, 200000, 400000, None,
+             10000, 20000, 40000, 80000, None),
+            ("claude-opus-3", "Claude Opus 3 (deprecated)", None, 15.00, 75.00,
+             50, 1000, 2000, 4000, None,
+             20000, 40000, 80000, 400000, None,
+             4000, 8000, 16000, 80000, None),
+        ]
+
+        for model_data in anthropic_models:
+            model_id, display_name, alias, price_in, price_out = model_data[:5]
+            rpm_limits = model_data[5:10]
+            itpm_limits = model_data[10:15]
+            otpm_limits = model_data[15:20]
+
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO llm_models (
+                    provider, model_id, display_name, alias,
+                    price_input, price_output,
+                    rpm_limit_tier1, rpm_limit_tier2, rpm_limit_tier3, rpm_limit_tier4, rpm_limit_tier5,
+                    itpm_limit_tier1, itpm_limit_tier2, itpm_limit_tier3, itpm_limit_tier4, itpm_limit_tier5,
+                    otpm_limit_tier1, otpm_limit_tier2, otpm_limit_tier3, otpm_limit_tier4, otpm_limit_tier5,
+                    is_active, is_default, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                """,
+                ("anthropic", model_id, display_name, alias, price_in, price_out,
+                 *rpm_limits, *itpm_limits, *otpm_limits, now)
+            )
+
+        # 设置默认模型（gpt-4o）
+        conn.execute(
+            """
+            UPDATE llm_models SET is_default = 1
+            WHERE provider = 'openai' AND model_id = 'gpt-4o'
+            """
+        )
 
     def get(self, key: str) -> str | None:
         """获取配置项"""
