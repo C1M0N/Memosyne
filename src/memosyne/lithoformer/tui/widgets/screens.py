@@ -329,8 +329,8 @@ class MainScreen(Screen):
                                 default_input = str(paths.input_dir) if paths.input_dir else ""
                                 default_output = str(paths.output_dir) if paths.output_dir else ""
                                 default_model = appcfg.get_default_model()
-                                max_concurrent = config_repo.get("max_concurrent") if config_repo else "10"
-                                max_retries = config_repo.get("max_retries") if config_repo else "1"
+                                max_concurrent = appcfg.get_config("max_concurrent") or "10"
+                                max_retries = appcfg.get_config("max_retries") or "1"
 
                                 # 读取Tier配置（从feature表）
                                 from ....shared.infrastructure.app_config import SQLiteAppConfigService
@@ -339,9 +339,9 @@ class MainScreen(Screen):
                                 openai_tier = flags.openai_tier
                                 anthropic_tier = flags.anthropic_tier
 
-                                reserved_5 = config_repo.get("reserved_config_5") if config_repo else ""
-                                reserved_6 = config_repo.get("reserved_config_6") if config_repo else ""
-                                reserved_7 = config_repo.get("reserved_config_7") if config_repo else ""
+                                reserved_5 = appcfg.get_config("reserved_config_5") or ""
+                                reserved_6 = appcfg.get_config("reserved_config_6") or ""
+                                reserved_7 = appcfg.get_config("reserved_config_7") or ""
 
                                 yield ConfigDefaultInputDirInput(value=default_input)
                                 yield ConfigDefaultOutputDirInput(value=default_output)
@@ -636,14 +636,18 @@ class MainScreen(Screen):
 
         if config_key == "max_concurrent":
             if value:
-                try:
-                    num = int(value)
-                    if num < 1 or num > 100:
+                # 允许 "auto" 字符串（不区分大小写）
+                if value.lower() == "auto":
+                    is_valid = True
+                else:
+                    try:
+                        num = int(value)
+                        if num < 1 or num > 100:
+                            is_valid = False
+                            error_message = "并发数必须在1-100之间"
+                    except ValueError:
                         is_valid = False
-                        error_message = "并发数必须在1-100之间"
-                except ValueError:
-                    is_valid = False
-                    error_message = "并发数必须为整数"
+                        error_message = "并发数必须为整数或'auto'"
         elif config_key == "max_retries":
             if value:
                 try:
@@ -706,6 +710,9 @@ class MainScreen(Screen):
 
                 self._set_auto_field(self.model_input, value)
         else:
+            # 规范化auto值（max_concurrent支持"auto"字符串）
+            if config_key == "max_concurrent" and value and value.lower() == "auto":
+                value = "auto"
             appcfg.set_config(config_key, value)
             # 记录日志
             self.log_view.write(f"[dim]配置已保存: {config_key} = {value}[/dim]")
@@ -870,12 +877,20 @@ class MainScreen(Screen):
         flags = appcfg.get_feature_flags()
         tuning = appcfg.get_runtime_tuning()
 
+        # 处理auto并发模式（简化版本）
+        max_concurrent_value = tuning.max_concurrent
+        if isinstance(max_concurrent_value, str) and max_concurrent_value.lower() == "auto":
+            # TODO: 完整版本应该发送测试请求获取RPM/TPM，然后计算最优值
+            # 当前简化版本：使用合理的默认值
+            max_concurrent_value = 10
+            self.logger.info("Auto并发模式：使用默认值10（完整自动计算将在后续版本实现）")
+
         # 构建FeatureConfig
         feature_config = FeatureConfig(
             enable_translation=flags.enable_translation,
             enable_parsing=flags.enable_parsing,
             enable_concurrent=flags.enable_concurrent,
-            max_concurrent=tuning.max_concurrent,
+            max_concurrent=max_concurrent_value,
             max_retries=tuning.max_retries,
             feature_003=flags.feature_003,
         )
@@ -989,6 +1004,9 @@ class MainScreen(Screen):
                         model_identifier=model_identifier,
                         output_filename=detection.output_filename,
                     )
+
+                # 设置rate_limit_manager（用于tokens阈值检查）
+                use_case._rate_limit_manager = self._rate_limit_manager
 
                 self.logger.info("并发处理中，请稍候...")
                 self._set_status(f"状态：并发解析中（{feature_config.max_concurrent}线程）...")
@@ -1498,6 +1516,17 @@ class MainScreen(Screen):
             self.questions_table.update_question_status(
                 row.row_key,
                 status_text,  # 传递Text对象
+            )
+
+        elif event.status == "waiting_tokens":
+            # Tokens不足等待中 - 显示等待图标
+            status_text = Text()
+            status_text.append("⏳ ", style="yellow")
+            status_text.append("等待tokens恢复", style="white")
+
+            self.questions_table.update_question_status(
+                row.row_key,
+                status_text,
             )
 
         if row.error:

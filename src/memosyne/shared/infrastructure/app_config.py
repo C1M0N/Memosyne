@@ -87,8 +87,18 @@ class SQLiteAppConfigService:
     def get_runtime_tuning(self) -> RuntimeTuning:
         max_concurrent = self.get_config("max_concurrent")
         max_retries = self.get_config("max_retries")
+
+        # 处理max_concurrent的"auto"值
+        if max_concurrent:
+            if max_concurrent.lower() == "auto":
+                max_concurrent_value = "auto"  # 保持字符串，由RuntimeTuning的validator处理
+            else:
+                max_concurrent_value = int(max_concurrent)
+        else:
+            max_concurrent_value = 10
+
         return RuntimeTuning(
-            max_concurrent=int(max_concurrent) if max_concurrent else 10,
+            max_concurrent=max_concurrent_value,
             max_retries=int(max_retries) if max_retries else 1,
         )
 

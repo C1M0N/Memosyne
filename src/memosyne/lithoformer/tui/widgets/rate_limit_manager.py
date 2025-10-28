@@ -93,6 +93,18 @@ class RateLimitManager:
                 remaining_reset = max(0, original_reset - int(elapsed_since_update))
                 info["reset_tokens_seconds"] = remaining_reset
 
+        # 动态计算tokens恢复（OpenAI滑动窗口机制）
+        limit_tokens = self._cache.get("limit_tokens")
+        original_remaining = self._cache.get("remaining_tokens")
+        elapsed = time.time() - self._last_update_time
+
+        if limit_tokens and original_remaining is not None:
+            # 恢复速率：每秒恢复 TPM/60 tokens
+            recovery_rate = limit_tokens / 60.0
+            recovered_tokens = int(elapsed * recovery_rate)
+            new_remaining = min(original_remaining + recovered_tokens, limit_tokens)
+            info["remaining_tokens"] = new_remaining
+
         # 检测缓存是否过期（超过阈值未调用update）
         age = time.time() - self._last_update_time
         info["is_stale"] = age > self.STALE_THRESHOLD

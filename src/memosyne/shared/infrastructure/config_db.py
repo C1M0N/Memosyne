@@ -41,6 +41,9 @@ def _populate_default_configs(conn: sqlite3.Connection) -> None:
 
         # 其他错误重试间隔
         ("other_error_retry_delay", "2"),    # 非429错误的重试间隔（秒）
+
+        # Rate Limit优化配置
+        ("tokens_threshold", "5000"),  # tokens阈值，低于此值暂停发送（避免浪费）
     ]
 
     now = datetime.now().isoformat()

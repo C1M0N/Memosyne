@@ -453,6 +453,13 @@ class ConcurrentParseQuizUseCase:
             thread_name_prefix="LLMWorker",
         )
 
+        # Tokens阈值优化：追踪正在处理的题目数（用于判断是否为最后一题）
+        self._active_processing_count = 0
+        self._count_lock = asyncio.Lock()
+
+        # Rate limit manager引用（由外部设置）
+        self._rate_limit_manager = None
+
     async def execute_async(
         self,
         markdown: str,
@@ -556,20 +563,31 @@ class ConcurrentParseQuizUseCase:
                     block, index, total_count, event_queue, self._executor
                 )
 
-        # 创建所有任务
+        # 创建所有任务并立即启动
         tasks = [asyncio.create_task(task_for(i, b)) for i, b in enumerate(question_blocks, start=1)]
 
         # 从queue中读取事件并yield给UI
         completed_count = 0
         while completed_count < total_count:
-            event = await event_queue.get()
-            yield event
+            try:
+                # 设置超时避免死锁（等待事件最多1秒）
+                event = await asyncio.wait_for(event_queue.get(), timeout=1.0)
+                yield event
 
-            # 只有最终状态才计入完成数
-            if event.status in ["success", "error", "invalid"]:
-                completed_count += 1
+                # 只有最终状态才计入完成数
+                if event.status in ["success", "error", "invalid"]:
+                    completed_count += 1
+            except asyncio.TimeoutError:
+                # 超时后检查是否所有tasks都已完成
+                if all(task.done() for task in tasks):
+                    # 所有任务完成，检查是否还有剩余事件
+                    if event_queue.empty():
+                        # 没有剩余事件，可能有未计数的完成事件，强制退出
+                        break
+                # 继续等待下一个事件
+                continue
 
-        # 等待所有任务完成（确保没有遗漏）
+        # 确保所有任务完成（应该已经完成了）
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _process_block_with_retry(
@@ -614,102 +632,222 @@ class ConcurrentParseQuizUseCase:
         rate_limit_retry_count = 0  # 429错误单独计数
         max_rate_limit_retries = retry_config["rate_limit_max_retries"]  # 从数据库读取（默认100）
 
-        # 发送"processing"事件（开始处理）
-        await event_queue.put(QuizProcessingEvent(
-            index=index,
-            total=total_count,
-            status="processing",
-            item=None,
-            block=block,
-            tokens=TokenUsage(),
-            total_tokens=TokenUsage(),
-            error=None,
-            elapsed=0.0,
-            retry_wait_remaining=None,
-        ))
+        # 递增active_count（用于判断是否为最后一题）
+        async with self._count_lock:
+            self._active_processing_count += 1
 
-        while True:  # 无限循环，由内部逻辑控制退出
-            try:
-                # 调用LLM（同步方法，需要在executor中运行）
-                # 注意：start_time必须在LLM调用之前记录，才能排除队列等待时间
-                loop = asyncio.get_event_loop()
-                start_time = perf_counter()  # 在executor调用前记录时间
-                item_dict, token_dict, rate_limit_info = await loop.run_in_executor(
-                    executor,  # 使用自定义executor，支持max_concurrent并发
-                    self.llm.parse_question,
-                    {
-                        "context": block.get("context", ""),
-                        "question": block.get("question", ""),
-                        "answer": block.get("answer", ""),
-                        "note": "",
-                        "index": str(index),
-                    },
-                )
-                elapsed = perf_counter() - start_time  # LLM调用后立即计算耗时
+        try:
+            # Tokens阈值检查：如果tokens不足且不是最后一题，等待恢复
+            async with self._count_lock:
+                active_count = self._active_processing_count
+            is_last_pending = (active_count <= 1)
 
-                token_usage = TokenUsage(**token_dict)
-                candidate = QuizItem(**_normalize_question_dict(item_dict))
+            if not is_last_pending and self._rate_limit_manager:
+                # 不是最后一题，检查tokens阈值
+                while True:
+                    current_info = self._rate_limit_manager.get_current_info()
+                    if current_info:
+                        remaining_tokens = current_info.get("remaining_tokens", float('inf'))
+                        tokens_threshold = int(appcfg.get("tokens_threshold", "5000"))
 
-                if is_quiz_item_valid(candidate, self.feature_config):
-                    # 实时保存统计（异步环境下，实时保存比批量保存更合适）
-                    if self.stats_repo:
-                        stat_dict = self._build_stat_dict(block, item_dict, elapsed)
-                        # 在asyncio环境中，使用线程池执行同步的数据库写入
-                        loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(
-                            None,
-                            self.stats_repo.save_stat,
-                            stat_dict["question_number"],
-                            stat_dict["model"],
-                            stat_dict["input_char_count"],
-                            stat_dict["output_char_count"],
-                            stat_dict["use_translation"],
-                            stat_dict["use_parsing"],
-                            stat_dict["original_text"],
-                            stat_dict["output_text"],
-                            stat_dict["output_filename"],
-                            stat_dict["processing_time"],
+                        if remaining_tokens < tokens_threshold:
+                            # Tokens不足，等待恢复
+                            await event_queue.put(QuizProcessingEvent(
+                                index=index,
+                                total=total_count,
+                                status="waiting_tokens",
+                                item=None,
+                                block=block,
+                                tokens=TokenUsage(),
+                                total_tokens=TokenUsage(),
+                                error=None,
+                                elapsed=0.0,
+                                retry_wait_remaining=None,
+                            ))
+
+                            # 计算等待时间
+                            limit_tokens = current_info.get("limit_tokens", 30000)
+                            recovery_rate = limit_tokens / 60.0  # TPM/60 tokens/秒
+                            tokens_to_recover = tokens_threshold - remaining_tokens
+                            wait_seconds = max(1, int(tokens_to_recover / recovery_rate) + 1)
+
+                            await asyncio.sleep(wait_seconds)
+                            continue
+
+                    break  # tokens充足或无rate limit信息，继续
+
+            # 发送"processing"事件（开始处理）
+            await event_queue.put(QuizProcessingEvent(
+                index=index,
+                total=total_count,
+                status="processing",
+                item=None,
+                block=block,
+                tokens=TokenUsage(),
+                total_tokens=TokenUsage(),
+                error=None,
+                elapsed=0.0,
+                retry_wait_remaining=None,
+            ))
+
+            while True:  # 无限循环，由内部逻辑控制退出
+                try:
+                    # 调用LLM（同步方法，需要在executor中运行）
+                    # 注意：start_time必须在LLM调用之前记录，才能排除队列等待时间
+                    loop = asyncio.get_event_loop()
+                    start_time = perf_counter()  # 在executor调用前记录时间
+                    item_dict, token_dict, rate_limit_info = await loop.run_in_executor(
+                        executor,  # 使用自定义executor，支持max_concurrent并发
+                        self.llm.parse_question,
+                        {
+                            "context": block.get("context", ""),
+                            "question": block.get("question", ""),
+                            "answer": block.get("answer", ""),
+                            "note": "",
+                            "index": str(index),
+                        },
+                    )
+                    elapsed = perf_counter() - start_time  # LLM调用后立即计算耗时
+
+                    token_usage = TokenUsage(**token_dict)
+                    candidate = QuizItem(**_normalize_question_dict(item_dict))
+
+                    if is_quiz_item_valid(candidate, self.feature_config):
+                        # 实时保存统计（异步环境下，实时保存比批量保存更合适）
+                        if self.stats_repo:
+                            stat_dict = self._build_stat_dict(block, item_dict, elapsed)
+                            # 在asyncio环境中，使用线程池执行同步的数据库写入
+                            loop = asyncio.get_event_loop()
+                            await loop.run_in_executor(
+                                None,
+                                self.stats_repo.save_stat,
+                                stat_dict["question_number"],
+                                stat_dict["model"],
+                                stat_dict["input_char_count"],
+                                stat_dict["output_char_count"],
+                                stat_dict["use_translation"],
+                                stat_dict["use_parsing"],
+                                stat_dict["original_text"],
+                                stat_dict["output_text"],
+                                stat_dict["output_filename"],
+                                stat_dict["processing_time"],
+                            )
+
+                        # 发送成功事件
+                        await event_queue.put(QuizProcessingEvent(
+                            index=index,
+                            total=total_count,
+                            status="success",
+                            item=candidate,
+                            block=block,
+                            tokens=token_usage,
+                            total_tokens=token_usage,  # 在并发场景下，total_tokens由外层累加
+                            error=None,
+                            elapsed=elapsed,
+                            retry_wait_remaining=None,
+                            rate_limit_info=rate_limit_info,
+                        ))
+                        return  # 处理完成，退出
+                    else:
+                        # 发送invalid事件
+                        await event_queue.put(QuizProcessingEvent(
+                            index=index,
+                            total=total_count,
+                            status="invalid",
+                            item=None,
+                            block=block,
+                            tokens=token_usage,
+                            total_tokens=token_usage,
+                            error="LLM 输出未通过业务规则校验",
+                            elapsed=elapsed,
+                            retry_wait_remaining=None,
+                            rate_limit_info=rate_limit_info,
+                        ))
+                        return  # 处理完成，退出
+
+                except LLMError as exc:
+                    # 检查是否是429错误
+                    if "429" in str(exc) or "rate" in str(exc).lower():
+                        # 429错误：无限重试（最多100次，使用单独计数器）
+                        rate_limit_retry_count += 1
+                        if rate_limit_retry_count > max_rate_limit_retries:
+                            # 429错误超过最大重试次数，elapsed设为0（因为没有成功的LLM调用）
+                            await event_queue.put(QuizProcessingEvent(
+                                index=index,
+                                total=total_count,
+                                status="error",
+                                item=None,
+                                block=block,
+                                tokens=TokenUsage(),
+                                total_tokens=TokenUsage(),
+                                error=f"429错误重试{max_rate_limit_retries}次后仍然失败: {exc}",
+                                elapsed=0.0,
+                                retry_wait_remaining=None,
+                            ))
+                            return  # 处理失败，退出
+
+                        # 指数退避 + 随机抖动（参考OpenAI最佳实践）
+                        # 基础等待时间、最大等待时间从数据库读取（不再硬编码）
+                        # 每次重试翻倍，并添加随机抖动避免同时重试
+                        import random
+                        base_delay = retry_config["rate_limit_base_delay"]  # 从数据库读取（默认15秒）
+                        max_wait_time = retry_config["rate_limit_max_wait"]  # 从数据库读取（默认120秒）
+                        exponential_delay = base_delay * (2 ** (rate_limit_retry_count - 1))
+                        jitter = random.uniform(0, exponential_delay * 0.5)
+                        wait_time = min(exponential_delay + jitter, max_wait_time)
+                        wait_time_int = int(wait_time)  # 向下取整
+
+                        from logging import getLogger
+                        logger = getLogger("memosyne.lithoformer.application")
+                        logger.warning(
+                            f"题目#{index} 遇到429 Rate Limit错误 (第{rate_limit_retry_count}次重试，不受max_retries限制)，"
+                            f"等待{wait_time_int}秒后重试..."
                         )
 
-                    # 发送成功事件
-                    await event_queue.put(QuizProcessingEvent(
-                        index=index,
-                        total=total_count,
-                        status="success",
-                        item=candidate,
-                        block=block,
-                        tokens=token_usage,
-                        total_tokens=token_usage,  # 在并发场景下，total_tokens由外层累加
-                        error=None,
-                        elapsed=elapsed,
-                        retry_wait_remaining=None,
-                        rate_limit_info=rate_limit_info,
-                    ))
-                    return  # 处理完成，退出
-                else:
-                    # 发送invalid事件
-                    await event_queue.put(QuizProcessingEvent(
-                        index=index,
-                        total=total_count,
-                        status="invalid",
-                        item=None,
-                        block=block,
-                        tokens=token_usage,
-                        total_tokens=token_usage,
-                        error="LLM 输出未通过业务规则校验",
-                        elapsed=elapsed,
-                        retry_wait_remaining=None,
-                        rate_limit_info=rate_limit_info,
-                    ))
-                    return  # 处理完成，退出
+                        # 倒计时：每秒发送一个"waiting_429"事件
+                        for remaining in range(wait_time_int, 0, -1):
+                            await event_queue.put(QuizProcessingEvent(
+                                index=index,
+                                total=total_count,
+                                status="waiting_429",
+                                item=None,
+                                block=block,
+                                tokens=TokenUsage(),
+                                total_tokens=TokenUsage(),
+                                error=None,
+                                elapsed=0.0,
+                                retry_wait_remaining=remaining,
+                            ))
+                            await asyncio.sleep(1)  # 等待1秒
 
-            except LLMError as exc:
-                # 检查是否是429错误
-                if "429" in str(exc) or "rate" in str(exc).lower():
-                    # 429错误：无限重试（最多100次，使用单独计数器）
-                    rate_limit_retry_count += 1
-                    if rate_limit_retry_count > max_rate_limit_retries:
-                        # 429错误超过最大重试次数，elapsed设为0（因为没有成功的LLM调用）
+                        # 倒计时结束，发送"processing"事件（重新开始处理）
+                        await event_queue.put(QuizProcessingEvent(
+                            index=index,
+                            total=total_count,
+                            status="processing",
+                            item=None,
+                            block=block,
+                            tokens=TokenUsage(),
+                            total_tokens=TokenUsage(),
+                            error=None,
+                            elapsed=0.0,
+                            retry_wait_remaining=None,
+                        ))
+                        continue
+
+                    # 其他LLM错误：受max_retries限制
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        from logging import getLogger
+                        logger = getLogger("memosyne.lithoformer.application")
+                        logger.warning(
+                            f"题目#{index} 遇到LLM错误: {exc} (第{retry_count}/{max_retries}次重试)"
+                        )
+                        # 从数据库读取重试延迟（不再硬编码，默认2秒）
+                        await asyncio.sleep(retry_config["other_error_retry_delay"])
+                        continue
+                    else:
+                        # 重试失败，elapsed设为0（因为没有成功的LLM调用）
                         await event_queue.put(QuizProcessingEvent(
                             index=index,
                             total=total_count,
@@ -718,115 +856,44 @@ class ConcurrentParseQuizUseCase:
                             block=block,
                             tokens=TokenUsage(),
                             total_tokens=TokenUsage(),
-                            error=f"429错误重试{max_rate_limit_retries}次后仍然失败: {exc}",
+                            error=f"重试{max_retries}次后仍然失败: {exc}",
                             elapsed=0.0,
                             retry_wait_remaining=None,
                         ))
                         return  # 处理失败，退出
 
-                    # 指数退避 + 随机抖动（参考OpenAI最佳实践）
-                    # 基础等待时间、最大等待时间从数据库读取（不再硬编码）
-                    # 每次重试翻倍，并添加随机抖动避免同时重试
-                    import random
-                    base_delay = retry_config["rate_limit_base_delay"]  # 从数据库读取（默认15秒）
-                    max_wait_time = retry_config["rate_limit_max_wait"]  # 从数据库读取（默认120秒）
-                    exponential_delay = base_delay * (2 ** (rate_limit_retry_count - 1))
-                    jitter = random.uniform(0, exponential_delay * 0.5)
-                    wait_time = min(exponential_delay + jitter, max_wait_time)
-                    wait_time_int = int(wait_time)  # 向下取整
-
-                    from logging import getLogger
-                    logger = getLogger("memosyne.lithoformer.application")
-                    logger.warning(
-                        f"题目#{index} 遇到429 Rate Limit错误 (第{rate_limit_retry_count}次重试，不受max_retries限制)，"
-                        f"等待{wait_time_int}秒后重试..."
-                    )
-
-                    # 倒计时：每秒发送一个"waiting_429"事件
-                    for remaining in range(wait_time_int, 0, -1):
+                except Exception as exc:
+                    # 其他异常：受max_retries限制
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        from logging import getLogger
+                        logger = getLogger("memosyne.lithoformer.application")
+                        logger.warning(
+                            f"题目#{index} 遇到异常: {exc} (第{retry_count}/{max_retries}次重试)"
+                        )
+                        # 从数据库读取重试延迟（不再硬编码，默认2秒）
+                        await asyncio.sleep(retry_config["other_error_retry_delay"])
+                        continue
+                    else:
+                        # 重试失败，elapsed设为0（因为没有成功的LLM调用）
                         await event_queue.put(QuizProcessingEvent(
                             index=index,
                             total=total_count,
-                            status="waiting_429",
+                            status="error",
                             item=None,
                             block=block,
                             tokens=TokenUsage(),
                             total_tokens=TokenUsage(),
-                            error=None,
+                            error=f"重试{max_retries}次后仍然失败: {exc}",
                             elapsed=0.0,
-                            retry_wait_remaining=remaining,
+                            retry_wait_remaining=None,
                         ))
-                        await asyncio.sleep(1)  # 等待1秒
+                        return  # 处理失败，退出
 
-                    # 倒计时结束，发送"processing"事件（重新开始处理）
-                    await event_queue.put(QuizProcessingEvent(
-                        index=index,
-                        total=total_count,
-                        status="processing",
-                        item=None,
-                        block=block,
-                        tokens=TokenUsage(),
-                        total_tokens=TokenUsage(),
-                        error=None,
-                        elapsed=0.0,
-                        retry_wait_remaining=None,
-                    ))
-                    continue
-
-                # 其他LLM错误：受max_retries限制
-                retry_count += 1
-                if retry_count <= max_retries:
-                    from logging import getLogger
-                    logger = getLogger("memosyne.lithoformer.application")
-                    logger.warning(
-                        f"题目#{index} 遇到LLM错误: {exc} (第{retry_count}/{max_retries}次重试)"
-                    )
-                    # 从数据库读取重试延迟（不再硬编码，默认2秒）
-                    await asyncio.sleep(retry_config["other_error_retry_delay"])
-                    continue
-                else:
-                    # 重试失败，elapsed设为0（因为没有成功的LLM调用）
-                    await event_queue.put(QuizProcessingEvent(
-                        index=index,
-                        total=total_count,
-                        status="error",
-                        item=None,
-                        block=block,
-                        tokens=TokenUsage(),
-                        total_tokens=TokenUsage(),
-                        error=f"重试{max_retries}次后仍然失败: {exc}",
-                        elapsed=0.0,
-                        retry_wait_remaining=None,
-                    ))
-                    return  # 处理失败，退出
-
-            except Exception as exc:
-                # 其他异常：受max_retries限制
-                retry_count += 1
-                if retry_count <= max_retries:
-                    from logging import getLogger
-                    logger = getLogger("memosyne.lithoformer.application")
-                    logger.warning(
-                        f"题目#{index} 遇到异常: {exc} (第{retry_count}/{max_retries}次重试)"
-                    )
-                    # 从数据库读取重试延迟（不再硬编码，默认2秒）
-                    await asyncio.sleep(retry_config["other_error_retry_delay"])
-                    continue
-                else:
-                    # 重试失败，elapsed设为0（因为没有成功的LLM调用）
-                    await event_queue.put(QuizProcessingEvent(
-                        index=index,
-                        total=total_count,
-                        status="error",
-                        item=None,
-                        block=block,
-                        tokens=TokenUsage(),
-                        total_tokens=TokenUsage(),
-                        error=f"重试{max_retries}次后仍然失败: {exc}",
-                        elapsed=0.0,
-                        retry_wait_remaining=None,
-                    ))
-                    return  # 处理失败，退出
+        finally:
+            # 递减active_count（无论成功或失败都要执行）
+            async with self._count_lock:
+                self._active_processing_count -= 1
 
     def _build_stat_dict(self, block: dict[str, str], output_dict: dict, processing_time: float) -> dict:
         """构建统计数据字典"""

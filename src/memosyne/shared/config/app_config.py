@@ -5,7 +5,7 @@ Typed models used by AppConfig service to aggregate settings from DB.
 from __future__ import annotations
 
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FeatureFlags(BaseModel):
@@ -18,8 +18,24 @@ class FeatureFlags(BaseModel):
 
 
 class RuntimeTuning(BaseModel):
-    max_concurrent: int = Field(default=10, ge=1, le=100)
+    max_concurrent: int | str = Field(default=10)
     max_retries: int = Field(default=1, ge=0, le=10)
+
+    @field_validator('max_concurrent')
+    @classmethod
+    def validate_max_concurrent(cls, v):
+        """验证并发数：允许整数(1-100)或字符串"auto" """
+        if isinstance(v, str):
+            if v.lower() == "auto":
+                return "auto"  # 规范化为小写
+            else:
+                raise ValueError('字符串值必须为 "auto"')
+        elif isinstance(v, int):
+            if v < 1 or v > 100:
+                raise ValueError('并发数必须在1-100之间')
+            return v
+        else:
+            raise ValueError('并发数必须为整数或 "auto"')
 
 
 class AppConfigBundle(BaseModel):

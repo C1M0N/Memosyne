@@ -227,32 +227,6 @@ class OpenAIProvider(BaseLLMProvider):
 
             logger = getLogger("memosyne.shared.infrastructure.llm.openai")
 
-            # 调试：将所有rate limit相关的headers写入文件（首次调用）
-            rate_limit_headers = {k: v for k, v in headers.items() if k.lower().startswith("x-ratelimit")}
-            if rate_limit_headers:
-                # 使用类变量记录已打印次数
-                if not hasattr(OpenAIProvider, '_rate_limit_debug_count'):
-                    OpenAIProvider._rate_limit_debug_count = 0
-
-                OpenAIProvider._rate_limit_debug_count += 1
-
-                # 仅首次调用时写入文件（供调试用）
-                if OpenAIProvider._rate_limit_debug_count == 1:
-                    try:
-                        from pathlib import Path
-                        debug_file = Path.cwd() / "openai_rate_limit_headers_debug.txt"
-                        with open(debug_file, "w", encoding="utf-8") as f:
-                            f.write("=" * 60 + "\n")
-                            f.write(f"OpenAI API Rate Limit Headers (首次调用)\n")
-                            f.write(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                            f.write("=" * 60 + "\n\n")
-                            for key, value in sorted(rate_limit_headers.items()):
-                                f.write(f"{key}: {value}\n")
-                            f.write("\n" + "=" * 60 + "\n")
-                        logger.info(f"Rate limit headers已写入文件: {debug_file}")
-                    except Exception as e:
-                        logger.warning(f"无法写入调试文件: {e}")
-
             # 从headers提取rate limit信息
             remaining_requests = headers.get("x-ratelimit-remaining-requests")
             remaining_tokens = headers.get("x-ratelimit-remaining-tokens")
