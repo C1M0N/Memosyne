@@ -32,6 +32,8 @@ class RateLimitManager:
     def update(self, info: dict[str, Any] | None) -> None:
         """更新缓存（当从LLM调用获得新的rate limit数据时调用）
 
+        只保留timestamp最新的数据，避免并发场景下旧数据覆盖新数据。
+
         Args:
             info: rate limit信息字典，包含：
                 - remaining_requests: 剩余请求数
@@ -39,10 +41,24 @@ class RateLimitManager:
                 - remaining_tokens: 剩余token数
                 - limit_tokens: token限制
                 - reset_tokens_seconds: reset时间（秒）
+                - reset_timestamp: reset的绝对时间戳
                 - timestamp: 数据获取时间戳
                 - provider: 提供商
                 - model: 模型名称
         """
+        if info is None:
+            self._cache = None
+            self._last_update_time = 0.0
+            return
+
+        # 检查timestamp，只保留最新数据（避免并发场景下旧数据覆盖新数据）
+        if self._cache:
+            old_timestamp = self._cache.get("timestamp", 0)
+            new_timestamp = info.get("timestamp", 0)
+            if new_timestamp < old_timestamp:
+                # 忽略旧数据
+                return
+
         self._cache = info
         self._last_update_time = time.time()
 
@@ -62,16 +78,20 @@ class RateLimitManager:
         # 创建副本（避免修改原始缓存）
         info = dict(self._cache)
 
-        # 计算从数据获取到现在经过的时间
-        data_timestamp = self._cache.get("timestamp", time.time())
-        elapsed_since_data = time.time() - data_timestamp
-
         # 动态计算reset剩余时间（倒计时）
-        original_reset = self._cache.get("reset_tokens_seconds")
-        if original_reset is not None:
-            # reset时间 = 原始值 - 经过时间，最小为0
-            remaining_reset = max(0, original_reset - int(elapsed_since_data))
+        # 优先使用reset_timestamp（绝对时间），更准确
+        reset_timestamp = self._cache.get("reset_timestamp")
+        if reset_timestamp is not None:
+            # 使用绝对时间戳计算倒计时（消除网络延迟影响）
+            remaining_reset = max(0, int(reset_timestamp - time.time()))
             info["reset_tokens_seconds"] = remaining_reset
+        else:
+            # fallback：使用原有逻辑（经过时间）
+            original_reset = self._cache.get("reset_tokens_seconds")
+            if original_reset is not None:
+                elapsed_since_update = time.time() - self._last_update_time
+                remaining_reset = max(0, original_reset - int(elapsed_since_update))
+                info["reset_tokens_seconds"] = remaining_reset
 
         # 检测缓存是否过期（超过阈值未调用update）
         age = time.time() - self._last_update_time

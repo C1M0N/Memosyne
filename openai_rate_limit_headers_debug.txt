@@ -1,13 +1,13 @@
 ============================================================
 OpenAI API Rate Limit Headers (首次调用)
-时间: 2025-10-27 17:37:44
+时间: 2025-10-27 23:30:20
 ============================================================
 
 x-ratelimit-limit-requests: 500
 x-ratelimit-limit-tokens: 30000
 x-ratelimit-remaining-requests: 499
-x-ratelimit-remaining-tokens: 29057
+x-ratelimit-remaining-tokens: 29047
 x-ratelimit-reset-requests: 120ms
-x-ratelimit-reset-tokens: 1.886s
+x-ratelimit-reset-tokens: 1.906s
 
 ============================================================

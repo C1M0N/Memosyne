@@ -266,19 +266,24 @@ class OpenAIProvider(BaseLLMProvider):
 
             # 解析reset时间（格式："2.989s" -> 2秒）
             reset_tokens_seconds = None
+            reset_timestamp = None
             if reset_tokens:
                 try:
                     # 移除"s"后缀，转换为float并取整
                     reset_tokens_seconds = int(float(reset_tokens.rstrip('s')))
+                    # 计算reset的绝对时间戳（消除网络延迟影响）
+                    reset_timestamp = time.time() + reset_tokens_seconds
                 except (ValueError, AttributeError):
                     reset_tokens_seconds = None
+                    reset_timestamp = None
 
             return {
                 "remaining_requests": int(remaining_requests),
                 "limit_requests": int(limit_requests),
                 "remaining_tokens": int(remaining_tokens),
                 "limit_tokens": int(limit_tokens),
-                "reset_tokens_seconds": reset_tokens_seconds,  # 添加reset时间（用于debug）
+                "reset_tokens_seconds": reset_tokens_seconds,  # 原始秒数（用于debug）
+                "reset_timestamp": reset_timestamp,  # 绝对时间戳（用于准确倒计时）
                 "provider": "openai",
                 "model": self.model,  # 添加model信息，用于4o-mini特殊处理
                 "timestamp": time.time(),
