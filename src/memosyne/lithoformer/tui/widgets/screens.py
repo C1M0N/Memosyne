@@ -1518,17 +1518,6 @@ class MainScreen(Screen):
                 status_text,  # 传递Text对象
             )
 
-        elif event.status == "waiting_tokens":
-            # Tokens不足等待中 - 显示等待图标
-            status_text = Text()
-            status_text.append("⏳ ", style="yellow")
-            status_text.append("等待tokens恢复", style="white")
-
-            self.questions_table.update_question_status(
-                row.row_key,
-                status_text,
-            )
-
         if row.error:
             self.logger.error("题目 #%s 解析失败：%s", row.number, row.error)
 

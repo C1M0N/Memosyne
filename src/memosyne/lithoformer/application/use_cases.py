@@ -569,23 +569,12 @@ class ConcurrentParseQuizUseCase:
         # 从queue中读取事件并yield给UI
         completed_count = 0
         while completed_count < total_count:
-            try:
-                # 设置超时避免死锁（等待事件最多1秒）
-                event = await asyncio.wait_for(event_queue.get(), timeout=1.0)
-                yield event
+            event = await event_queue.get()
+            yield event
 
-                # 只有最终状态才计入完成数
-                if event.status in ["success", "error", "invalid"]:
-                    completed_count += 1
-            except asyncio.TimeoutError:
-                # 超时后检查是否所有tasks都已完成
-                if all(task.done() for task in tasks):
-                    # 所有任务完成，检查是否还有剩余事件
-                    if event_queue.empty():
-                        # 没有剩余事件，可能有未计数的完成事件，强制退出
-                        break
-                # 继续等待下一个事件
-                continue
+            # 只有最终状态才计入完成数
+            if event.status in ["success", "error", "invalid"]:
+                completed_count += 1
 
         # 确保所有任务完成（应该已经完成了）
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -637,45 +626,6 @@ class ConcurrentParseQuizUseCase:
             self._active_processing_count += 1
 
         try:
-            # Tokens阈值检查：如果tokens不足且不是最后一题，等待恢复
-            async with self._count_lock:
-                active_count = self._active_processing_count
-            is_last_pending = (active_count <= 1)
-
-            if not is_last_pending and self._rate_limit_manager:
-                # 不是最后一题，检查tokens阈值
-                while True:
-                    current_info = self._rate_limit_manager.get_current_info()
-                    if current_info:
-                        remaining_tokens = current_info.get("remaining_tokens", float('inf'))
-                        tokens_threshold = int(appcfg.get("tokens_threshold", "5000"))
-
-                        if remaining_tokens < tokens_threshold:
-                            # Tokens不足，等待恢复
-                            await event_queue.put(QuizProcessingEvent(
-                                index=index,
-                                total=total_count,
-                                status="waiting_tokens",
-                                item=None,
-                                block=block,
-                                tokens=TokenUsage(),
-                                total_tokens=TokenUsage(),
-                                error=None,
-                                elapsed=0.0,
-                                retry_wait_remaining=None,
-                            ))
-
-                            # 计算等待时间
-                            limit_tokens = current_info.get("limit_tokens", 30000)
-                            recovery_rate = limit_tokens / 60.0  # TPM/60 tokens/秒
-                            tokens_to_recover = tokens_threshold - remaining_tokens
-                            wait_seconds = max(1, int(tokens_to_recover / recovery_rate) + 1)
-
-                            await asyncio.sleep(wait_seconds)
-                            continue
-
-                    break  # tokens充足或无rate limit信息，继续
-
             # 发送"processing"事件（开始处理）
             await event_queue.put(QuizProcessingEvent(
                 index=index,
@@ -692,6 +642,23 @@ class ConcurrentParseQuizUseCase:
 
             while True:  # 无限循环，由内部逻辑控制退出
                 try:
+                    # Tokens阈值检查：如果tokens不足且不是最后一题，触发429重试
+                    async with self._count_lock:
+                        active_count = self._active_processing_count
+                    is_last_pending = (active_count <= 1)
+
+                    if not is_last_pending and self._rate_limit_manager:
+                        # 不是最后一题，检查tokens阈值
+                        current_info = self._rate_limit_manager.get_current_info()
+                        if current_info:
+                            remaining_tokens = current_info.get("remaining_tokens", float('inf'))
+                            tokens_threshold = int(appcfg.get_config("tokens_threshold") or "5000")
+
+                            if remaining_tokens < tokens_threshold:
+                                # Tokens不足，模拟429错误，触发指数退避机制
+                                raise LLMError(
+                                    f"SIMULATED_429: tokens不足 (剩余{remaining_tokens} < 阈值{tokens_threshold})"
+                                )
                     # 调用LLM（同步方法，需要在executor中运行）
                     # 注意：start_time必须在LLM调用之前记录，才能排除队列等待时间
                     loop = asyncio.get_event_loop()
@@ -797,12 +764,17 @@ class ConcurrentParseQuizUseCase:
                         wait_time = min(exponential_delay + jitter, max_wait_time)
                         wait_time_int = int(wait_time)  # 向下取整
 
-                        from logging import getLogger
-                        logger = getLogger("memosyne.lithoformer.application")
-                        logger.warning(
-                            f"题目#{index} 遇到429 Rate Limit错误 (第{rate_limit_retry_count}次重试，不受max_retries限制)，"
-                            f"等待{wait_time_int}秒后重试..."
-                        )
+                        # 检查是否是模拟的429（tokens不足触发）
+                        is_simulated_429 = "SIMULATED_429" in str(exc)
+
+                        # 只有真实的429错误才记录日志
+                        if not is_simulated_429:
+                            from logging import getLogger
+                            logger = getLogger("memosyne.lithoformer.application")
+                            logger.warning(
+                                f"题目#{index} 遇到429 Rate Limit错误 (第{rate_limit_retry_count}次重试，不受max_retries限制)，"
+                                f"等待{wait_time_int}秒后重试..."
+                            )
 
                         # 倒计时：每秒发送一个"waiting_429"事件
                         for remaining in range(wait_time_int, 0, -1):
