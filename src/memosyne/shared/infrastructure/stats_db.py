@@ -1,23 +1,25 @@
 """
-统计数据库适配器 - SQLite 实现
+统计数据库适配器 - SQLite 实现 (v1.9.0重构版)
 
 职责：
-- 管理processing_stats表（处理统计数据）
-- 记录每次题目处理的性能指标
-- 提供时间预估功能
+- 管理lithoformer_processing_logs表（处理日志）
+- 管理lithoformer_bank表（题库）
+- 管理lithoformer_terminal_logs表（终端日志）
 """
 
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 
 class SQLiteStatsRepository:
     """
-    SQLite 处理统计仓储实现
+    SQLite 统计仓储实现 (v1.9.0重构版)
 
-    管理问题处理的性能统计数据（processing_stats）
+    管理三个新表：
+    - lithoformer_processing_logs: 处理日志（两阶段记录）
+    - lithoformer_bank: 题库
+    - lithoformer_terminal_logs: 终端日志
     """
 
     def __init__(self, db_path: Path):
@@ -35,148 +37,238 @@ class SQLiteStatsRepository:
         # 确保目录存在
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 创建表
         with sqlite3.connect(str(self.db_path)) as conn:
-            conn.execute(
+            cursor = conn.cursor()
+
+            # 删除旧表（保留llm_models等其他表）
+            cursor.execute("DROP TABLE IF EXISTS processing_stats")
+
+            # 创建新表1: lithoformer_processing_logs（处理日志）
+            cursor.execute(
                 """
-                CREATE TABLE IF NOT EXISTS processing_stats (
+                CREATE TABLE IF NOT EXISTS lithoformer_processing_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    question_number TEXT,
-                    model TEXT,
+                    question_number TEXT NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
                     input_char_count INTEGER,
-                    output_char_count INTEGER,
                     use_translation BOOLEAN,
                     use_parsing BOOLEAN,
-                    original_text TEXT,
-                    output_text TEXT,
-                    output_filename TEXT,
+                    note TEXT,
+                    question_type TEXT,
+                    output_char_count INTEGER,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
                     processing_time REAL,
-                    created_at TEXT NOT NULL
+                    has_error BOOLEAN DEFAULT 0,
+                    timestamp TEXT NOT NULL
                 )
                 """
             )
+
+            # 创建新表2: lithoformer_bank（题库）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lithoformer_bank (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    question_number TEXT UNIQUE NOT NULL,
+                    batch_id TEXT,
+                    model TEXT,
+                    use_translation BOOLEAN,
+                    use_parsing BOOLEAN,
+                    use_answer BOOLEAN DEFAULT 0,
+                    original_input TEXT,
+                    output TEXT,
+                    no_overwrite BOOLEAN DEFAULT 0,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+
+            # 创建新表3: lithoformer_terminal_logs（终端日志）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lithoformer_terminal_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    log_type TEXT NOT NULL,
+                    message TEXT
+                )
+                """
+            )
+
             conn.commit()
 
-    def save_stat(
+    def save_processing_log(
         self,
         question_number: str,
+        batch_id: str,
         model: str,
         input_char_count: int,
-        output_char_count: int,
         use_translation: bool,
         use_parsing: bool,
-        original_text: str,
-        output_text: str,
-        output_filename: str,
-        processing_time: float,
+        note: str = "",
+        question_type: str | None = None,
+        output_char_count: int | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        processing_time: float | None = None,
+        has_error: bool = False,
     ) -> None:
-        """保存单条处理统计"""
-        # 截断文本到最大长度
-        original_text = original_text[:50000]
-        output_text = output_text[:50000]
+        """
+        保存处理日志到lithoformer_processing_logs表
 
-        now = datetime.now().isoformat()
+        Args:
+            question_number: 题号
+            batch_id: 批次号
+            model: 使用的模型
+            input_char_count: 输入字符数
+            use_translation: 是否使用翻译
+            use_parsing: 是否使用解析
+            note: 备注信息
+            question_type: 题型（处理完成后填充）
+            output_char_count: 输出字符数（处理完成后填充）
+            input_tokens: 输入tokens数（处理完成后填充）
+            output_tokens: 输出tokens数（处理完成后填充）
+            processing_time: 处理时间（处理完成后填充）
+            has_error: 是否发生错误
+        """
+        timestamp = datetime.now().isoformat()
+
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
                 """
-                INSERT INTO processing_stats (
-                    question_number, model, input_char_count, output_char_count,
-                    use_translation, use_parsing,
-                    original_text, output_text, output_filename,
-                    processing_time, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO lithoformer_processing_logs (
+                    question_number, batch_id, model, input_char_count,
+                    use_translation, use_parsing, note,
+                    question_type, output_char_count,
+                    input_tokens, output_tokens, processing_time,
+                    has_error, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     question_number,
+                    batch_id,
                     model,
                     input_char_count,
-                    output_char_count,
                     use_translation,
                     use_parsing,
-                    original_text,
-                    output_text,
-                    output_filename,
+                    note,
+                    question_type,
+                    output_char_count,
+                    input_tokens,
+                    output_tokens,
                     processing_time,
-                    now,
+                    has_error,
+                    timestamp,
                 ),
             )
             conn.commit()
 
-    def batch_save_stats(self, stats: list[dict[str, Any]]) -> None:
-        """批量保存统计数据"""
-        if not stats:
-            return
-
-        now = datetime.now().isoformat()
-        values = []
-        for stat in stats:
-            values.append(
-                (
-                    stat.get("question_number", ""),
-                    stat.get("model", ""),
-                    stat.get("input_char_count", 0),
-                    stat.get("output_char_count", 0),
-                    stat.get("use_translation", False),
-                    stat.get("use_parsing", False),
-                    stat.get("original_text", "")[:50000],
-                    stat.get("output_text", "")[:50000],
-                    stat.get("output_filename", ""),
-                    stat.get("processing_time", 0.0),
-                    now,
-                )
-            )
-
-        with sqlite3.connect(str(self.db_path)) as conn:
-            conn.executemany(
-                """
-                INSERT INTO processing_stats (
-                    question_number, model, input_char_count, output_char_count,
-                    use_translation, use_parsing,
-                    original_text, output_text, output_filename,
-                    processing_time, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                values,
-            )
-            conn.commit()
-
-    def get_estimated_time(
+    def save_to_bank(
         self,
+        question_number: str,
+        batch_id: str,
         model: str,
-        char_count: int,
         use_translation: bool,
         use_parsing: bool,
-    ) -> float | None:
+        original_input: str,
+        output: str,
+        no_overwrite: bool = False,
+    ) -> bool:
         """
-        获取预估处理时长（基于历史数据平均值）
+        保存到题库（lithoformer_bank表）
 
-        查询条件：
-        1. 相同模型
-        2. 相同功能配置（翻译+解析）
-        3. 字符数在±20%范围内
+        Args:
+            question_number: 题号（唯一键）
+            batch_id: 批次号
+            model: 使用的模型
+            use_translation: 是否使用翻译
+            use_parsing: 是否使用解析
+            original_input: 原始输入
+            output: 输出结果
+            no_overwrite: 禁止覆盖标记
 
         Returns:
-            平均处理时长（秒），如果没有匹配数据返回None
+            bool: 是否保存成功
         """
-        char_min = int(char_count * 0.8)
-        char_max = int(char_count * 1.2)
+        timestamp = datetime.now().isoformat()
 
         with sqlite3.connect(str(self.db_path)) as conn:
-            cursor = conn.execute(
-                """
-                SELECT AVG(processing_time) as avg_time
-                FROM processing_stats
-                WHERE model = ?
-                  AND use_translation = ?
-                  AND use_parsing = ?
-                  AND input_char_count BETWEEN ? AND ?
-                """,
-                (model, use_translation, use_parsing, char_min, char_max),
+            cursor = conn.cursor()
+
+            # 检查是否已存在
+            cursor.execute(
+                "SELECT no_overwrite FROM lithoformer_bank WHERE question_number = ?",
+                (question_number,)
             )
-            row = cursor.fetchone()
-            if row and row[0] is not None:
-                return float(row[0])
-            return None
+            existing = cursor.fetchone()
+
+            if existing:
+                # 如果存在且设置了no_overwrite，拒绝覆盖
+                if existing[0]:  # no_overwrite = True
+                    return False
+
+                # 否则更新记录
+                cursor.execute(
+                    """
+                    UPDATE lithoformer_bank
+                    SET batch_id = ?, model = ?, use_translation = ?, use_parsing = ?,
+                        original_input = ?, output = ?, no_overwrite = ?, timestamp = ?
+                    WHERE question_number = ?
+                    """,
+                    (batch_id, model, use_translation, use_parsing,
+                     original_input, output, no_overwrite, timestamp, question_number)
+                )
+            else:
+                # 插入新记录
+                cursor.execute(
+                    """
+                    INSERT INTO lithoformer_bank (
+                        question_number, batch_id, model, use_translation, use_parsing,
+                        use_answer, original_input, output, no_overwrite, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+                    """,
+                    (question_number, batch_id, model, use_translation, use_parsing,
+                     original_input, output, no_overwrite, timestamp)
+                )
+
+            conn.commit()
+            return True
+
+    def check_bank_exists(self, question_number: str) -> bool:
+        """检查题号是否已存在于题库"""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM lithoformer_bank WHERE question_number = ?",
+                (question_number,)
+            )
+            return cursor.fetchone() is not None
+
+    def save_terminal_log(
+        self,
+        log_type: str,
+        message: str,
+    ) -> None:
+        """
+        保存终端日志到lithoformer_terminal_logs表
+
+        Args:
+            log_type: 日志类型（INFO/WARNING/ERROR等）
+            message: 日志消息
+        """
+        timestamp = datetime.now().isoformat()
+
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute(
+                """
+                INSERT INTO lithoformer_terminal_logs (timestamp, log_type, message)
+                VALUES (?, ?, ?)
+                """,
+                (timestamp, log_type, message),
+            )
+            conn.commit()
 
 
 # 全局单例

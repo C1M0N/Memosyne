@@ -26,26 +26,30 @@ class SQLiteAppConfigService:
 
     # --- feature flags ---
     def get_feature_flags(self) -> FeatureFlags:
+        """从lithoformer_feature表（key/value格式）读取功能配置"""
         with sqlite3.connect(str(self.db_path)) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT enable_translation, enable_parsing, enable_concurrent,"
-                "       openai_tier, anthropic_tier, feature_003"
-                "  FROM feature WHERE id = 1"
-            ).fetchone()
-            if not row:
+            cursor = conn.execute("SELECT key, value FROM lithoformer_feature")
+            rows = cursor.fetchall()
+
+            # 将key/value对转换为字典
+            config = {}
+            for key, value in rows:
+                # 根据key类型解析value
+                if key in ("enable_translation", "enable_parsing", "enable_concurrent", "feature_003"):
+                    config[key] = value == "1"
+                elif key in ("openai_tier", "anthropic_tier"):
+                    config[key] = int(value)
+                else:
+                    config[key] = value
+
+            # 如果表为空，返回默认值
+            if not config:
                 return FeatureFlags()
-            return FeatureFlags(
-                enable_translation=bool(row["enable_translation"]),
-                enable_parsing=bool(row["enable_parsing"]),
-                enable_concurrent=bool(row["enable_concurrent"]),
-                openai_tier=int(row["openai_tier"]),
-                anthropic_tier=int(row["anthropic_tier"]),
-                feature_003=bool(row["feature_003"]),
-            )
+
+            return FeatureFlags(**config)
 
     def update_feature_flags(self, **kwargs) -> None:
-        """更新功能配置（支持bool和int类型）"""
+        """更新功能配置（支持bool和int类型，存储为key/value对）"""
         if not kwargs:
             return
         valid = {
@@ -59,25 +63,40 @@ class SQLiteAppConfigService:
         fields = {k: v for k, v in kwargs.items() if k in valid}
         if not fields:
             return
-        set_clause = ", ".join(f"{k} = ?" for k in fields.keys())
-        values = list(fields.values())
+
+        from datetime import datetime
+        now = datetime.now().isoformat()
+
         with sqlite3.connect(str(self.db_path)) as conn:
-            conn.execute(
-                f"UPDATE feature SET {set_clause}, updated_at = datetime('now') WHERE id = 1",
-                values,
-            )
+            for key, value in fields.items():
+                # 将bool转换为'1'/'0'，int转换为字符串
+                if isinstance(value, bool):
+                    value_str = "1" if value else "0"
+                else:
+                    value_str = str(value)
+
+                conn.execute(
+                    """
+                    INSERT INTO lithoformer_feature (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (key, value_str, now)
+                )
             conn.commit()
 
     # --- key/value config ---
     def get_config(self, key: str) -> str | None:
         with sqlite3.connect(str(self.db_path)) as conn:
-            row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+            row = conn.execute("SELECT value FROM lithoformer_config WHERE key = ?", (key,)).fetchone()
             return row[0] if row else None
 
     def set_config(self, key: str, value: str) -> None:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
-                "INSERT INTO config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+                "INSERT INTO lithoformer_config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (key, value),
             )
@@ -294,7 +313,7 @@ class SQLiteAppConfigService:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("""
-                SELECT key, value FROM config
+                SELECT key, value FROM lithoformer_config
                 WHERE key IN ('batch_timezone', 'max_batch_runs_per_day', 'reanimator_term_list_version')
             """)
             rows = cursor.fetchall()
@@ -321,7 +340,7 @@ class SQLiteAppConfigService:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("""
-                SELECT key, value FROM config
+                SELECT key, value FROM lithoformer_config
                 WHERE key IN ('rate_limit_max_retries', 'rate_limit_base_delay',
                              'rate_limit_max_wait', 'other_error_retry_delay')
             """)
@@ -348,7 +367,7 @@ class SQLiteAppConfigService:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute("""
-                SELECT key, value FROM config
+                SELECT key, value FROM lithoformer_config
                 WHERE key IN ('anthropic_max_tokens', 'openai_max_retries')
             """)
             rows = cursor.fetchall()

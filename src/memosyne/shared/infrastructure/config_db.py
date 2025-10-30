@@ -49,7 +49,7 @@ def _populate_default_configs(conn: sqlite3.Connection) -> None:
     now = datetime.now().isoformat()
     for key, value in configs:
         conn.execute("""
-            INSERT OR IGNORE INTO config (key, value, updated_at)
+            INSERT OR IGNORE INTO lithoformer_config (key, value, updated_at)
             VALUES (?, ?, ?)
         """, (key, value, now))
 
@@ -72,16 +72,23 @@ class SQLiteConfigRepository:
         self._ensure_db_exists()
 
     def _ensure_db_exists(self) -> None:
-        """确保数据库文件和表结构存在"""
+        """确保数据库文件和表结构存在（v1.9.0重构版）"""
         # 确保目录存在
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 创建表
         with sqlite3.connect(str(self.db_path)) as conn:
-            # 1. 配置表
+            cursor = conn.cursor()
+
+            # 1. 重命名config表为lithoformer_config（如果还没改名）
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='config'")
+            if cursor.fetchone():
+                cursor.execute("ALTER TABLE config RENAME TO lithoformer_config")
+
+            # 创建lithoformer_config表（如果不存在）
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS config (
+                CREATE TABLE IF NOT EXISTS lithoformer_config (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -89,93 +96,73 @@ class SQLiteConfigRepository:
                 """
             )
 
-            # 2. 功能状态表（单行配置）— 新表名：feature
+            # 删除reserved_config_1配置项
+            conn.execute("DELETE FROM lithoformer_config WHERE key = 'reserved_config_1'")
+
+            # 2. 重构feature表为key/value格式
+            # 2.1 读取旧feature表数据（如果存在）
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='feature'")
+            old_feature_exists = cursor.fetchone() is not None
+
+            if old_feature_exists:
+                # 读取旧数据
+                cursor.execute("SELECT * FROM feature WHERE id = 1")
+                old_data = cursor.fetchone()
+
+                # 删除旧表
+                conn.execute("DROP TABLE feature")
+            else:
+                old_data = None
+
+            # 2.2 创建新的lithoformer_feature表（key/value格式）
             conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS feature (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    enable_translation BOOLEAN DEFAULT 1,
-                    enable_parsing BOOLEAN DEFAULT 1,
-                    enable_concurrent BOOLEAN DEFAULT 0,
-                    openai_tier INTEGER DEFAULT 1 CHECK(openai_tier >= 1 AND openai_tier <= 5),
-                    anthropic_tier INTEGER DEFAULT 1 CHECK(anthropic_tier >= 1 AND anthropic_tier <= 5),
-                    feature_003 BOOLEAN DEFAULT 0,
+                CREATE TABLE IF NOT EXISTS lithoformer_feature (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
                 """
             )
 
-            # 初始化feature表（确保有且仅有一行）
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO feature (id, updated_at)
-                VALUES (1, datetime('now'))
-                """
-            )
+            # 2.3 迁移数据或插入默认值
+            timestamp = datetime.now().isoformat()
+            if old_data:
+                # 从旧数据迁移（id, enable_translation, enable_parsing, enable_concurrent, openai_tier, anthropic_tier, feature_003, updated_at）
+                features = [
+                    ('enable_translation', '1' if old_data[1] else '0'),
+                    ('enable_parsing', '1' if old_data[2] else '0'),
+                    ('enable_concurrent', '1' if old_data[3] else '0'),
+                    ('openai_tier', str(old_data[4] if len(old_data) > 4 and old_data[4] is not None else 1)),
+                    ('anthropic_tier', str(old_data[5] if len(old_data) > 5 and old_data[5] is not None else 1)),
+                    ('feature_003', '1' if (len(old_data) > 6 and old_data[6]) else '0'),
+                ]
+            else:
+                # 默认值
+                features = [
+                    ('enable_translation', '1'),
+                    ('enable_parsing', '1'),
+                    ('enable_concurrent', '0'),
+                    ('openai_tier', '1'),
+                    ('anthropic_tier', '1'),
+                    ('feature_003', '0'),
+                ]
 
-            # 3. 迁移旧表 feature_config -> feature（如存在）
-            cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='feature_config'")
-            if cur.fetchone():
-                # 将旧表数据迁移到新表（注意：feature_001/002已改为tier配置，不迁移）
+            for key, value in features:
                 conn.execute(
                     """
-                    UPDATE feature SET
-                        enable_translation = COALESCE((SELECT enable_translation FROM feature_config WHERE id = 1), enable_translation),
-                        enable_parsing = COALESCE((SELECT enable_parsing FROM feature_config WHERE id = 1), enable_parsing),
-                        enable_concurrent = COALESCE((SELECT enable_concurrent FROM feature_config WHERE id = 1), enable_concurrent),
-                        feature_003 = COALESCE((SELECT feature_003 FROM feature_config WHERE id = 1), feature_003),
-                        updated_at = datetime('now')
-                    WHERE id = 1
-                    """
+                    INSERT OR REPLACE INTO lithoformer_feature (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (key, value, timestamp)
                 )
-                # 删除旧表
-                conn.execute("DROP TABLE IF EXISTS feature_config")
 
-            # 4. 迁移feature表：从feature_001/002到tier配置
-            cur = conn.execute("PRAGMA table_info(feature)")
-            columns = {row[1] for row in cur.fetchall()}
-
-            # 如果存在旧列feature_001/002，进行迁移
-            if "feature_001" in columns or "feature_002" in columns:
-                # 添加新列（如果不存在）
-                if "openai_tier" not in columns:
-                    conn.execute("ALTER TABLE feature ADD COLUMN openai_tier INTEGER DEFAULT 1 CHECK(openai_tier >= 1 AND openai_tier <= 5)")
-                if "anthropic_tier" not in columns:
-                    conn.execute("ALTER TABLE feature ADD COLUMN anthropic_tier INTEGER DEFAULT 1 CHECK(anthropic_tier >= 1 AND anthropic_tier <= 5)")
-
-                # SQLite不支持直接DROP COLUMN，需要重建表
-                # 创建临时表
-                conn.execute("""
-                    CREATE TABLE feature_temp (
-                        id INTEGER PRIMARY KEY CHECK (id = 1),
-                        enable_translation BOOLEAN DEFAULT 1,
-                        enable_parsing BOOLEAN DEFAULT 1,
-                        enable_concurrent BOOLEAN DEFAULT 0,
-                        openai_tier INTEGER DEFAULT 1 CHECK(openai_tier >= 1 AND openai_tier <= 5),
-                        anthropic_tier INTEGER DEFAULT 1 CHECK(anthropic_tier >= 1 AND anthropic_tier <= 5),
-                        feature_003 BOOLEAN DEFAULT 0,
-                        updated_at TEXT NOT NULL
-                    )
-                """)
-
-                # 复制数据（跳过feature_001/002）
-                conn.execute("""
-                    INSERT INTO feature_temp (id, enable_translation, enable_parsing, enable_concurrent,
-                                             openai_tier, anthropic_tier, feature_003, updated_at)
-                    SELECT id, enable_translation, enable_parsing, enable_concurrent,
-                           COALESCE(openai_tier, 1), COALESCE(anthropic_tier, 1),
-                           COALESCE(feature_003, 0), updated_at
-                    FROM feature
-                """)
-
-                # 删除旧表并重命名
-                conn.execute("DROP TABLE feature")
-                conn.execute("ALTER TABLE feature_temp RENAME TO feature")
-
-            # 5. 清理遗留统计表（已迁移到 stat.db）
+            # 3. 清理遗留统计表（已迁移到 stat.db）
             conn.execute("DROP TABLE IF EXISTS processing_stats")
+            # 清理遗留feature_config表（旧版本）
+            conn.execute("DROP TABLE IF EXISTS feature_config")
 
-            # 5. LLM模型信息表
+            # 4. LLM模型信息表
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS llm_models (
@@ -368,7 +355,7 @@ class SQLiteConfigRepository:
         """获取配置项"""
         with sqlite3.connect(str(self.db_path)) as conn:
             cursor = conn.execute(
-                "SELECT value FROM config WHERE key = ?",
+                "SELECT value FROM lithoformer_config WHERE key = ?",
                 (key,)
             )
             row = cursor.fetchone()
@@ -380,7 +367,7 @@ class SQLiteConfigRepository:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
                 """
-                INSERT INTO config (key, value, updated_at)
+                INSERT INTO lithoformer_config (key, value, updated_at)
                 VALUES (?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET
                     value = excluded.value,
@@ -393,13 +380,13 @@ class SQLiteConfigRepository:
     def get_all(self) -> dict[str, str]:
         """获取所有配置项"""
         with sqlite3.connect(str(self.db_path)) as conn:
-            cursor = conn.execute("SELECT key, value FROM config")
+            cursor = conn.execute("SELECT key, value FROM lithoformer_config")
             return {row[0]: row[1] for row in cursor.fetchall()}
 
     def delete(self, key: str) -> None:
         """删除配置项"""
         with sqlite3.connect(str(self.db_path)) as conn:
-            conn.execute("DELETE FROM config WHERE key = ?", (key,))
+            conn.execute("DELETE FROM lithoformer_config WHERE key = ?", (key,))
             conn.commit()
 
     def batch_set(self, configs: dict[str, str]) -> None:
@@ -413,7 +400,7 @@ class SQLiteConfigRepository:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.executemany(
                 """
-                INSERT INTO config (key, value, updated_at)
+                INSERT INTO lithoformer_config (key, value, updated_at)
                 VALUES (?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET
                     value = excluded.value,
@@ -453,9 +440,9 @@ def get_config_repository(db_path: Path | None = None) -> ConfigRepository:
 
 class SQLiteFeatureConfigRepository:
     """
-    SQLite 功能配置仓储实现
+    SQLite 功能配置仓储实现（v1.9.0重构版）
 
-    管理单行功能配置表（feature）
+    管理key/value格式的lithoformer_feature表
     """
 
     def __init__(self, db_path: Path):
@@ -468,42 +455,44 @@ class SQLiteFeatureConfigRepository:
         self.db_path = db_path
 
     def get(self) -> dict[str, Any]:
-        """获取功能配置（单行配置）"""
+        """获取功能配置（从key/value表读取）"""
         with sqlite3.connect(str(self.db_path)) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.execute(
-                """
-                SELECT enable_translation, enable_parsing, enable_concurrent,
-                       openai_tier, anthropic_tier, feature_003
-                FROM feature WHERE id = 1
-                """
-            )
-            row = cursor.fetchone()
-            if row:
+            cursor = conn.execute("SELECT key, value FROM lithoformer_feature")
+            rows = cursor.fetchall()
+
+            # 将key/value对转换为字典
+            config = {}
+            for key, value in rows:
+                # 根据key类型解析value
+                if key in ("enable_translation", "enable_parsing", "enable_concurrent", "feature_003"):
+                    # Boolean类型
+                    config[key] = value == "1"
+                elif key in ("openai_tier", "anthropic_tier"):
+                    # Integer类型
+                    config[key] = int(value)
+                else:
+                    # 其他类型保持字符串
+                    config[key] = value
+
+            # 如果表为空，返回默认值
+            if not config:
                 return {
-                    "enable_translation": bool(row["enable_translation"]),
-                    "enable_parsing": bool(row["enable_parsing"]),
-                    "enable_concurrent": bool(row["enable_concurrent"]),
-                    "openai_tier": int(row["openai_tier"]),
-                    "anthropic_tier": int(row["anthropic_tier"]),
-                    "feature_003": bool(row["feature_003"]),
+                    "enable_translation": True,
+                    "enable_parsing": True,
+                    "enable_concurrent": False,
+                    "openai_tier": 1,
+                    "anthropic_tier": 1,
+                    "feature_003": False,
                 }
-            # 返回默认值
-            return {
-                "enable_translation": True,
-                "enable_parsing": True,
-                "enable_concurrent": False,
-                "openai_tier": 1,
-                "anthropic_tier": 1,
-                "feature_003": False,
-            }
+
+            return config
 
     def update(self, **kwargs) -> None:
-        """更新功能配置（支持bool和int类型）"""
+        """更新功能配置（支持bool和int类型，存储为key/value对）"""
         if not kwargs:
             return
 
-        # 构建UPDATE语句
+        # 过滤有效字段
         valid_fields = {
             "enable_translation",
             "enable_parsing",
@@ -517,20 +506,26 @@ class SQLiteFeatureConfigRepository:
         if not fields_to_update:
             return
 
-        set_clause = ", ".join(f"{field} = ?" for field in fields_to_update.keys())
-        values = list(fields_to_update.values())
         now = datetime.now().isoformat()
-        values.append(now)
 
         with sqlite3.connect(str(self.db_path)) as conn:
-            conn.execute(
-                f"""
-                UPDATE feature
-                SET {set_clause}, updated_at = ?
-                WHERE id = 1
-                """,
-                values
-            )
+            for key, value in fields_to_update.items():
+                # 将bool转换为'1'/'0'，int转换为字符串
+                if isinstance(value, bool):
+                    value_str = "1" if value else "0"
+                else:
+                    value_str = str(value)
+
+                conn.execute(
+                    """
+                    INSERT INTO lithoformer_feature (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (key, value_str, now)
+                )
             conn.commit()
 
 

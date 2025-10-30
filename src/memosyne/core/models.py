@@ -83,8 +83,7 @@ class Configuration(BaseModel):
     # 模型配置（格式：Provider::model，如 OpenAI::gpt-4o-mini）
     default_model: str = Field(default="OpenAI::gpt-4o-mini", description="默认使用模型")
 
-    # 预留配置项（7个）
-    reserved_config_1: str = Field(default="", description="预留配置1")
+    # 预留配置项（6个）
     reserved_config_2: str = Field(default="", description="预留配置2")
     reserved_config_3: str = Field(default="", description="预留配置3")
     reserved_config_4: str = Field(default="", description="预留配置4")

@@ -149,6 +149,7 @@ class MainScreen(Screen):
 
         self._main_thread_id: int | None = None
         self._log_handler = None
+        self._database_log_handler = None  # v1.9.0: 数据库日志handler
         self._file_tree = LithoformerDirectoryTree(self.settings.lithoformer_input_dir)
         self._selected_file: Path | None = None
 
@@ -421,6 +422,15 @@ class MainScreen(Screen):
         self._log_handler = handler
         logging.getLogger().addHandler(handler)
 
+        # v1.9.0: 添加数据库日志handler
+        from .database_log_handler import setup_database_logging
+        db_handler = setup_database_logging(
+            self.logger,
+            self.settings.stat_db,
+            level=logging.INFO
+        )
+        self._database_log_handler = db_handler
+
         # 从数据库读取默认模型并设置provider
         default_model_str = self.settings.get_default_model()
         from memosyne.core.models import Configuration
@@ -443,6 +453,11 @@ class MainScreen(Screen):
         if self._log_handler:
             logging.getLogger().removeHandler(self._log_handler)
             self._log_handler = None
+
+        # v1.9.0: 移除数据库日志handler
+        if self._database_log_handler:
+            self.logger.removeHandler(self._database_log_handler)
+            self._database_log_handler = None
 
     # endregion ------------------------------------------------------------------
 
