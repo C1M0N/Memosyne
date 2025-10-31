@@ -148,6 +148,7 @@ python -m memosyne.lithoformer.cli.main
   - `feature` 表（单行）：`enable_translation`, `enable_parsing`, `enable_concurrent`, `feature_001..003`
 - TUI 的“配置/功能”选项卡读写上述配置；默认模型仅在“配置”Tab保存（下拉切换不落库）。
 - 统计数据在 `db/stat.db` 的 `processing_stats` 中。
+- Lithoformer 解析日志沿用 TUI 检测阶段的 `question_number`（顺序/并发模式均支持）；若缺失则回退到序号字符串，写库时批次号仅保留文件名首段（例如 `251030E006`），便于筛选与对账。
 
 ### 方式 3：编程 API
 

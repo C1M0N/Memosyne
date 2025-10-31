@@ -2,6 +2,12 @@
 
 All notable changes to this project are recorded here. Detailed iteration notes for the Lithoformer TUI live in `TUI_design_note/` and have been distilled into the entries below.
 
+## [Unreleased]
+
+### Fixed
+- Propagated TUI-detected `question_number` values into sequential/concurrent Lithoformer pipelines (stats + bank writes) with index-based fallback, and trimmed stored `batch_id` to the leading segment (e.g. `251030E006`).
+- Normalised character counting in concurrent saves so input/output lengths match the sequential pipeline (context/question/answer only, JSON formatting excluded).
+
 ## [v0.12.0a] - 2025-10-24
 
 ### Changed

@@ -362,14 +362,22 @@ class MainScreen(Screen):
                                 appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
                                 flags = appcfg.get_feature_flags()
 
-                                # 2x2网格布局（feature_001/002已移至配置Tab的Tier选择）
+                                # 2x3网格布局（每个元件包装在Container中，参考厂商选择布局）
                                 with Horizontal(id="feature-row-1"):
-                                    yield FeatureTranslationCheckbox(value=flags.enable_translation)
-                                    yield FeatureParsingCheckbox(value=flags.enable_parsing)
+                                    with Container(classes="feature-box"):
+                                        yield FeatureTranslationCheckbox(value=flags.enable_translation)
+                                    with Container(classes="feature-box"):
+                                        yield FeatureParsingCheckbox(value=flags.enable_parsing)
+                                    with Container(classes="feature-box"):
+                                        yield Feature003Checkbox(value=flags.feature_003)
 
                                 with Horizontal(id="feature-row-2"):
-                                    yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
-                                    yield Feature003Checkbox(value=flags.feature_003)
+                                    with Container(classes="feature-box"):
+                                        yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
+                                    with Container(classes="feature-box"):
+                                        yield Label("预留功能004", classes="feature-placeholder")
+                                    with Container(classes="feature-box"):
+                                        yield Label("预留功能005", classes="feature-placeholder")
 
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):
@@ -423,10 +431,10 @@ class MainScreen(Screen):
         logging.getLogger().addHandler(handler)
 
         # v1.9.0: 添加数据库日志handler
-        from .database_log_handler import setup_database_logging
+        from ..database_log_handler import setup_database_logging
         db_handler = setup_database_logging(
             self.logger,
-            self.settings.stat_db,
+            self.settings.db_dir / "stat.db",
             level=logging.INFO
         )
         self._database_log_handler = db_handler
@@ -1032,7 +1040,12 @@ class MainScreen(Screen):
                 items_dict: dict[int, QuizItem] = {}
 
                 try:
-                    async for event in use_case.stream_async(markdown_content):
+                    question_numbers = [
+                        block.get("question_number") for block in detection.blocks
+                    ]
+                    async for event in use_case.stream_async(
+                        markdown_content, question_numbers=question_numbers
+                    ):
                         # 更新row状态
                         self._apply_event_to_row(event, formatter, final_title_main, final_title_sub)
 
@@ -1219,6 +1232,10 @@ class MainScreen(Screen):
             number = self._format_question_code(question_seed, index)
             if not number:
                 number = self._guess_question_number(block, index)
+
+            # v1.9.1c: 给block添加question_number字段，供use_cases保存到数据库
+            block["question_number"] = number
+
             char_count = self._measure_characters(block)
             questions.append(
                 QuestionRow(
@@ -1385,11 +1402,15 @@ class MainScreen(Screen):
         effective_seed = seed if seed and seed > 0 else 0
         for index in sorted(self._rows):
             row = self._rows[index]
+            block = self._detection.blocks[index - 1]
             if effective_seed > 0:
                 number = self._format_question_code(effective_seed, index)
             else:
-                block = self._detection.blocks[index - 1]
                 number = self._guess_question_number(block, index)
+
+            # v1.9.1c: 同步更新block中的question_number
+            block["question_number"] = number
+
             row.number = number
             self.questions_table.update_cell(row.row_key, "number", number)
 

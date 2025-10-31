@@ -369,3 +369,43 @@ Tab.-active {
 #preview-area:focus {
     border: round #4aa8ff;
 }
+
+/* ==================================================================
+   FEATURE TAB - 功能开关布局（2×3网格）
+   ================================================================== */
+
+#feature-row-1, #feature-row-2 {
+    layout: horizontal;
+    height: 3;
+    margin-bottom: 1;
+}
+
+/* 每个功能框占1/3宽度，带边框 */
+.feature-box {
+    width: 1fr;  /* 平均分配宽度 */
+    height: 3;
+    border: round #1f4b8f;
+    background: #070d16;
+    padding: 0 1;
+}
+
+/* 功能框内的Checkbox样式 */
+.feature-box Checkbox {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+}
+
+/* 聚焦状态高亮边框 */
+.feature-box:focus-within {
+    border: round #4aa8ff;
+}
+
+/* 预留位置的Label居中显示 */
+.feature-box Label.feature-placeholder {
+    width: 100%;
+    height: 100%;
+    content-align: center middle;
+    color: #888888;
+}

@@ -5,8 +5,9 @@ Lithoformer Application Use Cases
 import asyncio
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
-from typing import Iterable, Iterator, Literal
+from typing import Iterable, Iterator, Literal, Sequence
 
 from ..domain.models import QuizItem, FeatureConfig
 from ..domain.services import (
@@ -19,6 +20,65 @@ from .ports import LLMPort
 from ...core.models import ProcessResult, TokenUsage
 from ...core.interfaces import StatsRepository
 from ...shared.utils import Progress, indeterminate_progress
+
+
+# v1.9.1c: 字符计数工具函数
+def _count_output_chars(d: dict) -> int:
+    """递归计算字典中所有字符串的字符数（v1.9.1c: 用于output_char_count）
+
+    只计算实际内容，不包含JSON格式化字符（缩进、换行、引号等）
+
+    Args:
+        d: 输出字典
+
+    Returns:
+        总字符数
+    """
+    total = 0
+    for v in d.values():
+        if isinstance(v, str):
+            total += len(v)
+        elif isinstance(v, dict):
+            total += _count_output_chars(v)
+        elif isinstance(v, list):
+            for item in v:
+                if isinstance(item, str):
+                    total += len(item)
+                elif isinstance(item, dict):
+                    total += _count_output_chars(item)
+    return total
+
+
+def _ensure_question_number(block: dict[str, str], index: int) -> str:
+    """确保题目块中存在question_number字段。
+
+    优先使用已有的question_number/number字段，若缺失则回退到index。
+    """
+    candidate = (block.get("question_number") or block.get("number") or "").strip()
+
+    if not candidate:
+        index_value = block.get("index")
+        if isinstance(index_value, str) and index_value.strip().isdigit():
+            candidate = index_value.strip()
+
+    if not candidate:
+        candidate = str(index if index > 0 else 1)
+
+    block["question_number"] = candidate
+    return candidate
+
+
+def _extract_batch_id(output_filename: str | None) -> str:
+    """从输出文件名中提取批次号（取第一个分段部分）。"""
+    if not output_filename:
+        return "default"
+
+    stem = Path(output_filename).stem
+    if not stem:
+        return "default"
+
+    # 分隔符可能包含下划线或连字符，仅取第一个片段作为批次号
+    return re.split(r"[-_]", stem, maxsplit=1)[0]
 
 
 @dataclass(slots=True)
@@ -248,7 +308,7 @@ class ParseQuizUseCase:
 
         # 保存统计数据（如果配置了stats_repo）
         if self.stats_repo and status == "success":
-            self._save_stats(block, item_dict if status == "success" else {}, elapsed)
+            self._save_stats(block, item_dict if status == "success" else {}, elapsed, token_usage, note)  # v1.9.1c: 传递note
 
         return event, new_total_tokens
 
@@ -265,6 +325,9 @@ class ParseQuizUseCase:
         total_count = len(blocks)
 
         for index, block in enumerate(blocks, start=1):
+            # 确保block中包含index与question_number（允许TUI/CLI共用）
+            block["index"] = str(index)
+            _ensure_question_number(block, index)
             event, total_tokens = self.process_block(
                 block,
                 index,
@@ -279,6 +342,8 @@ class ParseQuizUseCase:
         block: dict[str, str],
         output_dict: dict,
         processing_time: float,
+        token_usage: TokenUsage,  # v1.9.1: 新增token_usage参数
+        note: str = "",  # v1.9.1c: 新增note参数
     ) -> None:
         """
         保存处理统计数据到数据库（v1.9.0重构版）
@@ -287,16 +352,24 @@ class ParseQuizUseCase:
             block: 原始题目块
             output_dict: LLM输出字典
             processing_time: 处理时长（秒）
+            token_usage: Token使用统计
+            note: 用户备注（v1.9.1c新增）
         """
         if not self.stats_repo:
             return
 
-        # 组装原始文本（用于计算字符数）
-        original_text = f"Question:\n{block.get('question', '')}\n\nAnswer:\n{block.get('answer', '')}"
+        # 组装原始文本（v1.9.1c: 只计算原始内容，不包含标记文本）
+        parts = []
         if block.get("context"):
-            original_text = f"Context:\n{block.get('context', '')}\n\n" + original_text
+            parts.append(block.get("context", ""))
+        parts.append(block.get("question", ""))
+        parts.append(block.get("answer", ""))
+        original_text = "\n\n".join(parts)
 
-        # 组装输出文本（用于计算字符数）
+        # 计算输出字符数（v1.9.1c: 只计算内容，不包含JSON格式字符）
+        output_char_count = _count_output_chars(output_dict)
+
+        # 组装输出文本（用于保存到bank）
         import json
         output_text = json.dumps(output_dict, ensure_ascii=False, indent=2)
 
@@ -305,31 +378,36 @@ class ParseQuizUseCase:
         use_parsing = self.feature_config.enable_parsing if self.feature_config else True
 
         # 提取题型（如果有）
-        question_type = output_dict.get("question_type", None)
+        # v1.9.1: 从"qtype"字段读取而不是"question_type"
+        question_type = output_dict.get("qtype", None)
 
-        # 使用output_filename作为batch_id（如果没有则使用"default"）
-        batch_id = self.output_filename if self.output_filename else "default"
+        # 统一question_number与batch_id（允许并发/CLI共用）
+        index_hint = 0
+        index_value = block.get("index")
+        if isinstance(index_value, str) and index_value.isdigit():
+            index_hint = int(index_value)
+        question_number = _ensure_question_number(block, index_hint if index_hint > 0 else 1)
+        batch_id = _extract_batch_id(self.output_filename)
 
-        # 保存处理日志（使用新的API）
         self.stats_repo.save_processing_log(
-            question_number=block.get("index", ""),
+            question_number=question_number,
             batch_id=batch_id,
             model=self.model_identifier,
             input_char_count=len(original_text),
             use_translation=use_translation,
             use_parsing=use_parsing,
-            note="",
+            note=note,  # v1.9.1c: 使用传入的note参数
             question_type=question_type,
-            output_char_count=len(output_text),
-            input_tokens=None,  # TODO: 未来可从LLM响应获取
-            output_tokens=None,  # TODO: 未来可从LLM响应获取
+            output_char_count=output_char_count,  # v1.9.1c: 使用计算好的字符数
+            input_tokens=token_usage.input_tokens,  # v1.9.1: 从token_usage获取
+            output_tokens=token_usage.output_tokens,  # v1.9.1: 从token_usage获取
             processing_time=processing_time,
             has_error=False,
         )
 
         # Phase 2: 自动保存到题库（如果题号不存在）
         self._save_to_bank_if_new(
-            question_number=block.get("index", ""),
+            question_number=question_number,
             batch_id=batch_id,
             original_text=original_text,
             output_text=output_text,
@@ -521,6 +599,8 @@ class ConcurrentParseQuizUseCase:
     async def execute_async(
         self,
         markdown: str,
+        *,
+        question_numbers: Sequence[str | None] | None = None,
         show_progress: bool = True,
     ) -> ProcessResult[QuizItem]:
         """
@@ -535,9 +615,9 @@ class ConcurrentParseQuizUseCase:
             ProcessResult[QuizItem]
         """
         import asyncio
-        from collections import defaultdict
 
         question_blocks = self._split_markdown(markdown)
+        provided_numbers = list(question_numbers) if question_numbers is not None else None
         total_count = len(question_blocks)
 
         # 结果缓冲区（按index存储）
@@ -560,14 +640,20 @@ class ConcurrentParseQuizUseCase:
                 # 如果成功且有stats_repo，加入统计缓冲
                 if event.status == "success" and self.stats_repo and event.item:
                     stats_buffer.append(
-                        self._build_stat_dict(block, event.item.model_dump(), event.elapsed)
+                        self._build_stat_dict(block, event.item.model_dump(), event.elapsed, event.tokens)  # v1.9.1b: 添加tokens参数
                     )
 
         # 创建所有任务
-        tasks = [
-            process_block_async(index, block)
-            for index, block in enumerate(question_blocks, start=1)
-        ]
+        # question_number可由调用方提供，也允许在此回退
+        tasks = []
+        for index, block in enumerate(question_blocks, start=1):
+            if provided_numbers and index - 1 < len(provided_numbers):
+                candidate = provided_numbers[index - 1]
+                if candidate:
+                    block["question_number"] = candidate
+            block["index"] = str(index)  # 保留index用于其他用途
+            _ensure_question_number(block, index)
+            tasks.append(process_block_async(index, block))
 
         # 并发执行
         await asyncio.gather(*tasks)
@@ -600,7 +686,11 @@ class ConcurrentParseQuizUseCase:
 
         return result
 
-    async def stream_async(self, markdown: str):
+    async def stream_async(
+        self,
+        markdown: str,
+        question_numbers: Sequence[str | None] | None = None,
+    ):
         """
         并发流式事件接口：统一与顺序版的事件消费模式。
 
@@ -610,6 +700,7 @@ class ConcurrentParseQuizUseCase:
         import asyncio
 
         question_blocks = self._split_markdown(markdown)
+        provided_numbers = list(question_numbers) if question_numbers is not None else None
         total_count = len(question_blocks)
 
         semaphore = asyncio.Semaphore(self.feature_config.max_concurrent)
@@ -623,7 +714,15 @@ class ConcurrentParseQuizUseCase:
                 )
 
         # 创建所有任务并立即启动
-        tasks = [asyncio.create_task(task_for(i, b)) for i, b in enumerate(question_blocks, start=1)]
+        tasks = []
+        for i, b in enumerate(question_blocks, start=1):
+            if provided_numbers and i - 1 < len(provided_numbers):
+                candidate = provided_numbers[i - 1]
+                if candidate:
+                    b["question_number"] = candidate
+            b["index"] = str(i)  # 保留index用于其他用途
+            _ensure_question_number(b, i)
+            tasks.append(asyncio.create_task(task_for(i, b)))
 
         # 从queue中读取事件并yield给UI
         completed_count = 0
@@ -741,7 +840,7 @@ class ConcurrentParseQuizUseCase:
                     if is_quiz_item_valid(candidate, self.feature_config):
                         # 实时保存统计（异步环境下，实时保存比批量保存更合适）（v1.9.0：使用新API）
                         if self.stats_repo:
-                            stat_dict = self._build_stat_dict(block, item_dict, elapsed)
+                            stat_dict = self._build_stat_dict(block, item_dict, elapsed, token_usage)  # v1.9.1: 传入token_usage
                             # 在asyncio环境中，使用线程池执行同步的数据库写入
                             loop = asyncio.get_event_loop()
                             await loop.run_in_executor(
@@ -751,9 +850,12 @@ class ConcurrentParseQuizUseCase:
 
                             # Phase 2: 自动保存到题库（异步调用）
                             import json
-                            original_text = f"Question:\n{block.get('question', '')}\n\nAnswer:\n{block.get('answer', '')}"
+                            parts = []
                             if block.get("context"):
-                                original_text = f"Context:\n{block.get('context', '')}\n\n" + original_text
+                                parts.append(block.get("context", ""))
+                            parts.append(block.get("question", ""))
+                            parts.append(block.get("answer", ""))
+                            original_text = "\n\n".join(parts)
                             output_text = json.dumps(item_dict, ensure_ascii=False, indent=2)
 
                             await loop.run_in_executor(
@@ -935,26 +1037,39 @@ class ConcurrentParseQuizUseCase:
             async with self._count_lock:
                 self._active_processing_count -= 1
 
-    def _build_stat_dict(self, block: dict[str, str], output_dict: dict, processing_time: float) -> dict:
-        """构建统计数据字典（v1.9.0：适配新API）"""
-        import json
+    def _build_stat_dict(self, block: dict[str, str], output_dict: dict, processing_time: float, token_usage: TokenUsage) -> dict:
+        """构建统计数据字典（v1.9.0：适配新API）
 
-        # 组装原始文本（用于计算字符数）
-        original_text = f"Question:\n{block.get('question', '')}\n\nAnswer:\n{block.get('answer', '')}"
+        Args:
+            block: 题目块字典
+            output_dict: LLM输出字典
+            processing_time: 处理时长（秒）
+            token_usage: Token使用统计（v1.9.1新增）
+        """
+        # 组装原始文本（v1.9.1c: 只计算原始内容，不包含标记文本）
+        parts = []
         if block.get("context"):
-            original_text = f"Context:\n{block.get('context', '')}\n\n" + original_text
+            parts.append(block.get("context", ""))
+        parts.append(block.get("question", ""))
+        parts.append(block.get("answer", ""))
+        original_text = "\n\n".join(parts)
 
-        # 组装输出文本（用于计算字符数）
-        output_text = json.dumps(output_dict, ensure_ascii=False, indent=2)
+        # 计算输出字符数（v1.9.1c: 只计算内容，不包含JSON格式字符）
+        output_char_count = _count_output_chars(output_dict)
 
         # 提取题型（如果有）
-        question_type = output_dict.get("question_type", None)
+        # v1.9.1: 从"qtype"字段读取而不是"question_type"
+        question_type = output_dict.get("qtype", None)
 
-        # 使用output_filename作为batch_id
-        batch_id = self.output_filename if self.output_filename else "default"
+        index_hint = 0
+        index_value = block.get("index")
+        if isinstance(index_value, str) and index_value.isdigit():
+            index_hint = int(index_value)
+        question_number = _ensure_question_number(block, index_hint if index_hint > 0 else 1)
+        batch_id = _extract_batch_id(self.output_filename)
 
         return {
-            "question_number": block.get("index", ""),
+            "question_number": question_number,
             "batch_id": batch_id,
             "model": self.model_identifier,
             "input_char_count": len(original_text),
@@ -962,12 +1077,51 @@ class ConcurrentParseQuizUseCase:
             "use_parsing": self.feature_config.enable_parsing,
             "note": "",
             "question_type": question_type,
-            "output_char_count": len(output_text),
-            "input_tokens": None,
-            "output_tokens": None,
+            "output_char_count": output_char_count,  # v1.9.1c: 使用计算好的字符数
+            "input_tokens": token_usage.input_tokens,  # v1.9.1: 从token_usage获取
+            "output_tokens": token_usage.output_tokens,  # v1.9.1: 从token_usage获取
             "processing_time": processing_time,
             "has_error": False,
         }
+
+    def _save_to_bank_if_new(
+        self,
+        question_number: str,
+        batch_id: str,
+        original_text: str,
+        output_text: str,
+        use_translation: bool,
+        use_parsing: bool,
+    ) -> None:
+        """保存到题库（如果题号不存在）（v1.9.1: 从ParseQuizUseCase复制）
+
+        Args:
+            question_number: 题号
+            batch_id: 批次ID
+            original_text: 原始输入文本
+            output_text: 输出文本
+            use_translation: 是否使用翻译
+            use_parsing: 是否使用解析
+        """
+        if not self.stats_repo or not question_number:
+            return
+
+        try:
+            # 检查题号是否已存在
+            if not self.stats_repo.check_bank_exists(question_number):
+                self.stats_repo.save_to_bank(
+                    question_number=question_number,
+                    batch_id=batch_id,
+                    model=self.model_identifier,
+                    use_translation=use_translation,
+                    use_parsing=use_parsing,
+                    original_input=original_text[:50000],  # 限制长度
+                    output=output_text[:50000],  # 限制长度
+                    no_overwrite=False,  # 允许覆盖（但前面已检查不存在）
+                )
+        except Exception:
+            # 题库保存失败不应影响主流程
+            pass
 
     def cleanup(self) -> None:
         """

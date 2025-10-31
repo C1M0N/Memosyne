@@ -270,6 +270,48 @@ class SQLiteStatsRepository:
             )
             conn.commit()
 
+    def clear_bank(self) -> int:
+        """清空题库表（v1.9.1c：用于清理错误数据）
+
+        Returns:
+            删除的记录数
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM lithoformer_bank")
+            count = cursor.fetchone()[0]
+            cursor.execute("DELETE FROM lithoformer_bank")
+            conn.commit()
+            return count
+
+    def clear_processing_logs(self, batch_id: str | None = None) -> int:
+        """清空处理日志表（v1.9.1c：用于清理错误数据）
+
+        Args:
+            batch_id: 如果提供，只删除指定批次的记录；否则清空全表
+
+        Returns:
+            删除的记录数
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.cursor()
+            if batch_id:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM lithoformer_processing_logs WHERE batch_id = ?",
+                    (batch_id,)
+                )
+                count = cursor.fetchone()[0]
+                cursor.execute(
+                    "DELETE FROM lithoformer_processing_logs WHERE batch_id = ?",
+                    (batch_id,)
+                )
+            else:
+                cursor.execute("SELECT COUNT(*) FROM lithoformer_processing_logs")
+                count = cursor.fetchone()[0]
+                cursor.execute("DELETE FROM lithoformer_processing_logs")
+            conn.commit()
+            return count
+
 
 # 全局单例
 _stats_repo_instance: SQLiteStatsRepository | None = None
