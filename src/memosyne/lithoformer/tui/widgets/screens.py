@@ -18,7 +18,7 @@ from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
-from textual.widgets import Button, Input, ProgressBar, RichLog, Select, Static, TabbedContent, TabPane, TextArea
+from textual.widgets import Button, Input, Label, ProgressBar, RichLog, Select, Static, TabbedContent, TabPane, TextArea
 
 from ....core.models import TokenUsage
 from ....shared.config import get_settings
@@ -56,6 +56,9 @@ from .filters import (
     ConfigReserved6Input,
     ConfigReserved7Input,
     Feature003Checkbox,
+    Feature004Checkbox,
+    Feature005Checkbox,
+    FeatureBoxContainer,
     FeatureConcurrentCheckbox,
     FeatureParsingCheckbox,
     FeatureTranslationCheckbox,
@@ -165,6 +168,10 @@ class MainScreen(Screen):
 
         self._run_task: asyncio.Task[None] | None = None
         self._rate_limit_timer_task: asyncio.Task[None] | None = None
+
+        # v1.9.2: Bank保存确认状态（控制台询问方式）
+        self._waiting_for_bank_confirmation: bool = False
+        self._pending_bank_save_data: dict | None = None
 
         self.logger = logging.getLogger("memosyne.lithoformer.tui")
 
@@ -362,22 +369,29 @@ class MainScreen(Screen):
                                 appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
                                 flags = appcfg.get_feature_flags()
 
-                                # 2x3网格布局（每个元件包装在Container中，参考厂商选择布局）
+                                # v1.9.2b: 调试日志 - 显示加载的功能配置
+                                self.logger.debug(
+                                    f"加载功能配置: 翻译={flags.enable_translation}, "
+                                    f"解析={flags.enable_parsing}, 并发={flags.enable_concurrent}, "
+                                    f"003={flags.feature_003}, 004={flags.feature_004}, 005={flags.feature_005}"
+                                )
+
+                                # 2x3网格布局（每个元件包装在FeatureBoxContainer中，参考厂商选择布局）
                                 with Horizontal(id="feature-row-1"):
-                                    with Container(classes="feature-box"):
+                                    with FeatureBoxContainer(title="翻译", classes="feature-box"):
                                         yield FeatureTranslationCheckbox(value=flags.enable_translation)
-                                    with Container(classes="feature-box"):
+                                    with FeatureBoxContainer(title="解析", classes="feature-box"):
                                         yield FeatureParsingCheckbox(value=flags.enable_parsing)
-                                    with Container(classes="feature-box"):
+                                    with FeatureBoxContainer(title="003", classes="feature-box"):
                                         yield Feature003Checkbox(value=flags.feature_003)
 
                                 with Horizontal(id="feature-row-2"):
-                                    with Container(classes="feature-box"):
+                                    with FeatureBoxContainer(title="并发", classes="feature-box"):
                                         yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
-                                    with Container(classes="feature-box"):
-                                        yield Label("预留功能004", classes="feature-placeholder")
-                                    with Container(classes="feature-box"):
-                                        yield Label("预留功能005", classes="feature-placeholder")
+                                    with FeatureBoxContainer(title="004", classes="feature-box"):
+                                        yield Feature004Checkbox(value=flags.feature_004)
+                                    with FeatureBoxContainer(title="005", classes="feature-box"):
+                                        yield Feature005Checkbox(value=flags.feature_005)
 
                     # 右列 (1320-1600px): 文件树 + 按钮
                     with Vertical(id="right-col"):
@@ -581,7 +595,24 @@ class MainScreen(Screen):
     @on(Input.Submitted, "#command-input")
     async def handle_command_submitted(self, event: Input.Submitted) -> None:
         """Handle command input submission."""
-        command = event.value.strip()
+        command = event.value.strip().lower()
+
+        # v1.9.2: 如果正在等待bank保存确认，则处理y/n输入
+        if self._waiting_for_bank_confirmation:
+            if command in ["y", "yes"]:
+                self._set_input_value(self.command_input, "")
+                await self._save_to_bank_confirmed()
+                return
+            elif command in ["n", "no"]:
+                self._set_input_value(self.command_input, "")
+                await self._skip_bank_save()
+                return
+            else:
+                self.logger.warning("请输入 y (保存) 或 n (跳过)")
+                self._set_input_value(self.command_input, "")
+                return
+
+        # 常规命令处理
         if command == "/clear":
             self.log_view.clear()
             self._set_input_value(self.command_input, "")
@@ -799,12 +830,18 @@ class MainScreen(Screen):
     @on(FeatureParsingCheckbox.Changed)
     @on(FeatureConcurrentCheckbox.Changed)
     @on(Feature003Checkbox.Changed)
+    @on(Feature004Checkbox.Changed)
+    @on(Feature005Checkbox.Changed)
     async def handle_feature_changed(self, event) -> None:
         """保存功能配置到数据库（实时）"""
         from textual.widgets import Checkbox
         from ....shared.infrastructure.app_config import SQLiteAppConfigService
 
+        # v1.9.2c: 增强调试 - 记录所有事件触发
+        self.logger.info(f"[DEBUG] 功能配置变更事件触发: checkbox={event.checkbox}, value={event.value}")
+
         if not isinstance(event.checkbox, Checkbox):
+            self.logger.warning(f"[DEBUG] 非Checkbox事件被忽略: {type(event.checkbox)}")
             return
 
         widget_id = event.checkbox.id
@@ -816,6 +853,8 @@ class MainScreen(Screen):
             "feature-parsing": "enable_parsing",
             "feature-concurrent": "enable_concurrent",
             "feature-003": "feature_003",
+            "feature-004": "feature_004",
+            "feature-005": "feature_005",
         }
 
         feature_key = feature_key_map.get(widget_id)
@@ -824,9 +863,12 @@ class MainScreen(Screen):
             appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
             appcfg.update_feature_flags(**{feature_key: is_checked})
 
-            # 记录日志
+            # v1.9.2c: 记录日志（增强版 - 同时输出到控制台和日志文件）
             status = "启用" if is_checked else "禁用"
-            self.log_view.write(f"[dim]功能已更新: {feature_key} = {status}[/dim]")
+            self.logger.info(f"✓ 功能配置已保存到数据库: {feature_key} = {is_checked} ({status})")
+            self.log_view.write(f"[green]✓ 功能已更新: {feature_key} = {status}[/green]")
+        else:
+            self.logger.warning(f"[DEBUG] 未知的widget ID: {widget_id}")
 
     @on(QuestionsTable.RowHighlighted)
     def handle_question_row_highlighted(self, event: QuestionsTable.RowHighlighted) -> None:
@@ -1122,6 +1164,7 @@ class MainScreen(Screen):
                     self._refresh_stats(total_questions)
                     await asyncio.sleep(0)
 
+            # v1.9.2: 先写入输出文件，再询问是否保存到题库（控制台方式）
             try:
                 output_dir_raw = self.output_path_input.value.strip()
                 output_dir = Path(output_dir_raw) if output_dir_raw else self.settings.lithoformer_output_dir
@@ -1154,6 +1197,44 @@ class MainScreen(Screen):
                 self.action_mode = "detect"
                 self._set_action_state("detect")
                 return
+
+            # v1.9.2: 询问用户是否保存到题库（控制台方式）
+            if items and stats_repo:
+                # 收集成功题目的题号和数据
+                # v1.9.2b: 修复 - 从detection.blocks获取question_number（QuizItem对象没有该属性）
+                question_numbers = []
+                items_data = []
+                for idx, item in enumerate(items):
+                    if idx < len(detection.blocks):
+                        qnum = detection.blocks[idx].get("question_number", "")
+                        if qnum and qnum.strip():
+                            question_numbers.append(qnum.strip())
+                            items_data.append(item)
+
+                if question_numbers:
+                    # 保存待处理数据
+                    self._pending_bank_save_data = {
+                        "items": items_data,
+                        "question_numbers": question_numbers,
+                        "detection": detection,
+                        "stats_repo": stats_repo,
+                        "model_identifier": model_identifier,
+                        "feature_config": feature_config,
+                    }
+                    self._waiting_for_bank_confirmation = True
+
+                    # 在控制台显示询问消息
+                    self.logger.info("")
+                    self.logger.info("=" * 60)
+                    self.logger.info(f"解析完成！成功处理 {len(items)} 道题目")
+                    preview = ", ".join(question_numbers[:5])
+                    if len(question_numbers) > 5:
+                        preview += f" ... (共{len(question_numbers)}题)"
+                    self.logger.info(f"题号: {preview}")
+                    self.logger.info("=" * 60)
+                    self.logger.info("是否保存到题库？请在指令输入框输入 y (保存) 或 n (跳过)")
+                    self._set_status("状态：等待确认是否保存到题库...")
+                    return  # 不继续执行，等待用户输入
 
             self.logger.info(
                 "解析完成：%s（成功 %d/%d，Tokens %s）",
@@ -1189,6 +1270,77 @@ class MainScreen(Screen):
                 rate_limit_bar.update_rate_limit(None)
             except Exception:
                 pass
+
+    async def _save_to_bank_confirmed(self) -> None:
+        """用户确认保存到题库（v1.9.2）"""
+        if not self._pending_bank_save_data:
+            self.logger.warning("没有待保存的数据")
+            self._waiting_for_bank_confirmation = False
+            return
+
+        self._set_status("状态：保存到题库中...")
+        data = self._pending_bank_save_data
+        items = data["items"]
+        question_numbers = data["question_numbers"]
+        detection = data["detection"]
+        stats_repo = data["stats_repo"]
+        model_identifier = data["model_identifier"]
+        feature_config = data["feature_config"]
+
+        saved_count = 0
+        for item, qnum in zip(items, question_numbers):
+            try:
+                # 准备原始输入文本
+                import json
+                parts = []
+                context = getattr(item, "context", None)
+                if context:
+                    parts.append(context)
+                question_text = getattr(item, "question", "")
+                answer_text = getattr(item, "answer", "")
+                parts.append(question_text)
+                parts.append(answer_text)
+                original_text = "\n\n".join(parts)
+
+                # 输出文本为JSON格式（v1.9.2d: 使用Pydantic的model_dump_json处理嵌套模型）
+                output_text = item.model_dump_json(indent=2, ensure_ascii=False)
+
+                # 保存到bank
+                success = stats_repo.save_to_bank(
+                    question_number=qnum,
+                    batch_id=detection.batch_id,
+                    model=model_identifier,
+                    use_translation=feature_config.enable_translation,
+                    use_parsing=feature_config.enable_parsing,
+                    original_input=original_text,
+                    output=output_text,
+                    no_overwrite=False,
+                )
+                if success:
+                    saved_count += 1
+            except Exception as exc:
+                self.logger.warning(f"保存题目 {qnum} 到题库失败：{exc}")
+
+        self.logger.info(f"已保存 {saved_count}/{len(items)} 道题目到题库")
+        self.notify(f"已保存 {saved_count} 道题目到题库")
+
+        # 清理状态
+        self._waiting_for_bank_confirmation = False
+        self._pending_bank_save_data = None
+        self._set_status("状态：解析完成")
+        self.action_mode = "detect"
+        self._set_action_state("detect")
+
+    async def _skip_bank_save(self) -> None:
+        """用户选择跳过保存到题库（v1.9.2）"""
+        self.logger.info("用户选择跳过保存到题库")
+
+        # 清理状态
+        self._waiting_for_bank_confirmation = False
+        self._pending_bank_save_data = None
+        self._set_status("状态：解析完成")
+        self.action_mode = "detect"
+        self._set_action_state("detect")
 
     # region detection helpers ----------------------------------------------------
     def _detect_worker(

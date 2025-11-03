@@ -406,14 +406,15 @@ class ParseQuizUseCase:
         )
 
         # Phase 2: 自动保存到题库（如果题号不存在）
-        self._save_to_bank_if_new(
-            question_number=question_number,
-            batch_id=batch_id,
-            original_text=original_text,
-            output_text=output_text,
-            use_translation=use_translation,
-            use_parsing=use_parsing,
-        )
+        # v1.9.2: 移除自动保存，改为由TUI层用户确认后保存
+        # self._save_to_bank_if_new(
+        #     question_number=question_number,
+        #     batch_id=batch_id,
+        #     original_text=original_text,
+        #     output_text=output_text,
+        #     use_translation=use_translation,
+        #     use_parsing=use_parsing,
+        # )
 
     def _save_to_bank_if_new(
         self,
@@ -849,26 +850,27 @@ class ConcurrentParseQuizUseCase:
                             )
 
                             # Phase 2: 自动保存到题库（异步调用）
-                            import json
-                            parts = []
-                            if block.get("context"):
-                                parts.append(block.get("context", ""))
-                            parts.append(block.get("question", ""))
-                            parts.append(block.get("answer", ""))
-                            original_text = "\n\n".join(parts)
-                            output_text = json.dumps(item_dict, ensure_ascii=False, indent=2)
-
-                            await loop.run_in_executor(
-                                None,
-                                lambda: self._save_to_bank_if_new(
-                                    question_number=stat_dict["question_number"],
-                                    batch_id=stat_dict["batch_id"],
-                                    original_text=original_text,
-                                    output_text=output_text,
-                                    use_translation=stat_dict["use_translation"],
-                                    use_parsing=stat_dict["use_parsing"],
-                                )
-                            )
+                            # v1.9.2: 移除自动保存，改为由TUI层用户确认后保存
+                            # import json
+                            # parts = []
+                            # if block.get("context"):
+                            #     parts.append(block.get("context", ""))
+                            # parts.append(block.get("question", ""))
+                            # parts.append(block.get("answer", ""))
+                            # original_text = "\n\n".join(parts)
+                            # output_text = json.dumps(item_dict, ensure_ascii=False, indent=2)
+                            #
+                            # await loop.run_in_executor(
+                            #     None,
+                            #     lambda: self._save_to_bank_if_new(
+                            #         question_number=stat_dict["question_number"],
+                            #         batch_id=stat_dict["batch_id"],
+                            #         original_text=original_text,
+                            #         output_text=output_text,
+                            #         use_translation=stat_dict["use_translation"],
+                            #         use_parsing=stat_dict["use_parsing"],
+                            #     )
+                            # )
 
                         # 发送成功事件
                         await event_queue.put(QuizProcessingEvent(

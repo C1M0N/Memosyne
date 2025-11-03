@@ -34,8 +34,8 @@ class SQLiteAppConfigService:
             # 将key/value对转换为字典
             config = {}
             for key, value in rows:
-                # 根据key类型解析value
-                if key in ("enable_translation", "enable_parsing", "enable_concurrent", "feature_003"):
+                # 根据key类型解析value（v1.9.2c：添加feature_004和feature_005）
+                if key in ("enable_translation", "enable_parsing", "enable_concurrent", "feature_003", "feature_004", "feature_005"):
                     config[key] = value == "1"
                 elif key in ("openai_tier", "anthropic_tier"):
                     config[key] = int(value)
@@ -59,6 +59,8 @@ class SQLiteAppConfigService:
             "openai_tier",
             "anthropic_tier",
             "feature_003",
+            "feature_004",
+            "feature_005",
         }
         fields = {k: v for k, v in kwargs.items() if k in valid}
         if not fields:

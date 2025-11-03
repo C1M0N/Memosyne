@@ -138,7 +138,7 @@ class SQLiteConfigRepository:
                     ('feature_003', '1' if (len(old_data) > 6 and old_data[6]) else '0'),
                 ]
             else:
-                # 默认值
+                # 默认值（v1.9.2c：添加feature_004和feature_005）
                 features = [
                     ('enable_translation', '1'),
                     ('enable_parsing', '1'),
@@ -146,12 +146,15 @@ class SQLiteConfigRepository:
                     ('openai_tier', '1'),
                     ('anthropic_tier', '1'),
                     ('feature_003', '0'),
+                    ('feature_004', '0'),
+                    ('feature_005', '0'),
                 ]
 
+            # v1.9.2c: 修复 - 使用 INSERT OR IGNORE 避免覆盖用户配置
             for key, value in features:
                 conn.execute(
                     """
-                    INSERT OR REPLACE INTO lithoformer_feature (key, value, updated_at)
+                    INSERT OR IGNORE INTO lithoformer_feature (key, value, updated_at)
                     VALUES (?, ?, ?)
                     """,
                     (key, value, timestamp)

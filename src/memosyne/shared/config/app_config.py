@@ -15,6 +15,8 @@ class FeatureFlags(BaseModel):
     openai_tier: int = Field(default=1, ge=1, le=5, description="OpenAI API Tier (1-5)")
     anthropic_tier: int = Field(default=1, ge=1, le=5, description="Anthropic API Tier (1-5)")
     feature_003: bool = Field(default=False)
+    feature_004: bool = Field(default=False)
+    feature_005: bool = Field(default=False)
 
 
 class RuntimeTuning(BaseModel):

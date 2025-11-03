@@ -67,11 +67,11 @@ class SQLiteStatsRepository:
             )
 
             # 创建新表2: lithoformer_bank（题库）
+            # v1.9.2: 使用question_number作为主键（而非id）
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS lithoformer_bank (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    question_number TEXT UNIQUE NOT NULL,
+                    question_number TEXT PRIMARY KEY,
                     batch_id TEXT,
                     model TEXT,
                     use_translation BOOLEAN,
@@ -97,7 +97,79 @@ class SQLiteStatsRepository:
                 """
             )
 
+            # v1.9.2: 迁移旧的lithoformer_bank表结构（从id主键改为question_number主键）
+            self._migrate_bank_table_if_needed(cursor)
+
             conn.commit()
+
+    def _migrate_bank_table_if_needed(self, cursor) -> None:
+        """迁移lithoformer_bank表：将id主键改为question_number主键（v1.9.2）"""
+        # 检查表是否存在
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='lithoformer_bank'"
+        )
+        if not cursor.fetchone():
+            return  # 表不存在，无需迁移
+
+        # 检查表结构
+        cursor.execute("PRAGMA table_info(lithoformer_bank)")
+        columns = {row[1]: row for row in cursor.fetchall()}
+
+        # 如果有id列且是主键（pk=1），说明是旧结构
+        if "id" in columns and columns["id"][5] == 1:
+            import logging
+            logger = logging.getLogger("memosyne.shared.infrastructure.stats_db")
+            logger.info("检测到旧版lithoformer_bank表结构，开始迁移...")
+
+            # 步骤1: 创建新表
+            cursor.execute(
+                """
+                CREATE TABLE lithoformer_bank_new (
+                    question_number TEXT PRIMARY KEY,
+                    batch_id TEXT,
+                    model TEXT,
+                    use_translation BOOLEAN,
+                    use_parsing BOOLEAN,
+                    use_answer BOOLEAN DEFAULT 0,
+                    original_input TEXT,
+                    output TEXT,
+                    no_overwrite BOOLEAN DEFAULT 0,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+
+            # 步骤2: 迁移数据（保留每个question_number的最新记录）
+            cursor.execute(
+                """
+                INSERT INTO lithoformer_bank_new
+                SELECT
+                    question_number,
+                    batch_id,
+                    model,
+                    use_translation,
+                    use_parsing,
+                    use_answer,
+                    original_input,
+                    output,
+                    no_overwrite,
+                    timestamp
+                FROM lithoformer_bank
+                WHERE id IN (
+                    SELECT MAX(id)
+                    FROM lithoformer_bank
+                    GROUP BY question_number
+                )
+                """
+            )
+
+            # 步骤3: 删除旧表
+            cursor.execute("DROP TABLE lithoformer_bank")
+
+            # 步骤4: 重命名新表
+            cursor.execute("ALTER TABLE lithoformer_bank_new RENAME TO lithoformer_bank")
+
+            logger.info("lithoformer_bank表结构迁移完成")
 
     def save_processing_log(
         self,
@@ -178,9 +250,10 @@ class SQLiteStatsRepository:
     ) -> bool:
         """
         保存到题库（lithoformer_bank表）
+        v1.9.2: 简化为使用INSERT OR REPLACE（question_number为主键）
 
         Args:
-            question_number: 题号（唯一键）
+            question_number: 题号（主键）
             batch_id: 批次号
             model: 使用的模型
             use_translation: 是否使用翻译
@@ -190,48 +263,35 @@ class SQLiteStatsRepository:
             no_overwrite: 禁止覆盖标记
 
         Returns:
-            bool: 是否保存成功
+            bool: 是否保存成功（如果已存在且no_overwrite=True则返回False）
         """
         timestamp = datetime.now().isoformat()
 
         with sqlite3.connect(str(self.db_path)) as conn:
             cursor = conn.cursor()
 
-            # 检查是否已存在
+            # 检查是否已存在且设置了no_overwrite标记
             cursor.execute(
                 "SELECT no_overwrite FROM lithoformer_bank WHERE question_number = ?",
                 (question_number,)
             )
             existing = cursor.fetchone()
 
-            if existing:
-                # 如果存在且设置了no_overwrite，拒绝覆盖
-                if existing[0]:  # no_overwrite = True
-                    return False
+            if existing and existing[0]:  # 已存在且no_overwrite=True
+                return False  # 拒绝覆盖
 
-                # 否则更新记录
-                cursor.execute(
-                    """
-                    UPDATE lithoformer_bank
-                    SET batch_id = ?, model = ?, use_translation = ?, use_parsing = ?,
-                        original_input = ?, output = ?, no_overwrite = ?, timestamp = ?
-                    WHERE question_number = ?
-                    """,
-                    (batch_id, model, use_translation, use_parsing,
-                     original_input, output, no_overwrite, timestamp, question_number)
-                )
-            else:
-                # 插入新记录
-                cursor.execute(
-                    """
-                    INSERT INTO lithoformer_bank (
-                        question_number, batch_id, model, use_translation, use_parsing,
-                        use_answer, original_input, output, no_overwrite, timestamp
-                    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
-                    """,
-                    (question_number, batch_id, model, use_translation, use_parsing,
-                     original_input, output, no_overwrite, timestamp)
-                )
+            # 使用INSERT OR REPLACE自动处理插入/更新
+            # question_number是主键，相同题号会自动替换旧记录
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO lithoformer_bank (
+                    question_number, batch_id, model, use_translation, use_parsing,
+                    use_answer, original_input, output, no_overwrite, timestamp
+                ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+                """,
+                (question_number, batch_id, model, use_translation, use_parsing,
+                 original_input, output, no_overwrite, timestamp)
+            )
 
             conn.commit()
             return True

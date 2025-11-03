@@ -326,7 +326,16 @@ class ConfigReserved7Input(Input):
 
 # === Feature Tab Widgets ===
 
+from textual.containers import Container
 from textual.widgets import Checkbox
+
+
+class FeatureBoxContainer(Container):
+    """Container with border title for Feature Tab checkboxes."""
+
+    def __init__(self, title: str, **kwargs):
+        super().__init__(**kwargs)
+        self.border_title = title
 
 
 class FeatureTranslationCheckbox(Checkbox):
@@ -392,6 +401,28 @@ class Feature003Checkbox(Checkbox):
             "预留功能003",
             value=value,
             id="feature-003",
+        )
+
+
+class Feature004Checkbox(Checkbox):
+    """功能Tab - 预留功能004"""
+
+    def __init__(self, value: bool = False):
+        super().__init__(
+            "预留功能004",
+            value=value,
+            id="feature-004",
+        )
+
+
+class Feature005Checkbox(Checkbox):
+    """功能Tab - 预留功能005"""
+
+    def __init__(self, value: bool = False):
+        super().__init__(
+            "预留功能005",
+            value=value,
+            id="feature-005",
         )
 
 
