@@ -15,10 +15,11 @@ from time import perf_counter
 from rich.markup import escape
 from textual import on
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import Screen
-from textual.widgets import Button, Input, Label, ProgressBar, RichLog, Select, Static, TabbedContent, TabPane, TextArea
+from textual.widgets import Button, Footer, Input, Label, ProgressBar, RichLog, Select, Static, TabbedContent, TabPane, TextArea
 
 from ....core.models import TokenUsage
 from ....shared.config import get_settings
@@ -42,6 +43,7 @@ from ...domain.services import (
 from ...infrastructure import FileAdapter, FormatterAdapter, LithoformerLLMAdapter
 from ..constants import ASCII_LOGO
 from ..logging_utils import build_textual_handler
+from .feature_toggles import FeatureTogglesWidget
 from .filters import (
     BatchInput,
     CommandInput,
@@ -55,13 +57,6 @@ from .filters import (
     ConfigReserved5Input,
     ConfigReserved6Input,
     ConfigReserved7Input,
-    Feature003Checkbox,
-    Feature004Checkbox,
-    Feature005Checkbox,
-    FeatureBoxContainer,
-    FeatureConcurrentCheckbox,
-    FeatureParsingCheckbox,
-    FeatureTranslationCheckbox,
     InputPathInput,
     LithoformerDirectoryTree,
     ModelInput,
@@ -124,6 +119,15 @@ class MainScreen(Screen):
         padding: 0 1;
     }
     """
+
+    BINDINGS = [
+        # priority=True 确保快捷键优先于输入框等组件
+        # 注意：在输入框中按这些键也会触发，使用时请先失焦输入框（按 Esc 或 Tab）
+        Binding("q", "quit_app", "Quit", show=True, priority=True),
+        Binding("p", "toggle_concurrent", "并行", show=True, priority=False),
+        Binding("t", "toggle_translation", "翻译", show=True, priority=False),
+        Binding("a", "toggle_parsing", "解析", show=True, priority=False),
+    ]
 
     AUTO_INPUT_IDS = {
         "model-input",
@@ -274,11 +278,10 @@ class MainScreen(Screen):
 
     def compose(self) -> ComposeResult:
         """Compose the main screen layout (完全基于 layout.xml)."""
-        # 获取当前日期和时间
-        now = datetime.now()
-        date_str = now.strftime("%Y-%m-%d")
-        time_str = now.strftime("%H:%M:%S")
-        info_text = f"[b]Memosyne v{__version__}[/] | {date_str} {time_str}"
+        # 从数据库读取当前功能开关状态
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+        flags = appcfg.get_feature_flags()
 
         # 顶层TabbedContent：包含Lithoformer和未来其他模块（如Reanimater）
         with TabbedContent(id="app-tabs"):
@@ -291,7 +294,12 @@ class MainScreen(Screen):
                         # LOGO 和信息区合并在一个容器中
                         with Vertical(id="header-area"):
                             yield Static(ASCII_LOGO, id="logo-panel")
-                            yield Static(info_text, id="info-panel")
+                            yield FeatureTogglesWidget(
+                                concurrent=flags.enable_concurrent,
+                                translation=flags.enable_translation,
+                                parsing=flags.enable_parsing,
+                                id="feature-toggles"
+                            )
                         # 题目列表区域：题目表格 + rate limit进度条
                         questions_area = Vertical(id="questions-area")
                         questions_area.border_title = "题目列表"
@@ -366,37 +374,6 @@ class MainScreen(Screen):
                                         yield ConfigReserved6Input(value=reserved_6)
                                         yield ConfigReserved7Input(value=reserved_7)
 
-                                    # 第四个选项卡：功能开关
-                                    with TabPane(title="功能", id="tab-features"):
-                                        # 读取功能配置（统一服务）
-                                        from ....shared.infrastructure.app_config import SQLiteAppConfigService
-                                        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
-                                        flags = appcfg.get_feature_flags()
-
-                                        # v1.9.2b: 调试日志 - 显示加载的功能配置
-                                        self.logger.debug(
-                                            f"加载功能配置: 翻译={flags.enable_translation}, "
-                                            f"解析={flags.enable_parsing}, 并发={flags.enable_concurrent}, "
-                                            f"003={flags.feature_003}, 004={flags.feature_004}, 005={flags.feature_005}"
-                                        )
-
-                                        # 2x3网格布局（每个元件包装在FeatureBoxContainer中，参考厂商选择布局）
-                                        with Horizontal(id="feature-row-1"):
-                                            with FeatureBoxContainer(title="翻译", classes="feature-box"):
-                                                yield FeatureTranslationCheckbox(value=flags.enable_translation)
-                                            with FeatureBoxContainer(title="解析", classes="feature-box"):
-                                                yield FeatureParsingCheckbox(value=flags.enable_parsing)
-                                            with FeatureBoxContainer(title="003", classes="feature-box"):
-                                                yield Feature003Checkbox(value=flags.feature_003)
-
-                                        with Horizontal(id="feature-row-2"):
-                                            with FeatureBoxContainer(title="并发", classes="feature-box"):
-                                                yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
-                                            with FeatureBoxContainer(title="004", classes="feature-box"):
-                                                yield Feature004Checkbox(value=flags.feature_004)
-                                            with FeatureBoxContainer(title="005", classes="feature-box"):
-                                                yield Feature005Checkbox(value=flags.feature_005)
-
                             # 右列 (1320-1600px): 文件树 + 按钮
                             with Vertical(id="right-col"):
                                 yield self._file_tree
@@ -414,6 +391,9 @@ class MainScreen(Screen):
                 # 底部：进度条区（使用新的自定义进度条）
                 yield CustomProgressBar(total=1, id="total-progress")
 
+                # Footer：显示快捷键
+                yield Footer()
+
     @staticmethod
     def _extract_select_value(raw: object) -> str | None:
         """Extract string value from Textual Select event payloads."""
@@ -421,6 +401,80 @@ class MainScreen(Screen):
             return raw
         value = getattr(raw, "value", None)
         return value if isinstance(value, str) else None
+
+    # region ----------- Action Methods (Keyboard Shortcuts) ----------------------
+
+    def action_quit_app(self) -> None:
+        """关闭程序（快捷键：q）"""
+        self.app.action_quit()
+
+    def action_toggle_concurrent(self) -> None:
+        """切换并行模式（快捷键：p）"""
+        self._toggle_feature("concurrent")
+
+    def action_toggle_translation(self) -> None:
+        """切换翻译功能（快捷键：t）"""
+        self._toggle_feature("translation")
+
+    def action_toggle_parsing(self) -> None:
+        """切换解析功能（快捷键：a）"""
+        self._toggle_feature("parsing")
+
+    def _toggle_feature(self, feature_name: str) -> None:
+        """切换功能开关的内部方法"""
+        # 读取当前状态
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+        flags = appcfg.get_feature_flags()
+
+        # 根据功能名称切换
+        if feature_name == "concurrent":
+            new_value = not flags.enable_concurrent
+            appcfg.update_feature_flags(enable_concurrent=new_value)
+            feature_label = "并行"
+        elif feature_name == "translation":
+            new_value = not flags.enable_translation
+            appcfg.update_feature_flags(enable_translation=new_value)
+            feature_label = "翻译"
+        elif feature_name == "parsing":
+            new_value = not flags.enable_parsing
+            appcfg.update_feature_flags(enable_parsing=new_value)
+            feature_label = "解析"
+        else:
+            return
+
+        # 更新 FeatureTogglesWidget 显示
+        toggles = self.query_one("#feature-toggles", FeatureTogglesWidget)
+        toggles.update_toggle(feature_name, new_value)
+
+        # 输出日志
+        status = "已启用" if new_value else "已禁用"
+        self.logger.info(f"✓ {feature_label}模式{status}")
+
+    @on(FeatureTogglesWidget.ToggleChanged)
+    def handle_toggle_changed(self, event: FeatureTogglesWidget.ToggleChanged) -> None:
+        """处理 FeatureTogglesWidget 的点击事件"""
+        # 保存到数据库
+        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+
+        if event.toggle_name == "concurrent":
+            appcfg.update_feature_flags(enable_concurrent=event.new_value)
+            feature_label = "并行"
+        elif event.toggle_name == "translation":
+            appcfg.update_feature_flags(enable_translation=event.new_value)
+            feature_label = "翻译"
+        elif event.toggle_name == "parsing":
+            appcfg.update_feature_flags(enable_parsing=event.new_value)
+            feature_label = "解析"
+        else:
+            return
+
+        # 输出日志
+        status = "已启用" if event.new_value else "已禁用"
+        self.logger.info(f"✓ {feature_label}模式{status}")
+
+    # endregion --------------------------------------------------------------------
 
     def _apply_model_select_value(self, value: str) -> None:
         """Set model select value while suppressing change side-effects."""
@@ -829,50 +883,6 @@ class MainScreen(Screen):
         except (ValueError, Exception):
             # 任何异常都禁用按钮
             self.action_button.disabled = True
-
-    @on(FeatureTranslationCheckbox.Changed)
-    @on(FeatureParsingCheckbox.Changed)
-    @on(FeatureConcurrentCheckbox.Changed)
-    @on(Feature003Checkbox.Changed)
-    @on(Feature004Checkbox.Changed)
-    @on(Feature005Checkbox.Changed)
-    async def handle_feature_changed(self, event) -> None:
-        """保存功能配置到数据库（实时）"""
-        from textual.widgets import Checkbox
-        from ....shared.infrastructure.app_config import SQLiteAppConfigService
-
-        # v1.9.2c: 增强调试 - 记录所有事件触发
-        self.logger.info(f"[DEBUG] 功能配置变更事件触发: checkbox={event.checkbox}, value={event.value}")
-
-        if not isinstance(event.checkbox, Checkbox):
-            self.logger.warning(f"[DEBUG] 非Checkbox事件被忽略: {type(event.checkbox)}")
-            return
-
-        widget_id = event.checkbox.id
-        is_checked = event.value
-
-        # 映射widget ID到功能字段
-        feature_key_map = {
-            "feature-translation": "enable_translation",
-            "feature-parsing": "enable_parsing",
-            "feature-concurrent": "enable_concurrent",
-            "feature-003": "feature_003",
-            "feature-004": "feature_004",
-            "feature-005": "feature_005",
-        }
-
-        feature_key = feature_key_map.get(widget_id)
-        if feature_key:
-            # 保存到数据库（统一服务）
-            appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
-            appcfg.update_feature_flags(**{feature_key: is_checked})
-
-            # v1.9.2c: 记录日志（增强版 - 同时输出到控制台和日志文件）
-            status = "启用" if is_checked else "禁用"
-            self.logger.info(f"✓ 功能配置已保存到数据库: {feature_key} = {is_checked} ({status})")
-            self.log_view.write(f"[green]✓ 功能已更新: {feature_key} = {status}[/green]")
-        else:
-            self.logger.warning(f"[DEBUG] 未知的widget ID: {widget_id}")
 
     @on(QuestionsTable.RowHighlighted)
     def handle_question_row_highlighted(self, event: QuestionsTable.RowHighlighted) -> None:

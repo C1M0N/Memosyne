@@ -146,8 +146,8 @@ Screen {
     content-align: center middle;  /* 内容居中 */
 }
 
-#info-panel {
-    height: 3;  /* ~60px - 固定高度 */
+#feature-toggles {
+    height: 3;  /* 3行高度 - 紧凑显示开关状态 */
     border: none;  /* 去掉边框 */
     background: #0d141f;
     padding: 0 1;
@@ -421,43 +421,3 @@ Tab.-active {
     border: round #4aa8ff;
 }
 
-/* ==================================================================
-   FEATURE TAB - 功能开关布局（2×3网格）
-   ================================================================== */
-
-#feature-row-1, #feature-row-2 {
-    layout: horizontal;
-    height: auto;
-    margin-bottom: 1;
-}
-
-/* 每个功能框占1/3宽度，带边框 */
-.feature-box {
-    width: 1fr;  /* 平均分配宽度 */
-    height: auto;
-    border: round #1f4b8f;
-    background: #070d16;
-    padding: 0;
-}
-
-/* 功能框内的Checkbox样式 */
-.feature-box Checkbox {
-    width: 100%;
-    background: transparent;
-    border: none;
-    padding: 0 1;
-    margin: 0;
-}
-
-/* 聚焦状态高亮边框 */
-.feature-box:focus-within {
-    border: round #4aa8ff;
-}
-
-/* 预留位置的Label居中显示 */
-.feature-placeholder {
-    width: 100%;
-    content-align: center middle;
-    color: #888888;
-    padding: 1;
-}

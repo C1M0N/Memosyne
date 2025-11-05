@@ -1,5 +1,6 @@
 """Lithoformer TUI widgets."""
 
+from .feature_toggles import FeatureTogglesWidget
 from .filters import (
     BatchInput,
     CommandInput,
@@ -21,6 +22,7 @@ from .screens import MainScreen
 __all__ = [
     "BatchInput",
     "CommandInput",
+    "FeatureTogglesWidget",
     "InputPathInput",
     "LithoformerDirectoryTree",
     "MainScreen",

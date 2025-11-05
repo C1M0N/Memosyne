@@ -128,26 +128,22 @@ class SQLiteConfigRepository:
             # 2.3 迁移数据或插入默认值
             timestamp = datetime.now().isoformat()
             if old_data:
-                # 从旧数据迁移（id, enable_translation, enable_parsing, enable_concurrent, openai_tier, anthropic_tier, feature_003, updated_at）
+                # 从旧数据迁移（id, enable_translation, enable_parsing, enable_concurrent, openai_tier, anthropic_tier, updated_at）
                 features = [
                     ('enable_translation', '1' if old_data[1] else '0'),
                     ('enable_parsing', '1' if old_data[2] else '0'),
                     ('enable_concurrent', '1' if old_data[3] else '0'),
                     ('openai_tier', str(old_data[4] if len(old_data) > 4 and old_data[4] is not None else 1)),
                     ('anthropic_tier', str(old_data[5] if len(old_data) > 5 and old_data[5] is not None else 1)),
-                    ('feature_003', '1' if (len(old_data) > 6 and old_data[6]) else '0'),
                 ]
             else:
-                # 默认值（v1.9.2c：添加feature_004和feature_005）
+                # 默认值
                 features = [
                     ('enable_translation', '1'),
                     ('enable_parsing', '1'),
                     ('enable_concurrent', '0'),
                     ('openai_tier', '1'),
                     ('anthropic_tier', '1'),
-                    ('feature_003', '0'),
-                    ('feature_004', '0'),
-                    ('feature_005', '0'),
                 ]
 
             # v1.9.2c: 修复 - 使用 INSERT OR IGNORE 避免覆盖用户配置
