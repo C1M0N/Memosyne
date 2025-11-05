@@ -86,13 +86,14 @@ Screen {
 }
 
 #logo-panel {
-    height: 9;  /* ~180px */
+    height: 11;  /* ~220px (加高2行) */
     padding: 1;
     color: #4aa8ff;
     background: #0d141f;
     border: none;  /* 去掉边框 */
     text-style: bold;
     margin: 0;  /* 去掉底部边距 */
+    content-align: center middle;  /* 内容居中 */
 }
 
 #info-panel {
