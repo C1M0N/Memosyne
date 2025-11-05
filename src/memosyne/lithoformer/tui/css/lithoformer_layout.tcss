@@ -7,6 +7,56 @@ Screen {
 }
 
 /* ==================================================================
+   APP-LEVEL TABBED CONTENT - 顶层Tab容器（Lithoformer + 未来其他模块）
+   ================================================================== */
+
+#app-tabs {
+    height: 100%;
+    background: #070d16;
+}
+
+/* 顶层Tabs栏 - 与jiraTUI保持一致的风格 */
+#app-tabs > Tabs {
+    height: 2;  /* tabs栏占用2行高度 */
+    background: #0d141f;
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* 顶层Tab按钮样式 */
+#app-tabs Tab {
+    background: transparent;
+    color: #9cb3ce;
+}
+
+#app-tabs Tab:hover {
+    background: #14253a;
+    color: #ffffff;
+}
+
+#app-tabs Tab.-active {
+    background: #2b61a7;
+    color: #ffffff;
+    text-style: bold;
+}
+
+/* 顶层TabPane内容区域 */
+#app-tabs TabPane {
+    height: 1fr;
+    padding: 0;
+    margin: 0;
+    background: #050c15;
+}
+
+#app-tabs ContentSwitcher {
+    height: 1fr;
+    background: #050c15;
+    margin: 0;
+    padding: 0;
+}
+
+/* ==================================================================
    MAIN CONTAINER - 左列 + 右侧区域
    ================================================================== */
 

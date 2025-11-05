@@ -280,135 +280,139 @@ class MainScreen(Screen):
         time_str = now.strftime("%H:%M:%S")
         info_text = f"[b]Memosyne v{__version__}[/] | {date_str} {time_str}"
 
-        # 主容器：左列 + 右侧区域
-        with Horizontal(id="main-container"):
-            # 左列 (0-760px): LOGO + 信息区 + 题目列表
-            with Vertical(id="left-col"):
-                # LOGO 和信息区合并在一个容器中
-                with Vertical(id="header-area"):
-                    yield Static(ASCII_LOGO, id="logo-panel")
-                    yield Static(info_text, id="info-panel")
-                # 题目列表区域：题目表格 + rate limit进度条
-                questions_area = Vertical(id="questions-area")
-                questions_area.border_title = "题目列表"
-                with questions_area:
-                    yield QuestionsTable()
-                    yield RateLimitBar()
+        # 顶层TabbedContent：包含Lithoformer和未来其他模块（如Reanimater）
+        with TabbedContent(id="app-tabs"):
+            # Lithoformer Tab
+            with TabPane(title="Lithoformer", id="tab-lithoformer"):
+                # 主容器：左列 + 右侧区域
+                with Horizontal(id="main-container"):
+                    # 左列 (0-760px): LOGO + 信息区 + 题目列表
+                    with Vertical(id="left-col"):
+                        # LOGO 和信息区合并在一个容器中
+                        with Vertical(id="header-area"):
+                            yield Static(ASCII_LOGO, id="logo-panel")
+                            yield Static(info_text, id="info-panel")
+                        # 题目列表区域：题目表格 + rate limit进度条
+                        questions_area = Vertical(id="questions-area")
+                        questions_area.border_title = "题目列表"
+                        with questions_area:
+                            yield QuestionsTable()
+                            yield RateLimitBar()
 
-            # 右侧区域 (760-1600px): 包含中列、右列和控制台
-            with Vertical(id="right-area"):
-                # 顶部：中列 + 右列
-                with Horizontal(id="top-section"):
-                    # 中列 (760-1320px): 选项卡式内容区
-                    with Vertical(id="middle-col"):
-                        with TabbedContent(id="main-tabs"):
-                            # 第一个选项卡：输入配置
-                            with TabPane(title="输入", id="tab-inputs"):
-                                yield InputPathInput(value=str(self.settings.lithoformer_input_dir))
-                                yield OutputPathInput(value=str(self.settings.lithoformer_output_dir))
+                    # 右侧区域 (760-1600px): 包含中列、右列和控制台
+                    with Vertical(id="right-area"):
+                        # 顶部：中列 + 右列
+                        with Horizontal(id="top-section"):
+                            # 中列 (760-1320px): 选项卡式内容区
+                            with Vertical(id="middle-col"):
+                                with TabbedContent(id="main-tabs"):
+                                    # 第一个选项卡：输入配置
+                                    with TabPane(title="输入", id="tab-inputs"):
+                                        yield InputPathInput(value=str(self.settings.lithoformer_input_dir))
+                                        yield OutputPathInput(value=str(self.settings.lithoformer_output_dir))
 
-                                with Horizontal(id="provider-model-row"):
-                                    yield ProviderSelectionInput(value=self.settings.default_llm_provider)
-                                    yield ModelSelectionInput()
+                                        with Horizontal(id="provider-model-row"):
+                                            yield ProviderSelectionInput(value=self.settings.default_llm_provider)
+                                            yield ModelSelectionInput()
 
-                                yield ModelInput()
-                                yield TitleInput()
+                                        yield ModelInput()
+                                        yield TitleInput()
 
-                                with Horizontal(id="seq-batch-row"):
-                                    yield SequenceInput()
-                                    yield BatchInput()
+                                        with Horizontal(id="seq-batch-row"):
+                                            yield SequenceInput()
+                                            yield BatchInput()
 
-                                yield OutputFilenameInput()
-                                yield NoteInput()
+                                        yield OutputFilenameInput()
+                                        yield NoteInput()
 
-                            # 第二个选项卡：预览展示
-                            with TabPane(title="预览", id="tab-preview"):
-                                preview = TextArea(id="preview-area", read_only=True)
-                                preview.border_title = "检测结果预览"
-                                yield preview
+                                    # 第二个选项卡：预览展示
+                                    with TabPane(title="预览", id="tab-preview"):
+                                        preview = TextArea(id="preview-area", read_only=True)
+                                        preview.border_title = "检测结果预览"
+                                        yield preview
 
-                            # 第三个选项卡：配置管理
-                            with TabPane(title="配置", id="tab-config"):
-                                # 从数据库读取配置值
-                                config_repo = self.settings._config_repo
-                                from ....shared.infrastructure.app_config import SQLiteAppConfigService
-                                appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
-                                paths = appcfg.get_paths()
-                                default_input = str(paths.input_dir) if paths.input_dir else ""
-                                default_output = str(paths.output_dir) if paths.output_dir else ""
-                                default_model = appcfg.get_default_model()
-                                max_concurrent = appcfg.get_config("max_concurrent") or "10"
-                                max_retries = appcfg.get_config("max_retries") or "1"
+                                    # 第三个选项卡：配置管理
+                                    with TabPane(title="配置", id="tab-config"):
+                                        # 从数据库读取配置值
+                                        config_repo = self.settings._config_repo
+                                        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+                                        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+                                        paths = appcfg.get_paths()
+                                        default_input = str(paths.input_dir) if paths.input_dir else ""
+                                        default_output = str(paths.output_dir) if paths.output_dir else ""
+                                        default_model = appcfg.get_default_model()
+                                        max_concurrent = appcfg.get_config("max_concurrent") or "10"
+                                        max_retries = appcfg.get_config("max_retries") or "1"
 
-                                # 读取Tier配置（从feature表）
-                                from ....shared.infrastructure.app_config import SQLiteAppConfigService
-                                appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
-                                flags = appcfg.get_feature_flags()
-                                openai_tier = flags.openai_tier
-                                anthropic_tier = flags.anthropic_tier
+                                        # 读取Tier配置（从feature表）
+                                        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+                                        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+                                        flags = appcfg.get_feature_flags()
+                                        openai_tier = flags.openai_tier
+                                        anthropic_tier = flags.anthropic_tier
 
-                                reserved_5 = appcfg.get_config("reserved_config_5") or ""
-                                reserved_6 = appcfg.get_config("reserved_config_6") or ""
-                                reserved_7 = appcfg.get_config("reserved_config_7") or ""
+                                        reserved_5 = appcfg.get_config("reserved_config_5") or ""
+                                        reserved_6 = appcfg.get_config("reserved_config_6") or ""
+                                        reserved_7 = appcfg.get_config("reserved_config_7") or ""
 
-                                yield ConfigDefaultInputDirInput(value=default_input)
-                                yield ConfigDefaultOutputDirInput(value=default_output)
-                                yield ConfigDefaultModelInput(value=default_model)
-                                yield ConfigMaxConcurrentInput(value=max_concurrent)
-                                yield ConfigMaxRetriesInput(value=max_retries)
-                                yield ConfigOpenAITierSelect(value=openai_tier)
-                                yield ConfigAnthropicTierSelect(value=anthropic_tier)
-                                yield ConfigReserved5Input(value=reserved_5)
-                                yield ConfigReserved6Input(value=reserved_6)
-                                yield ConfigReserved7Input(value=reserved_7)
+                                        yield ConfigDefaultInputDirInput(value=default_input)
+                                        yield ConfigDefaultOutputDirInput(value=default_output)
+                                        yield ConfigDefaultModelInput(value=default_model)
+                                        yield ConfigMaxConcurrentInput(value=max_concurrent)
+                                        yield ConfigMaxRetriesInput(value=max_retries)
+                                        yield ConfigOpenAITierSelect(value=openai_tier)
+                                        yield ConfigAnthropicTierSelect(value=anthropic_tier)
+                                        yield ConfigReserved5Input(value=reserved_5)
+                                        yield ConfigReserved6Input(value=reserved_6)
+                                        yield ConfigReserved7Input(value=reserved_7)
 
-                            # 第四个选项卡：功能开关
-                            with TabPane(title="功能", id="tab-features"):
-                                # 读取功能配置（统一服务）
-                                from ....shared.infrastructure.app_config import SQLiteAppConfigService
-                                appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
-                                flags = appcfg.get_feature_flags()
+                                    # 第四个选项卡：功能开关
+                                    with TabPane(title="功能", id="tab-features"):
+                                        # 读取功能配置（统一服务）
+                                        from ....shared.infrastructure.app_config import SQLiteAppConfigService
+                                        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+                                        flags = appcfg.get_feature_flags()
 
-                                # v1.9.2b: 调试日志 - 显示加载的功能配置
-                                self.logger.debug(
-                                    f"加载功能配置: 翻译={flags.enable_translation}, "
-                                    f"解析={flags.enable_parsing}, 并发={flags.enable_concurrent}, "
-                                    f"003={flags.feature_003}, 004={flags.feature_004}, 005={flags.feature_005}"
-                                )
+                                        # v1.9.2b: 调试日志 - 显示加载的功能配置
+                                        self.logger.debug(
+                                            f"加载功能配置: 翻译={flags.enable_translation}, "
+                                            f"解析={flags.enable_parsing}, 并发={flags.enable_concurrent}, "
+                                            f"003={flags.feature_003}, 004={flags.feature_004}, 005={flags.feature_005}"
+                                        )
 
-                                # 2x3网格布局（每个元件包装在FeatureBoxContainer中，参考厂商选择布局）
-                                with Horizontal(id="feature-row-1"):
-                                    with FeatureBoxContainer(title="翻译", classes="feature-box"):
-                                        yield FeatureTranslationCheckbox(value=flags.enable_translation)
-                                    with FeatureBoxContainer(title="解析", classes="feature-box"):
-                                        yield FeatureParsingCheckbox(value=flags.enable_parsing)
-                                    with FeatureBoxContainer(title="003", classes="feature-box"):
-                                        yield Feature003Checkbox(value=flags.feature_003)
+                                        # 2x3网格布局（每个元件包装在FeatureBoxContainer中，参考厂商选择布局）
+                                        with Horizontal(id="feature-row-1"):
+                                            with FeatureBoxContainer(title="翻译", classes="feature-box"):
+                                                yield FeatureTranslationCheckbox(value=flags.enable_translation)
+                                            with FeatureBoxContainer(title="解析", classes="feature-box"):
+                                                yield FeatureParsingCheckbox(value=flags.enable_parsing)
+                                            with FeatureBoxContainer(title="003", classes="feature-box"):
+                                                yield Feature003Checkbox(value=flags.feature_003)
 
-                                with Horizontal(id="feature-row-2"):
-                                    with FeatureBoxContainer(title="并发", classes="feature-box"):
-                                        yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
-                                    with FeatureBoxContainer(title="004", classes="feature-box"):
-                                        yield Feature004Checkbox(value=flags.feature_004)
-                                    with FeatureBoxContainer(title="005", classes="feature-box"):
-                                        yield Feature005Checkbox(value=flags.feature_005)
+                                        with Horizontal(id="feature-row-2"):
+                                            with FeatureBoxContainer(title="并发", classes="feature-box"):
+                                                yield FeatureConcurrentCheckbox(value=flags.enable_concurrent)
+                                            with FeatureBoxContainer(title="004", classes="feature-box"):
+                                                yield Feature004Checkbox(value=flags.feature_004)
+                                            with FeatureBoxContainer(title="005", classes="feature-box"):
+                                                yield Feature005Checkbox(value=flags.feature_005)
 
-                    # 右列 (1320-1600px): 文件树 + 按钮
-                    with Vertical(id="right-col"):
-                        yield self._file_tree
-                        yield Button("Detect", id="action-button", variant="primary")
+                            # 右列 (1320-1600px): 文件树 + 按钮
+                            with Vertical(id="right-col"):
+                                yield self._file_tree
+                                yield Button("Detect", id="action-button", variant="primary")
 
-                # 控制台区 (横跨整个右侧区域，760-1600px)
-                log_view = RichLog(id="log-view", highlight=True, markup=True)
-                log_view.border_title = "控制台"
-                if hasattr(log_view, "max_lines"):
-                    log_view.max_lines = 999
-                yield log_view
+                        # 控制台区 (横跨整个右侧区域，760-1600px)
+                        log_view = RichLog(id="log-view", highlight=True, markup=True)
+                        log_view.border_title = "控制台"
+                        if hasattr(log_view, "max_lines"):
+                            log_view.max_lines = 999
+                        yield log_view
 
-                yield CommandInput()
+                        yield CommandInput()
 
-        # 底部：进度条区（使用新的自定义进度条）
-        yield CustomProgressBar(total=1, id="total-progress")
+                # 底部：进度条区（使用新的自定义进度条）
+                yield CustomProgressBar(total=1, id="total-progress")
 
     @staticmethod
     def _extract_select_value(raw: object) -> str | None:
