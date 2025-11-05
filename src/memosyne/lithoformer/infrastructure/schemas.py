@@ -236,28 +236,42 @@ def get_dynamic_schema(schema_type: str) -> dict:
         "analysis": {
             "type": "object",
             "additionalProperties": False,
+            "description": "CRITICAL: Must be a JSON object (not a string). Contains structured analysis with domain, rationale, key_points array, and distractors array. Never serialize this object as a string.",
             "properties": {
-                "domain": {"type": "string"},
-                "rationale": {"type": "string"},
+                "domain": {
+                    "type": "string",
+                    "description": "简洁的学术或诊断标签（中文）"
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "为什么正确答案正确的中文说明"
+                },
                 "key_points": {
                     "type": "array",
+                    "description": "MUST be an array of strings (not a string). 2-4条中文关键知识点",
                     "items": {"type": "string"}
                 },
                 "distractors": {
                     "type": "array",
+                    "description": "MUST be an array of objects (not a string). 针对错误选项的分析",
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
                         "properties": {
-                            "option": {"type": "string"},
-                            "reason": {"type": "string"}
+                            "option": {
+                                "type": "string",
+                                "description": "错误选项的大写字母（A-F）"
+                            },
+                            "reason": {
+                                "type": "string",
+                                "description": "为什么该选项错误的中文解释"
+                            }
                         },
                         "required": ["option", "reason"]
                     }
                 }
             },
-            "required": ["domain", "rationale", "key_points", "distractors"],
-            "description": "题目解析信息"
+            "required": ["domain", "rationale", "key_points", "distractors"]
         }
     }
 

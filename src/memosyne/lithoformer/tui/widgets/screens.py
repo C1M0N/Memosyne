@@ -447,7 +447,7 @@ class MainScreen(Screen):
         # v1.9.0: 添加数据库日志handler
         from ..database_log_handler import setup_database_logging
         db_handler = setup_database_logging(
-            self.logger,
+            logging.getLogger(),  # 注册到root logger以捕获所有子模块日志
             self.settings.db_dir / "stat.db",
             level=logging.INFO
         )

@@ -3,6 +3,7 @@ Lithoformer Application Use Cases
 """
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,9 @@ from .ports import LLMPort
 from ...core.models import ProcessResult, TokenUsage
 from ...core.interfaces import StatsRepository
 from ...shared.utils import Progress, indeterminate_progress
+
+# Logger
+logger = logging.getLogger("memosyne.lithoformer.application")
 
 
 # v1.9.1c: 字符计数工具函数
@@ -510,6 +514,45 @@ def _normalize_question_dict(data: dict) -> dict:
         analysis["distractors"] = distractors
 
         result["analysis"] = analysis
+    elif isinstance(analysis, str):
+        # LLM错误地返回了JSON字符串类型，尝试二次解析（双重保险）
+        try:
+            import json
+            parsed_analysis = json.loads(analysis)
+            if isinstance(parsed_analysis, dict):
+                # 成功解析，递归应用normalize逻辑
+                parsed_analysis["domain"] = (parsed_analysis.get("domain") or "").strip()
+                parsed_analysis["rationale"] = (parsed_analysis.get("rationale") or "").strip()
+
+                key_points = []
+                for point in parsed_analysis.get("key_points") or []:
+                    text = str(point).strip()
+                    if text:
+                        key_points.append(text)
+                parsed_analysis["key_points"] = key_points
+
+                distractors = []
+                for dist in parsed_analysis.get("distractors") or []:
+                    if not isinstance(dist, dict):
+                        continue
+                    option = (dist.get("option") or "").strip().upper()
+                    reason = (dist.get("reason") or "").strip()
+                    if option or reason:
+                        distractors.append({"option": option, "reason": reason})
+                parsed_analysis["distractors"] = distractors
+
+                result["analysis"] = parsed_analysis
+                logger.warning("LLM返回了字符串化的analysis，已成功二次解析并normalize")
+            else:
+                result["analysis"] = None
+                logger.warning("二次解析analysis失败：解析结果不是对象")
+        except (json.JSONDecodeError, TypeError) as e:
+            result["analysis"] = None
+            logger.warning(f"无法二次解析analysis字符串: {str(e)[:100]}")
+    elif analysis is not None:
+        # 其他非预期类型也设为None
+        result["analysis"] = None
+        logger.warning(f"LLM返回了非预期类型的analysis字段: {type(analysis).__name__}")
 
     # Ensure translations exist and align with base fields
     result["stem_translation"] = (result.get("stem_translation") or "").strip()

@@ -51,6 +51,41 @@ class AnthropicProvider(BaseLLMProvider):
             temperature=settings.default_temperature,
         )
 
+    def _recursive_parse_json_strings(self, data: Any) -> Any:
+        """递归解析嵌套的JSON字符串（兜底机制）
+
+        某些Anthropic模型（如Haiku 4.5）可能在Tool Use模式下
+        将嵌套对象序列化为JSON字符串。此方法递归解析这些字符串。
+
+        Args:
+            data: 需要检查和解析的数据（dict, list, 或其他类型）
+
+        Returns:
+            解析后的数据（所有JSON字符串已转换为对象/数组）
+        """
+        import json
+
+        if isinstance(data, dict):
+            result = {}
+            for key, value in data.items():
+                if isinstance(value, str):
+                    # 尝试解析JSON字符串
+                    try:
+                        parsed = json.loads(value)
+                        result[key] = self._recursive_parse_json_strings(parsed)
+                    except (json.JSONDecodeError, TypeError):
+                        # 不是JSON字符串，保持原样
+                        result[key] = value
+                elif isinstance(value, (dict, list)):
+                    result[key] = self._recursive_parse_json_strings(value)
+                else:
+                    result[key] = value
+            return result
+        elif isinstance(data, list):
+            return [self._recursive_parse_json_strings(item) for item in data]
+        else:
+            return data
+
     def complete_structured(
         self,
         system_prompt: str,
@@ -68,7 +103,12 @@ class AnthropicProvider(BaseLLMProvider):
         """
         tool = {
             "name": schema_name,
-            "description": f"Structured response format: {schema_name}",
+            "description": (
+                f"Returns structured quiz data following the {schema_name} schema. "
+                "CRITICAL: All nested objects (like 'analysis') MUST be returned as JSON objects, "
+                "NOT as serialized strings. Arrays (like 'key_points', 'distractors') MUST be JSON arrays, "
+                "NOT strings or other types."
+            ),
             "input_schema": schema,
         }
 
@@ -113,6 +153,8 @@ class AnthropicProvider(BaseLLMProvider):
             if btype == "tool_use" and bname == schema_name:
                 binput = getattr(block, "input", None) if hasattr(block, "input") else block.get("input")
                 if isinstance(binput, dict):
+                    # 递归解析嵌套的JSON字符串（修复Haiku 4.5的序列化问题）
+                    binput = self._recursive_parse_json_strings(binput)
                     return binput, tokens, rate_limit_info
 
         # 容错：尝试从文本提取 JSON

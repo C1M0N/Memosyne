@@ -7,7 +7,7 @@ Lithoformer Prompts - Quiz 解析提示词
 
 LITHOFORMER_SYSTEM_PROMPT = """You are a licensed clinical psychology exam tutor.
 
-You must analyse one question at a time and return STRICT JSON that matches the provided schema.
+You must process one question at a time and return STRICT JSON that matches the provided schema.
 
 **CRITICAL**: If the user provides a "备注" (note) section, you MUST follow its instructions precisely. This overrides default behavior.
 
@@ -86,7 +86,7 @@ def get_dynamic_system_prompt(schema_type: str) -> str:
     # 基础部分（所有类型都包含）
     base_prompt = """You are a licensed clinical psychology exam tutor.
 
-You must analyse one question at a time and return STRICT JSON that matches the provided schema.
+You must process one question at a time and return STRICT JSON that matches the provided schema.
 
 **CRITICAL**: If the user provides a "备注" (note) section, you MUST follow its instructions precisely. This overrides default behavior.
 
@@ -118,17 +118,121 @@ TRANSLATION FORMAT
     # 解析部分
     analysis_section = """
 ANALYSIS REQUIREMENTS（全部使用简体中文）
-- analysis.domain: 简洁的学术或诊断标签（中文，例如 "焦虑障碍"）。
-- analysis.rationale: 用中文说明为什么正确答案正确，可引用 DSM-5-TR 或权威理论术语（英文术语可保留原文）。
-- analysis.key_points: 2-4 条中文关键知识点，每条 1-2 句补充背景或核心概念。
-- analysis.distractors: 针对每个错误选项（大写字母）给出中文理由，可引用原选项文本。
-- 语气专业、基于证据，可穿插必要的英文专有名词，但说明必须为中文。"""
+
+**CRITICAL - STRUCTURAL REQUIREMENTS:**
+The 'analysis' field MUST be a JSON object with the following structure.
+DO NOT serialize this object as a string. DO NOT use JSON.stringify or similar serialization.
+
+Required JSON structure:
+{
+  "analysis": {
+    "domain": "string value in Chinese",
+    "rationale": "string value in Chinese",
+    "key_points": ["string", "string"],  // MUST be an array of strings
+    "distractors": [                      // MUST be an array of objects
+      {"option": "A", "reason": "string in Chinese"},
+      {"option": "B", "reason": "string in Chinese"}
+    ]
+  }
+}
+
+Field content requirements:
+- analysis.domain: 简洁的学术或诊断标签（中文，例如 "焦虑障碍"）
+- analysis.rationale: 用中文说明为什么正确答案正确，可引用 DSM-5-TR 或权威理论术语（英文术语可保留原文）
+- analysis.key_points: 2-4 条中文关键知识点，每条 1-2 句补充背景或核心概念（**必须是数组**）
+- analysis.distractors: 针对每个错误选项（大写字母）给出中文理由，可引用原选项文本（**必须是对象数组**）
+- 语气专业、基于证据，可穿插必要的英文专有名词，但说明必须为中文"""
+
+    # Few-shot Examples
+    analysis_examples = """
+<examples>
+<correct_example>
+Correct way to structure the analysis field (note: analysis is a JSON object, not a string):
+
+{
+  "qtype": "MCQ",
+  "stem": "A 35-year-old woman presents with excessive worry...",
+  "analysis": {
+    "domain": "焦虑障碍",
+    "rationale": "该患者表现出持续的过度担忧和躯体症状，符合广泛性焦虑障碍（Generalized Anxiety Disorder, GAD）的诊断标准。DSM-5-TR要求症状持续至少6个月。",
+    "key_points": [
+      "GAD的核心特征是持续至少6个月的过度焦虑和担忧",
+      "常见躯体症状包括肌肉紧张、疲劳和睡眠障碍",
+      "与恐慌障碍不同，GAD的焦虑是持续性而非突发性的"
+    ],
+    "distractors": [
+      {
+        "option": "A",
+        "reason": "恐慌障碍（Panic Disorder）的特征是突发的恐慌发作，而非本案例中的持续性焦虑"
+      },
+      {
+        "option": "C",
+        "reason": "社交焦虑障碍（Social Anxiety Disorder）主要涉及社交情境的恐惧，而本案例焦虑范围更广泛"
+      }
+    ]
+  }
+}
+
+✓ The 'analysis' field is a proper JSON object containing nested objects and arrays.
+</correct_example>
+
+<incorrect_example type="string_serialization">
+WRONG - DO NOT do this (notice the escaped quotes - this means the object was serialized as a string):
+
+{
+  "qtype": "MCQ",
+  "stem": "A 35-year-old woman presents with...",
+  "analysis": "{\\"domain\\": \\"焦虑障碍\\", \\"rationale\\": \\"该患者...\\"}"
+}
+
+✗ ERROR: The analysis field is incorrectly serialized as a STRING (notice the escaped quotes \\" ).
+This will cause parsing errors. The analysis field must be a native JSON object, not a string.
+</incorrect_example>
+
+<incorrect_example type="wrong_array_types">
+WRONG - DO NOT do this (arrays serialized as strings):
+
+{
+  "analysis": {
+    "domain": "焦虑障碍",
+    "rationale": "该患者表现出...",
+    "key_points": "要点1：GAD持续6个月。要点2：躯体症状常见。",
+    "distractors": "A选项错误因为恐慌障碍是突发性的。C选项错误因为社交焦虑范围更窄。"
+  }
+}
+
+✗ ERROR: The key_points and distractors fields are STRINGS instead of ARRAYS.
+They must be JSON arrays: key_points must be ["string1", "string2"], and distractors must be [{"option":"A", "reason":"..."}].
+</incorrect_example>
+</examples>
+"""
+
+    # 禁止analysis的显式指令
+    no_analysis_instruction = """
+**IMPORTANT - NO ANALYSIS REQUIRED**
+- Do NOT include any 'analysis' field in your output
+- Do NOT provide domain labels, rationale, key points, or distractor explanations
+- Focus only on extracting the question structure and translation (if required)"""
 
     # 结尾部分
     footer = """
 STRICT OUTPUT CONTRACT
-- 返回 EXACT JSON，且只能包含 schema 中定义的字段。
-- 绝不输出额外的文字、markdown 或注释。"""
+
+You MUST use the provided tool to return your response. The tool's input_schema defines the exact structure required.
+
+CRITICAL TYPE REQUIREMENTS:
+- Objects MUST be JSON objects (use {...}), NEVER serialize objects as strings
+- Arrays MUST be JSON arrays (use [...]), NEVER use strings or other types for array fields
+- The 'analysis' field specifically MUST be a JSON object containing nested arrays and objects
+- DO NOT use JSON.stringify or any string serialization on nested objects
+
+FORMAT REQUIREMENTS:
+- Return EXACT JSON that matches the schema
+- Include ONLY fields defined in the schema
+- Never add extra text, markdown, or comments outside the JSON structure
+- Ensure all nested structures maintain their proper types (object, array, string, etc.)
+
+If you are uncertain about the structure, refer to the examples provided above."""
 
     # 根据schema类型组装prompt
     sections = [base_prompt]
@@ -138,8 +242,12 @@ STRICT OUTPUT CONTRACT
         sections.append(translation_section)
 
     if schema_type in ("full", "no_translation"):
-        # 包含解析指令
+        # 包含解析指令和示例
         sections.append(analysis_section)
+        sections.append(analysis_examples)  # 添加Few-shot Examples
+    elif schema_type in ("no_analysis", "minimal"):
+        # 明确禁止analysis字段
+        sections.append(no_analysis_instruction)
 
     sections.append(footer)
 
