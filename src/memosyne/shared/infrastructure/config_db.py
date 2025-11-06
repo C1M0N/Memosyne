@@ -437,7 +437,7 @@ class SQLiteFeatureConfigRepository:
             config = {}
             for key, value in rows:
                 # 根据key类型解析value
-                if key in ("enable_translation", "enable_parsing", "enable_concurrent", "feature_003"):
+                if key in ("enable_translation", "enable_parsing", "enable_concurrent"):
                     # Boolean类型
                     config[key] = value == "1"
                 elif key in ("openai_tier", "anthropic_tier"):
@@ -455,7 +455,6 @@ class SQLiteFeatureConfigRepository:
                     "enable_concurrent": False,
                     "openai_tier": 1,
                     "anthropic_tier": 1,
-                    "feature_003": False,
                 }
 
             return config
@@ -472,7 +471,6 @@ class SQLiteFeatureConfigRepository:
             "enable_concurrent",
             "openai_tier",
             "anthropic_tier",
-            "feature_003",
         }
         fields_to_update = {k: v for k, v in kwargs.items() if k in valid_fields}
 

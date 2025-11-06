@@ -971,7 +971,6 @@ class MainScreen(Screen):
             enable_concurrent=flags.enable_concurrent,
             max_concurrent=max_concurrent_value,
             max_retries=tuning.max_retries,
-            feature_003=flags.feature_003,
         )
 
         # 获取stats repository（使用独立的stat.db）

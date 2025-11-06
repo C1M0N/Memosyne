@@ -4,21 +4,20 @@ Quiz 格式化工具
 将解析后的 QuizItem 列表格式化为 ShouldBe.txt 格式
 """
 import re
-from ...domain.models import QuizItem
+from ...domain.models import QuizItem, OPTION_LETTERS
 
 
 # ============================================================
 # 正则表达式模式
 # ============================================================
 _PIC_RE = re.compile(r"§Pic\.(\d+)§")
-_ANS_SUMMARY_RE = re.compile(r":\s*[A-F](\s*,\s*[A-F])+\.*\s*$", re.IGNORECASE)
+_ANS_SUMMARY_RE = re.compile(r":\s*[A-Z](\s*,\s*[A-Z])+\.*\s*$", re.IGNORECASE)
 _CURLY_RE = re.compile(r"\{\{[^}]*\}\}")  # {{...}}
 _UNDER_RE = re.compile(r"_{3,}")  # ____ (3+ underscores)
-_LOWER_OPT_LINE = re.compile(r"^\s*[a-d]\.\s+.+$", re.IGNORECASE)  # a. something
-_NAKED_LETTER = re.compile(r"^\s*[A-D]\.\s*$")  # 'A.' 只有字母和点
+_LOWER_OPT_LINE = re.compile(r"^\s*[a-z]\.\s+.+$", re.IGNORECASE)  # a. something
+_NAKED_LETTER = re.compile(r"^\s*[A-Z]\.\s*$")  # 'A.' 只有字母和点
 _GRADE_ARTIFACT = re.compile(r"^\s*(Correct\s*answer:|Incorrect\s*answer:)\s*$", re.IGNORECASE)
 _NOT_SELECTED = re.compile(r",\s*Not Selected\s*$", re.IGNORECASE)
-_SEQ_ONLY_LINE = re.compile(r"^\s*[A-F](\s*,\s*[A-F])+\s*\.?\s*$", re.IGNORECASE)  # B, A, C, D
 
 
 # ============================================================
@@ -80,17 +79,11 @@ def _sanitize_stem(stem: str) -> str:
 def _strip_option_prefix(text: str) -> str:
     """选项文本去头部前缀：A./(A)/•/く 等，保留纯句子"""
     t = text.strip()
-    t = re.sub(r"^\s*[\(\[]?\s*[A-Fa-f]\s*[\.\)]\s*", "", t)  # A. / (A) / A)
+    t = re.sub(r"^\s*[\(\[]?\s*[A-Za-z]\s*[\.\)]\s*", "", t)  # A. / (A) / A)
     t = re.sub(r"^[•\-\–\—\·\*]\s*", "", t)  # bullet
     t = re.sub(r"^[く]+\s*", "", t)  # 奇怪前缀
     t = _NOT_SELECTED.sub("", t).strip()
     return t
-
-
-def _normalize_sequence(text: str) -> str:
-    """'B, A, C, D' / '• B,A, C ,D' -> 'B,A,C,D'"""
-    letters = re.findall(r"[A-Fa-f]", text)
-    return ",".join(c.upper() for c in letters)
 
 
 def _format_title_html(title_main: str, title_sub: str) -> str:
@@ -159,7 +152,7 @@ def _restore_underscores(stem: str) -> str:
 
 def _has_any_option_text(options: dict) -> bool:
     """检查是否有任何非空选项"""
-    return any((options.get(k) or "").strip() for k in ["A", "B", "C", "D", "E", "F"])
+    return any((options.get(k) or "").strip() for k in OPTION_LETTERS)
 
 
 def _collapse_br(s: str) -> str:
@@ -264,7 +257,7 @@ def _remove_option_texts_from_stem(stem: str, options: dict) -> str:
     """把题干中"恰好和某个选项文本相同"的行移除，避免重复"""
     option_texts = set(
         (options.get(k) or "").strip()
-        for k in ["A", "B", "C", "D", "E", "F"]
+        for k in OPTION_LETTERS
         if (options.get(k) or "").strip()
     )
     if not option_texts:
@@ -272,45 +265,6 @@ def _remove_option_texts_from_stem(stem: str, options: dict) -> str:
     parts = [p.strip() for p in stem.split("<br>")]
     kept = [p for p in parts if p not in option_texts]
     return "<br>".join(kept)
-
-
-def _strip_steps_from_stem(stem: str, steps: list[str]) -> str:
-    """ORDER：把题干里重复出现的步骤行剔除"""
-    step_set = set(s.strip() for s in steps if s.strip())
-    parts = [p.strip() for p in stem.split("<br>")]
-    kept = [p for p in parts if p not in step_set and not _NAKED_LETTER.match(p)]
-    return "<br>".join(kept)
-
-
-def _extract_order_sequences_from_stem(stem: str) -> tuple[str, dict]:
-    """
-    若题干里含有"序列选项"行（如 'A. B,A,C,D' 或 'B, A, C, D'），
-    提取到 options(A..F) 并从题干移除；返回 (新stem, options)
-    """
-    parts = [p.strip() for p in stem.split("<br>") if p.strip()]
-    opts = {}
-    kept = []
-    next_label_ord = ord("A")
-    for line in parts:
-        m = re.match(r"^[A-F]\.\s*(.+)$", line, re.IGNORECASE)
-        seq_text = None
-        if m and _SEQ_ONLY_LINE.match(m.group(1)):
-            seq_text = m.group(1)
-        elif _SEQ_ONLY_LINE.match(line):
-            seq_text = line
-        if seq_text:
-            if next_label_ord <= ord("F"):
-                label = chr(next_label_ord)
-                opts[label] = _normalize_sequence(seq_text)
-                next_label_ord += 1
-            # 不保留在 stem
-            continue
-        kept.append(line)
-    new_stem = "<br>".join(kept)
-    # 补齐空键
-    for k in ["A", "B", "C", "D", "E", "F"]:
-        opts.setdefault(k, "")
-    return new_stem, opts
 
 
 # ============================================================
@@ -361,16 +315,14 @@ class QuizFormatter:
             qtype = item.qtype.upper()
             stem_en = item.stem.strip()
             stem_cn = _normalize_translation_text(item.stem_translation)
-            steps = item.steps or []
-            steps_cn = [
-                _normalize_translation_text(text)
-                for text in (item.steps_translation or [])
-            ]
             opts = item.options.model_dump()  # 转为 dict
             opts_cn = {
                 key: _normalize_translation_text(value)
                 for key, value in item.options_translation.model_dump().items()
             }
+            for letter in OPTION_LETTERS:
+                opts.setdefault(letter, "")
+                opts_cn.setdefault(letter, "")
             ans = item.answer.strip().upper()
             cloz = item.cloze_answers or []
 
@@ -397,40 +349,14 @@ class QuizFormatter:
                 blocks.append(f"{head}<br><br>{body}{analysis_html}")
                 continue
 
-            if qtype == "ORDER":
-                # 兜底：从 stem 提取序列选项（若 options 空）
-                if not _has_any_option_text(opts):
-                    stem_en, recovered = _extract_order_sequences_from_stem(stem_en)
-                    # 合并（仅填充空位）
-                    for k in ["A", "B", "C", "D", "E", "F"]:
-                        if not (opts.get(k) or "").strip():
-                            opts[k] = recovered.get(k, "")
-                # 从 stem 剔除 steps（避免重复）
-                stem_en = _strip_steps_from_stem(stem_en, steps)
-                # 渲染
-                lines = [f"[{_combine_bilingual(stem_en, stem_cn)}"]
-                for step_en, step_cn in zip(steps, steps_cn):
-                    s = _NOT_SELECTED.sub("", s).rstrip()
-                    if s and not _NAKED_LETTER.match(s):
-                        lines.append(f" {_combine_bilingual(s, step_cn)}")
-                # 标准化 & 输出序列选项
-                for letter in ["A", "B", "C", "D", "E", "F"]:
-                    text = (opts.get(letter) or "").strip()
-                    text_cn = (opts_cn.get(letter) or "").strip()
-                    if text:
-                        normalized_seq = _normalize_sequence(text)
-                        lines.append(f"{letter}. {_combine_bilingual(normalized_seq, text_cn)}")
-                lines.append(f"]::({ans})")
-                body = _collapse_br("<br>".join(lines))
-                analysis_html = _format_analysis(item)
-                blocks.append(f"{head}<br><br>{body}{analysis_html}")
-                continue
-
-            # MCQ：图题若选项全空 → 回填 A..D = "A/B/C/D"
-            if not _has_any_option_text(opts) and "§Pic." in stem:
-                for k, v in zip(["A", "B", "C", "D"], ["A", "B", "C", "D"]):
-                    opts[k] = v
-                    opts_cn.setdefault(k, "")
+            # MCQ：图题若选项全空 → 回填字母本身
+            if not _has_any_option_text(opts) and "§Pic." in stem_en:
+                for letter in OPTION_LETTERS[:4]:
+                    opts[letter] = letter
+                    opts_cn.setdefault(letter, "")
+                for letter in OPTION_LETTERS[4:]:
+                    opts.setdefault(letter, "")
+                    opts_cn.setdefault(letter, "")
 
             # 规范化选项文本（去内层前缀）
             for k in list(opts.keys()):
@@ -443,11 +369,12 @@ class QuizFormatter:
 
             # MCQ 渲染
             lines = [f"[{stem_render}"]
-            for letter in ["A", "B", "C", "D", "E", "F"]:
+            for letter in OPTION_LETTERS:
                 text = (opts.get(letter) or "").strip()
                 text_cn = (opts_cn.get(letter) or "").strip()
-                if text:
-                    lines.append(f"{letter}. {_combine_bilingual(text, text_cn)}")
+                if not (text or text_cn):
+                    continue
+                lines.append(f"{letter}. {_combine_bilingual(text, text_cn)}")
             lines.append(f"]::({ans})")
             body = _collapse_br("<br>".join(lines))
             analysis_html = _format_analysis(item)

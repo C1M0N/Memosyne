@@ -17,13 +17,8 @@ DDD 原则（Phase 4.6）：
 from typing import Any
 
 from ...core.interfaces import LLMProvider, LLMError
-from .prompts import (
-    LITHOFORMER_SYSTEM_PROMPT,
-    LITHOFORMER_USER_TEMPLATE,
-    get_dynamic_system_prompt,
-    get_dynamic_user_prompt,
-)
-from .schemas import QUESTION_SCHEMA, get_dynamic_schema
+from .prompts import get_dynamic_system_prompt, get_dynamic_user_prompt
+from .schemas import get_dynamic_schema
 from ..domain.models import FeatureConfig
 
 
@@ -37,7 +32,8 @@ class LithoformerLLMAdapter:
             feature_config: 功能配置（可选）。如果提供，将使用动态schema和prompt
         """
         self.provider = provider
-        self.feature_config = feature_config
+        # Always keep a FeatureConfig instance so that prompts/schemas are dynamically generated
+        self.feature_config = feature_config or FeatureConfig()
 
     def parse_question(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, int], dict | None]:
         """
@@ -64,18 +60,12 @@ class LithoformerLLMAdapter:
             if not question:
                 raise LLMError("题目内容为空，无法解析")
 
-            # 根据feature_config选择schema和prompt
-            if self.feature_config:
-                # 使用动态schema和prompt
-                schema_type = self.feature_config.get_schema_type()
-                schema = get_dynamic_schema(schema_type)
-                system_prompt = get_dynamic_system_prompt(schema_type)
-            else:
-                # 使用默认schema和prompt（向后兼容）
-                schema = QUESTION_SCHEMA
-                system_prompt = LITHOFORMER_SYSTEM_PROMPT
+            # 动态生成 schema 与 system prompt（默认 full 配置）
+            schema_type = self.feature_config.get_schema_type()
+            schema = get_dynamic_schema(schema_type)
+            system_prompt = get_dynamic_system_prompt(schema_type)
 
-            user_prompt = LITHOFORMER_USER_TEMPLATE.format(
+            user_prompt = get_dynamic_user_prompt(
                 context=context if context else "",
                 question=question,
                 answer=answer,

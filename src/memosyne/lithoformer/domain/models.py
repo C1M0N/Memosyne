@@ -11,14 +11,37 @@ from pydantic import BaseModel, Field, model_validator
 import re
 
 
+OPTION_LETTERS: tuple[str, ...] = tuple(chr(code) for code in range(ord("A"), ord("Z") + 1))
+
+
 class QuizOptions(BaseModel):
-    """Quiz options (A-F)"""
+    """Quiz options (A-Z)"""
     A: str = ""
     B: str = ""
     C: str = ""
     D: str = ""
     E: str = ""
     F: str = ""
+    G: str = ""
+    H: str = ""
+    I: str = ""
+    J: str = ""
+    K: str = ""
+    L: str = ""
+    M: str = ""
+    N: str = ""
+    O: str = ""
+    P: str = ""
+    Q: str = ""
+    R: str = ""
+    S: str = ""
+    T: str = ""
+    U: str = ""
+    V: str = ""
+    W: str = ""
+    X: str = ""
+    Y: str = ""
+    Z: str = ""
 
     def to_dict(self) -> dict[str, str]:
         """Convert to dictionary (filter empty options)"""
@@ -47,9 +70,9 @@ class QuizItem(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-    qtype: Literal["MCQ", "CLOZE", "ORDER"] = Field(
+    qtype: Literal["MCQ", "CLOZE"] = Field(
         ...,
-        description="Question type: MCQ=Multiple Choice, CLOZE=Fill-in-blank, ORDER=Ordering"
+        description="Question type: MCQ=Multiple Choice, CLOZE=Fill-in-blank"
     )
     stem: str = Field(
         ...,
@@ -60,26 +83,18 @@ class QuizItem(BaseModel):
         default="",
         description="Stem rendered in Simplified Chinese"
     )
-    steps: list[str] = Field(
-        default_factory=list,
-        description="Step list (for ORDER type)"
-    )
-    steps_translation: list[str] = Field(
-        default_factory=list,
-        description="Steps translated into Simplified Chinese"
-    )
     options: QuizOptions = Field(
         default_factory=QuizOptions,
-        description="Options A-F"
+        description="Options A-Z"
     )
     options_translation: QuizOptions = Field(
         default_factory=QuizOptions,
-        description="Options A-F translated into Simplified Chinese"
+        description="Options A-Z translated into Simplified Chinese"
     )
     answer: str = Field(
         default="",
         min_length=0,
-        description="Answer (MCQ/ORDER/CLOZE)"
+        description="Answer (MCQ letter or empty string for CLOZE)"
     )
     cloze_answers: list[str] = Field(
         default_factory=list,
@@ -111,9 +126,6 @@ class QuizItem(BaseModel):
         elif self.qtype == "CLOZE":
             if not self.cloze_answers:
                 return False
-        elif self.qtype == "ORDER":
-            if not (self.steps and self.answer):
-                return False
         else:
             return False
 
@@ -130,10 +142,7 @@ class QuizItem(BaseModel):
                 return False
 
             if self.qtype == "MCQ":
-                if not any((self.options_translation.model_dump().get(letter) or "").strip() for letter in ["A", "B", "C", "D", "E", "F"]):
-                    return False
-            elif self.qtype == "ORDER":
-                if len(self.steps) != len(self.steps_translation):
+                if not any((self.options_translation.model_dump().get(letter) or "").strip() for letter in OPTION_LETTERS):
                     return False
             elif self.qtype == "CLOZE":
                 if len(self.cloze_answers) != len(self.cloze_answers_translation):
@@ -144,11 +153,8 @@ class QuizItem(BaseModel):
     @model_validator(mode="after")
     def validate_answer_format(self):
         if self.qtype == "MCQ":
-            if not self.answer or not re.fullmatch(r"[A-F]+", self.answer):
-                raise ValueError("MCQ 答案必须为 A-F 字母组合（可多选，连续写，如 ACD）")
-        elif self.qtype == "ORDER":
-            if not self.answer or not re.fullmatch(r"[A-F](,[A-F])*", self.answer):
-                raise ValueError("ORDER 答案必须为以逗号分隔的 A-F 字母序列")
+            if not self.answer or not re.fullmatch(r"[A-Z]+", self.answer):
+                raise ValueError("MCQ 答案必须为 A-Z 大写字母组合（可多选，连续写，如 ACD）")
         else:  # CLOZE
             # 可为空，或任意字符串
             pass
@@ -198,9 +204,6 @@ class FeatureConfig(BaseModel):
         le=10,
         description="失败重试次数"
     )
-
-    # 预留功能开关（feature_001/002已改为tier配置）
-    feature_003: bool = Field(default=False, description="预留功能003")
 
     def get_schema_type(self) -> str:
         """

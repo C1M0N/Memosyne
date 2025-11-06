@@ -35,11 +35,12 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 
 ### 📝 **Lithoformer - Quiz 重塑器**
 将 Markdown 格式的 Quiz 文档解析为结构化的 ShouldBe.txt 格式，支持：
-- 多选题（MCQ）
+- 多选题（MCQ，支持 A-Z 任意数量的字母选项）
 - 填空题（CLOZE）
-- 排序题（ORDER）
 - 自动题目验证和格式化
 - 逐题输出原文 + 简体中文翻译，并追加批次号与 `L` 系列题目编码
+- 解析字段采用 `((中文术语::[English original]))` 形式标注专业名词，仅在首次出现时标注，便于记忆并避免重复
+- 单题 LLM 调用最长 5 分钟，超时会自动消耗一次 `max_retries` 并重新解析，防止任务卡死
 
 ---
 
@@ -145,7 +146,7 @@ python -m memosyne.lithoformer.cli.main
 - `.env` 仅包含敏感密钥（`OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 可选、`DEFAULT_TEMPERATURE` 可选）。
 - 其它运行参数统一保存在 `db/config.db`：
   - `config` 表：`default_model`, `max_concurrent`, `max_retries`, `lithoformer_input_dir`, `lithoformer_output_dir` 等
-  - `feature` 表（单行）：`enable_translation`, `enable_parsing`, `enable_concurrent`, `feature_001..003`
+- `feature` 表（单行）：`enable_translation`, `enable_parsing`, `enable_concurrent`
 - TUI 的“配置/功能”选项卡读写上述配置；默认模型仅在“配置”Tab保存（下拉切换不落库）。
 - 统计数据在 `db/stat.db` 的 `processing_stats` 中。
 - Lithoformer 解析日志沿用 TUI 检测阶段的 `question_number`（顺序/并发模式均支持）；若缺失则回退到序号字符串，写库时批次号仅保留文件名首段（例如 `251030E006`），便于筛选与对账。
@@ -480,9 +481,9 @@ src/memosyne/
 │   │   ├── ports.py                # LLMPort（端口接口）
 │   │   └── use_cases.py            # ParseQuizUseCase（用例）
 │   ├── infrastructure/             # 基础设施层
-│   │   ├── llm_adapter.py          # LithoformerLLMAdapter（注入 prompts/schemas）
-│   │   ├── prompts.py              # LITHOFORMER_SYSTEM_PROMPT
-│   │   ├── schemas.py              # QUESTION_SCHEMA（含翻译字段）
+│   │   ├── llm_adapter.py          # LithoformerLLMAdapter（动态生成 prompts/schemas）
+│   │   ├── prompts.py              # 动态 system prompt 构建器
+│   │   ├── schemas.py              # 动态 JSON Schema 构建器（含翻译字段）
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
 │   │   └── formatters/             # QuizFormatter（依赖领域模型）
@@ -565,7 +566,7 @@ flowchart LR
 |------|-----------|
 | Domain | `QuizItem`（含翻译字段）、`QuizAnalysis`；`split_markdown_into_questions`、`infer_titles_from_markdown`、`infer_question_seed`|
 | Application | `ParseQuizUseCase`（对齐翻译字段、累计 Token）；端口接口 `LLMPort` |
-| Infrastructure | `LithoformerLLMAdapter`、`FileAdapter`、`FormatterAdapter`、`LITHOFORMER_SYSTEM_PROMPT`、`QUESTION_SCHEMA`（含翻译字段） |
+| Infrastructure | `LithoformerLLMAdapter`、`FileAdapter`、`FormatterAdapter`、`prompts.get_dynamic_system_prompt()`、`schemas.get_dynamic_schema()` |
 | CLI | `lithoformer/cli/main.py`、`scripts/LfC.sh` |
 
 **Shared Kernel**
@@ -1000,9 +1001,8 @@ def lithoform(
 
 **支持的题型**
 
-- **MCQ（选择题）**：包含字母选项（A/B/C/D/E/F）
+- **MCQ（选择题）**：包含任意数量的字母选项（A-Z），可处理纯图片选项
 - **CLOZE（填空题）**：包含下划线 `____` 且无字母选项
-- **ORDER（排序题）**：要求排列步骤顺序
 
 **使用示例**
 

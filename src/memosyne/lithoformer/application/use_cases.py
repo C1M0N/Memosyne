@@ -10,7 +10,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Iterable, Iterator, Literal, Sequence
 
-from ..domain.models import QuizItem, FeatureConfig
+from ..domain.models import QuizItem, FeatureConfig, OPTION_LETTERS
 from ..domain.services import (
     is_quiz_item_valid,
     split_markdown_into_questions,
@@ -471,24 +471,30 @@ def _normalize_question_dict(data: dict) -> dict:
 
     answer = (result.get("answer") or "").strip()
     if qtype == "MCQ":
-        letters = re.findall(r"[A-Fa-f]", answer)
+        letters = re.findall(r"[A-Za-z]", answer)
         if letters:
             result["answer"] = "".join(ch.upper() for ch in letters)
         else:
             result["answer"] = answer.upper()
-    elif qtype == "ORDER":
-        result["answer"] = answer.upper()
     else:
         result["answer"] = answer
 
     # Ensure options keys exist and strip whitespace
     options = result.get("options") or {}
-    for key in ["A", "B", "C", "D", "E", "F"]:
+    normalized_options = {}
+    for key in OPTION_LETTERS:
         value = options.get(key, "")
         if value is None:
             value = ""
-        options[key] = str(value).strip()
-    result["options"] = options
+        normalized_options[key] = str(value).strip()
+    # 保留原始额外键（如 LLM 新增的, 避免信息丢失）
+    for key, value in options.items():
+        if key not in normalized_options:
+            normalized_options[key] = str(value or "").strip()
+    result["options"] = normalized_options
+    # 删除已弃用的步骤字段（ORDER 已移除）
+    result.pop("steps", None)
+    result.pop("steps_translation", None)
 
     # Normalize analysis block
     analysis = result.get("analysis")
@@ -557,18 +563,13 @@ def _normalize_question_dict(data: dict) -> dict:
     # Ensure translations exist and align with base fields
     result["stem_translation"] = (result.get("stem_translation") or "").strip()
 
-    steps = result.get("steps") or []
-    steps_trans = result.get("steps_translation") or []
-    if len(steps_trans) < len(steps):
-        steps_trans = list(steps_trans) + [""] * (len(steps) - len(steps_trans))
-    elif len(steps_trans) > len(steps):
-        steps_trans = steps_trans[: len(steps)]
-    result["steps_translation"] = [str(step).strip() for step in steps_trans]
-
     options_translation = result.get("options_translation") or {}
     normalized_options_translation = {}
-    for key in ["A", "B", "C", "D", "E", "F"]:
+    for key in OPTION_LETTERS:
         normalized_options_translation[key] = str(options_translation.get(key, "") or "").strip()
+    for key, value in options_translation.items():
+        if key not in normalized_options_translation:
+            normalized_options_translation[key] = str(value or "").strip()
     result["options_translation"] = normalized_options_translation
 
     cloze_trans = result.get("cloze_answers_translation") or []
@@ -822,6 +823,8 @@ class ConcurrentParseQuizUseCase:
         retry_count = 0
         rate_limit_retry_count = 0  # 429错误单独计数
         max_rate_limit_retries = retry_config["rate_limit_max_retries"]  # 从数据库读取（默认100）
+        # 单题处理超时时间（秒），默认180秒（3分钟）
+        question_timeout_seconds = int(appcfg.get_config("question_timeout_seconds") or "300")
 
         # 递增active_count（用于判断是否为最后一题）
         async with self._count_lock:
@@ -865,7 +868,7 @@ class ConcurrentParseQuizUseCase:
                     # 注意：start_time必须在LLM调用之前记录，才能排除队列等待时间
                     loop = asyncio.get_event_loop()
                     start_time = perf_counter()  # 在executor调用前记录时间
-                    item_dict, token_dict, rate_limit_info = await loop.run_in_executor(
+                    parse_future = loop.run_in_executor(
                         executor,  # 使用自定义executor，支持max_concurrent并发
                         self.llm.parse_question,
                         {
@@ -876,6 +879,15 @@ class ConcurrentParseQuizUseCase:
                             "index": str(index),
                         },
                     )
+                    try:
+                        item_dict, token_dict, rate_limit_info = await asyncio.wait_for(
+                            parse_future,
+                            timeout=question_timeout_seconds,
+                        )
+                    except asyncio.TimeoutError as timeout_exc:
+                        raise TimeoutError(
+                            f"LLM 处理超出 {question_timeout_seconds} 秒: {timeout_exc}"
+                        ) from timeout_exc
                     elapsed = perf_counter() - start_time  # LLM调用后立即计算耗时
 
                     token_usage = TokenUsage(**token_dict)

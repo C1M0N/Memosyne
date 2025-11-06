@@ -248,7 +248,7 @@ def count_questions_by_type(items: list[QuizItem]) -> dict[str, int]:
 
     Example:
         >>> count_questions_by_type(items)
-        {'MCQ': 10, 'CLOZE': 3, 'ORDER': 2}
+        {'MCQ': 10, 'CLOZE': 3}
     """
     counts: dict[str, int] = {}
     for item in items:

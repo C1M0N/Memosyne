@@ -4,6 +4,14 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 
 ## [Unreleased]
 
+### Changed
+- Lithoformer LLM 适配器默认使用动态生成的 system prompt 与 JSON Schema；移除了 `LITHOFORMER_SYSTEM_PROMPT` / `QUESTION_SCHEMA` 常量，统一调用动态构建器。
+- Lithoformer 只保留 MCQ / CLOZE 题型：彻底移除 ORDER 相关字段与逻辑，提示词升级为通用考试场景并强调零幻觉输出。
+- 选择题选项扩展为 A-Z，Schema / 域模型 / Formatter 支持任意数量的字母选项，并要求解析（distractors）覆盖全部错误选项。
+- 更新 Lithoformer system prompt：全英文输出，并要求解析中的每个专业术语在中文后加上英文原词括号，便于考试记忆；翻译段落同步使用英文说明。
+- 解析术语标注格式升级为 `((中文术语::[English original]))`，示例及指令全面更新，仅对首次出现的专业词汇注释，并限制干扰项说明只覆盖实际存在的选项。
+- 单题 LLM 调用增加 5 分钟超时保护，超时会自动消耗一次 `max_retries` 发起重试，避免长时间卡死。
+
 ### Fixed
 - Propagated TUI-detected `question_number` values into sequential/concurrent Lithoformer pipelines (stats + bank writes) with index-based fallback, and trimmed stored `batch_id` to the leading segment (e.g. `251030E006`).
 - Normalised character counting in concurrent saves so input/output lengths match the sequential pipeline (context/question/answer only, JSON formatting excluded).

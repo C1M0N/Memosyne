@@ -136,9 +136,6 @@ def main():
         enable_concurrent=flags.enable_concurrent,
         max_concurrent=tuning.max_concurrent,
         max_retries=tuning.max_retries,
-        feature_001=flags.feature_001,
-        feature_002=flags.feature_002,
-        feature_003=flags.feature_003,
     )
 
     # CLI overrides
