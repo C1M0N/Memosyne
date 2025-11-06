@@ -11,6 +11,11 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from ...lithoformer.infrastructure.prompt_defaults import (
+    DEFAULT_PROMPT_VERSION,
+    DEFAULT_PROMPTS,
+)
+
 
 class SQLiteStatsRepository:
     """
@@ -92,10 +97,45 @@ class SQLiteStatsRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
                     log_type TEXT NOT NULL,
+                    logger TEXT NOT NULL,
                     message TEXT
                 )
                 """
             )
+            # 确保旧表具备 logger 列
+            cursor.execute("PRAGMA table_info(lithoformer_terminal_logs)")
+            terminal_columns = {row[1] for row in cursor.fetchall()}
+            if "logger" not in terminal_columns:
+                cursor.execute(
+                    "ALTER TABLE lithoformer_terminal_logs ADD COLUMN logger TEXT NOT NULL DEFAULT ''"
+                )
+
+            # 创建新表4: lithoformer_prompts（Prompt 版本存储）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lithoformer_prompts (
+                    section TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    PRIMARY KEY (section, version)
+                )
+                """
+            )
+
+            # 若 prompt 表为空，写入默认版本
+            cursor.execute("SELECT COUNT(*) FROM lithoformer_prompts")
+            prompt_count = cursor.fetchone()[0]
+            if prompt_count == 0:
+                cursor.executemany(
+                    """
+                    INSERT INTO lithoformer_prompts (section, version, content)
+                    VALUES (?, ?, ?)
+                    """,
+                    [
+                        (section, DEFAULT_PROMPT_VERSION, content)
+                        for section, content in DEFAULT_PROMPTS.items()
+                    ],
+                )
 
             # v1.9.2: 迁移旧的lithoformer_bank表结构（从id主键改为question_number主键）
             self._migrate_bank_table_if_needed(cursor)
@@ -310,6 +350,7 @@ class SQLiteStatsRepository:
         self,
         log_type: str,
         message: str,
+        logger: str = "",
     ) -> None:
         """
         保存终端日志到lithoformer_terminal_logs表
@@ -317,18 +358,59 @@ class SQLiteStatsRepository:
         Args:
             log_type: 日志类型（INFO/WARNING/ERROR等）
             message: 日志消息
+            logger: 触发日志的 logger 名称
         """
         timestamp = datetime.now().isoformat()
 
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
                 """
-                INSERT INTO lithoformer_terminal_logs (timestamp, log_type, message)
-                VALUES (?, ?, ?)
+                INSERT INTO lithoformer_terminal_logs (timestamp, log_type, logger, message)
+                VALUES (?, ?, ?, ?)
                 """,
-                (timestamp, log_type, message),
+                (timestamp, log_type, logger, message),
             )
             conn.commit()
+
+    def get_prompt_sections(self, version: str | None = None) -> dict[str, str]:
+        """
+        获取指定版本（或最新版本）的 prompt 片段。
+
+        Args:
+            version: 版本号（如 "0001"）。为空时自动使用最新版本。
+
+        Returns:
+            section -> content 的字典。
+
+        Raises:
+            ValueError: 当表中没有记录或指定版本不存在时抛出。
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            if version is None:
+                cursor = conn.execute(
+                    """
+                    SELECT section, content
+                    FROM lithoformer_prompts
+                    WHERE version = (
+                        SELECT MAX(version) FROM lithoformer_prompts
+                    )
+                    """
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT section, content
+                    FROM lithoformer_prompts
+                    WHERE version = ?
+                    """,
+                    (version,),
+                )
+            rows = cursor.fetchall()
+
+        if not rows:
+            raise ValueError("lithoformer_prompts 表中没有可用的 prompt 记录")
+        return {row["section"]: row["content"] for row in rows}
 
     def clear_bank(self) -> int:
         """清空题库表（v1.9.1c：用于清理错误数据）

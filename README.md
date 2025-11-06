@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.12.0a-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.15.1-orange.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-DDD%20%2B%20Hexagonal-purple.svg)]()
 
 *领域驱动设计、类型安全、生产就绪的 LLM 工作流工具*
@@ -81,6 +81,8 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 - ✅ 智能文件命名（BatchID-FileName-ModelCode.ext）
 - ✅ 防重名输出路径
 - ✅ Lithoformer 输出原文与简体中文翻译逐行交织，附带批次号与题目唯一编码（Lxxxxxx）
+- ✅ Prompt 片段版本化存放于 `stat.db`，运行时使用最新 system/user prompt 组合，便于灰度与回滚
+- ✅ TUI 终端日志写入 `lithoformer_terminal_logs`，保留原始 logger 并清洗 message，支持后续可视化分析
 
 ---
 
@@ -148,7 +150,11 @@ python -m memosyne.lithoformer.cli.main
   - `config` 表：`default_model`, `max_concurrent`, `max_retries`, `lithoformer_input_dir`, `lithoformer_output_dir` 等
 - `feature` 表（单行）：`enable_translation`, `enable_parsing`, `enable_concurrent`
 - TUI 的“配置/功能”选项卡读写上述配置；默认模型仅在“配置”Tab保存（下拉切换不落库）。
-- 统计数据在 `db/stat.db` 的 `processing_stats` 中。
+- 统计与 Prompt 数据集中存放在 `db/stat.db`：
+  - `lithoformer_processing_logs`：顺序/并发处理流水及 Token 统计
+  - `lithoformer_bank`：题库缓存（按题号去重）
+  - `lithoformer_terminal_logs`：终端日志（含 `logger` 列，message 已去除时间戳/级别，自动过滤 httpx 噪声）
+  - `lithoformer_prompts`：按版本保存的六段 prompt 片段，运行时总是加载最新版本
 - Lithoformer 解析日志沿用 TUI 检测阶段的 `question_number`（顺序/并发模式均支持）；若缺失则回退到序号字符串，写库时批次号仅保留文件名首段（例如 `251030E006`），便于筛选与对账。
 
 ### 方式 3：编程 API
@@ -482,7 +488,8 @@ src/memosyne/
 │   │   └── use_cases.py            # ParseQuizUseCase（用例）
 │   ├── infrastructure/             # 基础设施层
 │   │   ├── llm_adapter.py          # LithoformerLLMAdapter（动态生成 prompts/schemas）
-│   │   ├── prompts.py              # 动态 system prompt 构建器
+│   │   ├── prompts.py              # 动态 system prompt 构建器（从 DB 读取最新片段）
+│   │   ├── prompt_defaults.py      # Prompt 片段默认值（首次启动写入 stat.db）
 │   │   ├── schemas.py              # 动态 JSON Schema 构建器（含翻译字段）
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
@@ -505,6 +512,8 @@ misc/
     └── archived/
 
 db/
+├── config.db                       # AppConfigService 数据库（config/feature 表）
+├── stat.db                         # 统计与 prompt 版本（processing_logs/bank/terminal_logs/prompts）
 ├── term_list_v1.csv                # 术语表（英文→两字中文）
 └── reanimator_db/                  # Reanimator 数据库文件
 ```
@@ -513,6 +522,7 @@ db/
 
 > 更完整的更新记录见 [CHANGELOG](CHANGELOG.md)。
 
+- **v0.15.1** — Lithoformer Prompt 片段迁移至 `stat.db` 的版本表，运行时自动拼装最新 system/user prompt；终端日志新增 `logger` 列并清洗消息文本，同时过滤 httpx 噪声；文档同步对齐新配置。
 - **v0.10.5a** — Lithoformer TUI 第三轮布局修复：三列比例完全对齐 `layout.xml`，自适应进度条显示运行/剩余时间与 Tokens，Select 下拉样式恢复 JiraTUI 风格，按钮与批次号输入定位稳定。
 - **v0.10.4** — 新增 `lithoformer_layout.tcss` 与 Textual 日志集成；Detect/Start 状态机、问题表格宽度和命令输入区布局全部更新。
 - **v0.10.3** — 完整重写 TUI Compose 逻辑，落地 layout.xml 三列设计；Provider/Model 选择器支持搜索与自动填值；Detect 阶段生成 `DetectionResult` 快照。

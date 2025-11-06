@@ -11,6 +11,8 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 - 更新 Lithoformer system prompt：全英文输出，并要求解析中的每个专业术语在中文后加上英文原词括号，便于考试记忆；翻译段落同步使用英文说明。
 - 解析术语标注格式升级为 `((中文术语::[English original]))`，示例及指令全面更新，仅对首次出现的专业词汇注释，并限制干扰项说明只覆盖实际存在的选项。
 - 单题 LLM 调用增加 5 分钟超时保护，超时会自动消耗一次 `max_retries` 发起重试，避免长时间卡死。
+- 新增 `lithoformer_prompts` 表（存储 prompt 版本），提示词改为从 `stat.db` 动态加载，可按版本迭代。
+- `lithoformer_terminal_logs` 表新增 `logger` 列，持久化原始 logger 名称并在写入时剥离时间戳/级别前缀，同时屏蔽 httpx 内部噪声日志。
 
 ### Fixed
 - Propagated TUI-detected `question_number` values into sequential/concurrent Lithoformer pipelines (stats + bank writes) with index-based fallback, and trimmed stored `batch_id` to the leading segment (e.g. `251030E006`).
