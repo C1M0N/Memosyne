@@ -140,6 +140,131 @@ class SQLiteStatsRepository:
             # v1.9.2: 迁移旧的lithoformer_bank表结构（从id主键改为question_number主键）
             self._migrate_bank_table_if_needed(cursor)
 
+            # ===== Reanimator 相关表（v0.16.0） =====
+
+            # 创建表5: reanimator_processing_logs（处理日志）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reanimator_processing_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    memo_id TEXT NOT NULL,
+                    wm_pair TEXT NOT NULL,
+                    word TEXT NOT NULL,
+                    zh_def TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    batch_id TEXT NOT NULL,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    processing_time REAL,
+                    has_error BOOLEAN DEFAULT 0,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+
+            # 创建表6: reanimator_bank（术语库，wm_pair 为主键）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reanimator_bank (
+                    wm_pair TEXT PRIMARY KEY,
+                    memo_id TEXT NOT NULL,
+                    word TEXT NOT NULL,
+                    zh_def TEXT NOT NULL,
+                    ipa TEXT,
+                    pos TEXT,
+                    tag TEXT,
+                    rarity TEXT,
+                    en_def TEXT,
+                    example TEXT,
+                    pp_fix TEXT,
+                    pp_means TEXT,
+                    batch_id TEXT,
+                    batch_note TEXT,
+                    model TEXT,
+                    timestamp TEXT NOT NULL
+                )
+                """
+            )
+
+            # 创建表7: reanimator_terminal_logs（终端日志）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reanimator_terminal_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    log_type TEXT NOT NULL,
+                    logger TEXT NOT NULL,
+                    message TEXT
+                )
+                """
+            )
+
+            # 创建表8: reanimator_prompts（Prompt 版本存储）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reanimator_prompts (
+                    section TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    PRIMARY KEY (section, version)
+                )
+                """
+            )
+
+            # 若 reanimator_prompts 表为空，写入默认版本
+            cursor.execute("SELECT COUNT(*) FROM reanimator_prompts")
+            reanimator_prompt_count = cursor.fetchone()[0]
+            if reanimator_prompt_count == 0:
+                # 从 reanimator/infrastructure/prompts.py 导入默认 prompts
+                try:
+                    from ...reanimator.infrastructure.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+                    DEFAULT_REANIMATOR_VERSION = "0001"
+                    DEFAULT_REANIMATOR_PROMPTS = {
+                        'reanimator_system': SYSTEM_PROMPT,
+                        'reanimator_user': USER_PROMPT_TEMPLATE,
+                    }
+                    cursor.executemany(
+                        """
+                        INSERT INTO reanimator_prompts (section, version, content)
+                        VALUES (?, ?, ?)
+                        """,
+                        [
+                            (section, DEFAULT_REANIMATOR_VERSION, content)
+                            for section, content in DEFAULT_REANIMATOR_PROMPTS.items()
+                        ],
+                    )
+                except ImportError:
+                    pass  # Prompts 文件可能还未创建，跳过初始化
+
+            # 创建表9: reanimator_terms（术语表映射，数据库化）
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reanimator_terms (
+                    tag_en TEXT PRIMARY KEY,
+                    tag_zh TEXT NOT NULL
+                )
+                """
+            )
+
+            # 若 reanimator_terms 表为空，从 CSV 导入
+            cursor.execute("SELECT COUNT(*) FROM reanimator_terms")
+            reanimator_terms_count = cursor.fetchone()[0]
+            if reanimator_terms_count == 0:
+                # 从 db/term_list_v1.csv 导入数据
+                import csv
+                term_list_path = self.db_path.parent / "term_list_v1.csv"
+                if term_list_path.exists():
+                    with open(term_list_path, 'r', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        terms_data = [(row['en'], row['cn']) for row in reader]
+                        cursor.executemany(
+                            """
+                            INSERT INTO reanimator_terms (tag_en, tag_zh)
+                            VALUES (?, ?)
+                            """,
+                            terms_data
+                        )
+
             conn.commit()
 
     def _migrate_bank_table_if_needed(self, cursor) -> None:

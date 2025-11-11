@@ -161,6 +161,60 @@ class SQLiteConfigRepository:
             # 清理遗留feature_config表（旧版本）
             conn.execute("DROP TABLE IF EXISTS feature_config")
 
+            # 5. Reanimator 配置表（v0.16.0）
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reanimator_config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+
+            # 初始化 Reanimator 默认配置
+            reanimator_defaults = [
+                ('reanimator_input_dir', 'misc/input/reanimator'),
+                ('reanimator_output_dir', 'misc/output/reanimator'),
+                ('default_model', 'OpenAI::gpt-4o'),
+                ('term_list_path', 'db/term_list_v1.csv'),
+                ('max_concurrent', '3'),
+                ('max_retries', '3'),
+            ]
+            timestamp = datetime.now().isoformat()
+            for key, value in reanimator_defaults:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO reanimator_config (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (key, value, timestamp)
+                )
+
+            # 6. Reanimator 功能开关表（v0.16.0）
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reanimator_feature (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+
+            # 初始化 Reanimator 功能开关
+            reanimator_features = [
+                ('enable_concurrent', '0'),
+            ]
+            for key, value in reanimator_features:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO reanimator_feature (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (key, value, timestamp)
+                )
+
             # 4. LLM模型信息表
             conn.execute(
                 """

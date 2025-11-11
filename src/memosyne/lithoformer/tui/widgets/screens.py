@@ -73,6 +73,9 @@ from .custom_progress import CustomProgressBar
 from .rate_limit_bar import RateLimitBar
 from .rate_limit_manager import RateLimitManager
 
+# Reanimator integration
+from ....reanimator.tui.widgets.screens import ReanimatorContainer
+
 
 @dataclass(slots=True)
 class DetectionResult:
@@ -396,6 +399,10 @@ class MainScreen(Screen):
 
                 # Footer：显示快捷键
                 yield Footer()
+
+            # Reanimator Tab
+            with TabPane(title="Reanimator", id="tab-reanimator"):
+                yield ReanimatorContainer(id="reanimator-container")
 
     @staticmethod
     def _extract_select_value(raw: object) -> str | None:
