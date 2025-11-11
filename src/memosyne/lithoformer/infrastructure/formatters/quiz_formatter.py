@@ -179,29 +179,56 @@ def _combine_bilingual(text_en: str, text_cn: str) -> str:
 
 
 def _interleave_translation(text_en: str, text_cn: str) -> str:
-    """Interleave translation lines with the matching English lines."""
+    """Interleave translation lines against English lines robustly.
+
+    Rules:
+    - Only attach a CN line to a non-empty EN line.
+    - Skip CN segments that are placeholders like '§Pic.N§' or empty.
+    - Preserve EN-only blank lines to maintain paragraph spacing.
+    - For EN placeholders '§Pic.N§', render EN only (no CN line).
+    - Discard leftover CN segments to avoid drifting translations.
+    """
     en_segments = text_en.split("<br>") if text_en else [""]
     cn_segments = text_cn.split("<br>") if text_cn else []
 
-    max_len = max(len(en_segments), len(cn_segments))
+    def _is_pic(seg: str) -> bool:
+        s = seg.strip()
+        return bool(_PIC_RE.fullmatch(s))
+
     out_segments: list[str] = []
+    j = 0  # pointer into cn_segments
 
-    for idx in range(max_len):
-        en_part = en_segments[idx] if idx < len(en_segments) else ""
-        cn_part = cn_segments[idx] if idx < len(cn_segments) else ""
+    for en_part_raw in en_segments:
+        en_part = en_part_raw.strip()
 
-        en_part = en_part.strip()
-        cn_part = cn_part.strip()
-
-        if en_part:
-            if cn_part:
-                out_segments.append(f"{en_part}<br>((::{cn_part}))")
-            else:
-                out_segments.append(en_part)
-        elif cn_part:
-            out_segments.append(f"((::{cn_part}))")
-        else:
+        # Preserve blank EN lines (paragraph spacing); don't consume CN
+        if not en_part:
             out_segments.append("")
+            continue
+
+        # Image placeholder: render EN only (no CN pairing)
+        if _is_pic(en_part):
+            out_segments.append(en_part)
+            continue
+
+        # Find next usable CN segment (non-empty, non-placeholder)
+        cn_part = ""
+        while j < len(cn_segments):
+            cand = cn_segments[j].strip()
+            j += 1
+            if not cand:
+                # skip empty CN
+                continue
+            if _is_pic(cand):
+                # skip CN placeholder echo
+                continue
+            cn_part = cand
+            break
+
+        if cn_part:
+            out_segments.append(f"{en_part}<br>((::{cn_part}))")
+        else:
+            out_segments.append(en_part)
 
     return "<br>".join(out_segments)
 

@@ -346,6 +346,50 @@ class SQLiteStatsRepository:
             )
             return cursor.fetchone() is not None
 
+    def get_existing_question(self, question_number: str) -> dict[str, str] | None:
+        """
+        获取题库中已存在题目的详细信息（用于覆盖确认）
+
+        Args:
+            question_number: 题号
+
+        Returns:
+            包含题号、批次号、题干预览的字典，如果不存在则返回None
+            格式: {
+                "question_number": "L000001",
+                "batch_id": "251105A015",
+                "stem_preview": "Unlike fear, panic..."  # 前20个字符
+            }
+        """
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT question_number, batch_id, output FROM lithoformer_bank WHERE question_number = ?",
+                (question_number,)
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None
+
+            question_number, batch_id, output_json = row
+
+            # 解析output JSON提取stem字段
+            stem_preview = ""
+            try:
+                import json
+                output_data = json.loads(output_json)
+                stem = output_data.get("stem", "")
+                stem_preview = stem[:20] if stem else "(无题干)"
+            except Exception:
+                stem_preview = "(解析失败)"
+
+            return {
+                "question_number": question_number,
+                "batch_id": batch_id,
+                "stem_preview": stem_preview,
+            }
+
     def save_terminal_log(
         self,
         log_type: str,

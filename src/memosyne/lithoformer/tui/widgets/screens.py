@@ -177,6 +177,9 @@ class MainScreen(Screen):
         self._waiting_for_bank_confirmation: bool = False
         self._pending_bank_save_data: dict | None = None
 
+        # v1.9.3: 覆盖确认状态（检测到冲突时询问）
+        self._waiting_for_overwrite_confirmation: bool = False
+
         self.logger = logging.getLogger("memosyne.lithoformer.tui")
 
     def _load_model_pricing(self, model_identifier: str) -> None:
@@ -667,6 +670,21 @@ class MainScreen(Screen):
                 return
             else:
                 self.logger.warning("请输入 y (保存) 或 n (跳过)")
+                self._set_input_value(self.command_input, "")
+                return
+
+        # v1.9.3: 如果正在等待覆盖确认，则处理y/n输入
+        if self._waiting_for_overwrite_confirmation:
+            if command in ["y", "yes"]:
+                self._set_input_value(self.command_input, "")
+                await self._execute_bank_save()
+                return
+            elif command in ["n", "no"]:
+                self._set_input_value(self.command_input, "")
+                await self._skip_bank_save()
+                return
+            else:
+                self.logger.warning("请输入 y (覆盖) 或 n (跳过)")
                 self._set_input_value(self.command_input, "")
                 return
 
@@ -1285,10 +1303,55 @@ class MainScreen(Screen):
                 pass
 
     async def _save_to_bank_confirmed(self) -> None:
-        """用户确认保存到题库（v1.9.2）"""
+        """
+        用户确认保存到题库（v1.9.3：增加覆盖冲突检测）
+
+        流程：
+        1. 检查是否有题目已存在于题库（冲突检测）
+        2. 如果有冲突 → 显示冲突汇总 → 等待用户确认覆盖
+        3. 如果无冲突 → 直接执行保存
+        """
         if not self._pending_bank_save_data:
             self.logger.warning("没有待保存的数据")
             self._waiting_for_bank_confirmation = False
+            return
+
+        data = self._pending_bank_save_data
+        items = data["items"]
+        question_numbers = data["question_numbers"]
+        detection = data["detection"]
+        stats_repo = data["stats_repo"]
+
+        # ===== 阶段1: 冲突检测 =====
+        self._set_status("状态：检查题库冲突...")
+        conflicts = []
+
+        for item, qnum in zip(items, question_numbers):
+            existing = stats_repo.get_existing_question(qnum)
+            if existing:
+                conflicts.append({
+                    "question_number": qnum,
+                    "existing": existing,
+                    "new_item": item,
+                    "new_batch_id": detection.batch_id,
+                })
+
+        # ===== 阶段2: 如果有冲突，显示并等待确认 =====
+        if conflicts:
+            self._show_conflicts_summary(conflicts)
+            self._pending_bank_save_data["conflicts"] = conflicts
+            self._waiting_for_bank_confirmation = False  # 退出初始确认状态
+            self._waiting_for_overwrite_confirmation = True  # 进入覆盖确认状态
+            self._set_status("状态：等待覆盖确认...")
+            return
+
+        # ===== 阶段3: 无冲突，直接保存 =====
+        await self._execute_bank_save()
+
+    async def _execute_bank_save(self) -> None:
+        """执行实际的题库保存操作（v1.9.3）"""
+        if not self._pending_bank_save_data:
+            self.logger.warning("没有待保存的数据")
             return
 
         self._set_status("状态：保存到题库中...")
@@ -1339,21 +1402,56 @@ class MainScreen(Screen):
 
         # 清理状态
         self._waiting_for_bank_confirmation = False
+        self._waiting_for_overwrite_confirmation = False
         self._pending_bank_save_data = None
         self._set_status("状态：解析完成")
         self.action_mode = "detect"
         self._set_action_state("detect")
 
     async def _skip_bank_save(self) -> None:
-        """用户选择跳过保存到题库（v1.9.2）"""
+        """用户选择跳过保存到题库（v1.9.3：支持跳过覆盖确认）"""
         self.logger.info("用户选择跳过保存到题库")
 
-        # 清理状态
+        # 清理状态（v1.9.3：同时清理两个确认状态）
         self._waiting_for_bank_confirmation = False
+        self._waiting_for_overwrite_confirmation = False
         self._pending_bank_save_data = None
         self._set_status("状态：解析完成")
         self.action_mode = "detect"
         self._set_action_state("detect")
+
+    def _show_conflicts_summary(self, conflicts: list[dict]) -> None:
+        """
+        显示题库覆盖冲突汇总（v1.9.3）
+
+        Args:
+            conflicts: 冲突列表，每项包含：
+                - question_number: 题号
+                - existing: 现有题目信息 {question_number, batch_id, stem_preview}
+                - new_item: 新题目的 QuizItem 对象
+                - new_batch_id: 新题目的批次号
+        """
+        self.logger.info("=" * 50)
+        self.logger.info(f"检测到 {len(conflicts)} 个题目将被覆盖：")
+        self.logger.info("")
+
+        for i, conflict in enumerate(conflicts, 1):
+            existing = conflict["existing"]
+            new_item = conflict["new_item"]
+            new_batch_id = conflict["new_batch_id"]
+            question_number = conflict["question_number"]
+
+            # 提取新题目的stem前20个字符
+            new_stem = getattr(new_item, "stem", "")
+            new_stem_preview = new_stem[:20] if new_stem else "(无题干)"
+
+            self.logger.info(f"[{i}] 题号: {question_number}")
+            self.logger.info(f"    现有: 批次 {existing['batch_id']} | 题干: \"{existing['stem_preview']}\"")
+            self.logger.info(f"    新题: 批次 {new_batch_id} | 题干: \"{new_stem_preview}\"")
+            self.logger.info("")
+
+        self.logger.info("是否全部覆盖？(y/n)")
+        self.logger.info("=" * 50)
 
     # region detection helpers ----------------------------------------------------
     def _detect_worker(

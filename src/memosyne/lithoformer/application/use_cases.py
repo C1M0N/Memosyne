@@ -824,7 +824,7 @@ class ConcurrentParseQuizUseCase:
         rate_limit_retry_count = 0  # 429错误单独计数
         max_rate_limit_retries = retry_config["rate_limit_max_retries"]  # 从数据库读取（默认100）
         # 单题处理超时时间（秒），默认180秒（3分钟）
-        question_timeout_seconds = int(appcfg.get_config("question_timeout_seconds") or "300")
+        question_timeout_seconds = int(appcfg.get_config("question_timeout_seconds") or "1200")
 
         # 递增active_count（用于判断是否为最后一题）
         async with self._count_lock:
