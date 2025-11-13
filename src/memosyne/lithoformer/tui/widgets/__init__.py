@@ -1,6 +1,7 @@
 """Lithoformer TUI widgets."""
 
-from .feature_toggles import FeatureTogglesWidget
+from ....shared.tui import RateLimitBar
+from .feature_toggles import LithoformerFeatureToggles
 from .filters import (
     BatchInput,
     CommandInput,
@@ -16,13 +17,12 @@ from .filters import (
     TitleInput,
 )
 from .questions_table import QuestionRow, QuestionsTable
-from .rate_limit_bar import RateLimitBar
 from .screens import MainScreen
 
 __all__ = [
     "BatchInput",
     "CommandInput",
-    "FeatureTogglesWidget",
+    "LithoformerFeatureToggles",
     "InputPathInput",
     "LithoformerDirectoryTree",
     "MainScreen",

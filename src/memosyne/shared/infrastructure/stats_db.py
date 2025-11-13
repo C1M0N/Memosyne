@@ -147,12 +147,23 @@ class SQLiteStatsRepository:
                 """
                 CREATE TABLE IF NOT EXISTS reanimator_processing_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    memo_id TEXT NOT NULL,
+                    word_id TEXT NOT NULL,
                     wm_pair TEXT NOT NULL,
-                    word TEXT NOT NULL,
-                    zh_def TEXT NOT NULL,
+                    word_en TEXT NOT NULL,
+                    mean_zh TEXT NOT NULL,
                     model TEXT NOT NULL,
                     batch_id TEXT NOT NULL,
+                    batch_note TEXT,
+                    have_def_en INTEGER DEFAULT 0,
+                    have_example INTEGER DEFAULT 0,
+                    have_rarity INTEGER DEFAULT 0,
+                    have_field INTEGER DEFAULT 0,
+                    note TEXT,
+                    pos TEXT,
+                    ipa TEXT,
+                    etymo_en TEXT,
+                    etymo_zh TEXT,
+                    picture TEXT,
                     input_tokens INTEGER,
                     output_tokens INTEGER,
                     processing_time REAL,
@@ -166,21 +177,23 @@ class SQLiteStatsRepository:
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS reanimator_bank (
-                    wm_pair TEXT PRIMARY KEY,
-                    memo_id TEXT NOT NULL,
-                    word TEXT NOT NULL,
-                    zh_def TEXT NOT NULL,
+                    word_id TEXT PRIMARY KEY,
+                    batch_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    wm_pair TEXT NOT NULL,
+                    word_en TEXT NOT NULL,
+                    mean_zh TEXT NOT NULL,
+                    def_en TEXT,
+                    example TEXT,
+                    rarity TEXT,
+                    field TEXT,
+                    batch_note TEXT,
                     ipa TEXT,
                     pos TEXT,
-                    tag TEXT,
-                    rarity TEXT,
-                    en_def TEXT,
-                    example TEXT,
-                    pp_fix TEXT,
-                    pp_means TEXT,
-                    batch_id TEXT,
-                    batch_note TEXT,
-                    model TEXT,
+                    etymo_en TEXT,
+                    etymo_zh TEXT,
+                    picture TEXT,
+                    no_overwrite INTEGER DEFAULT 0,
                     timestamp TEXT NOT NULL
                 )
                 """
@@ -217,53 +230,22 @@ class SQLiteStatsRepository:
             if reanimator_prompt_count == 0:
                 # 从 reanimator/infrastructure/prompts.py 导入默认 prompts
                 try:
-                    from ...reanimator.infrastructure.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
-                    DEFAULT_REANIMATOR_VERSION = "0001"
-                    DEFAULT_REANIMATOR_PROMPTS = {
-                        'reanimator_system': SYSTEM_PROMPT,
-                        'reanimator_user': USER_PROMPT_TEMPLATE,
-                    }
+                    from ...reanimator.infrastructure.prompts import (
+                        DEFAULT_PROMPT_VERSION,
+                        DEFAULT_PROMPT_SECTIONS,
+                    )
                     cursor.executemany(
                         """
                         INSERT INTO reanimator_prompts (section, version, content)
                         VALUES (?, ?, ?)
                         """,
                         [
-                            (section, DEFAULT_REANIMATOR_VERSION, content)
-                            for section, content in DEFAULT_REANIMATOR_PROMPTS.items()
+                            (section, DEFAULT_PROMPT_VERSION, content)
+                            for section, content in DEFAULT_PROMPT_SECTIONS.items()
                         ],
                     )
                 except ImportError:
                     pass  # Prompts 文件可能还未创建，跳过初始化
-
-            # 创建表9: reanimator_terms（术语表映射，数据库化）
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS reanimator_terms (
-                    tag_en TEXT PRIMARY KEY,
-                    tag_zh TEXT NOT NULL
-                )
-                """
-            )
-
-            # 若 reanimator_terms 表为空，从 CSV 导入
-            cursor.execute("SELECT COUNT(*) FROM reanimator_terms")
-            reanimator_terms_count = cursor.fetchone()[0]
-            if reanimator_terms_count == 0:
-                # 从 db/term_list_v1.csv 导入数据
-                import csv
-                term_list_path = self.db_path.parent / "term_list_v1.csv"
-                if term_list_path.exists():
-                    with open(term_list_path, 'r', encoding='utf-8') as f:
-                        reader = csv.DictReader(f)
-                        terms_data = [(row['en'], row['cn']) for row in reader]
-                        cursor.executemany(
-                            """
-                            INSERT INTO reanimator_terms (tag_en, tag_zh)
-                            VALUES (?, ?)
-                            """,
-                            terms_data
-                        )
 
             conn.commit()
 
@@ -515,33 +497,62 @@ class SQLiteStatsRepository:
                 "stem_preview": stem_preview,
             }
 
+    def get_lithoformer_bank(self, limit: int | None = None) -> list[dict]:
+        """获取最近的 Lithoformer 题库记录（用于命令面板预览）"""
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            if limit:
+                cursor = conn.execute(
+                    """
+                    SELECT question_number, batch_id, model, output, timestamp
+                    FROM lithoformer_bank
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT question_number, batch_id, model, output, timestamp
+                    FROM lithoformer_bank
+                    ORDER BY timestamp DESC
+                    """
+                )
+            return [dict(row) for row in cursor.fetchall()]
+
     def save_terminal_log(
         self,
         log_type: str,
         message: str,
         logger: str = "",
+        domain: str = "lithoformer",
     ) -> None:
         """
-        保存终端日志到lithoformer_terminal_logs表
+        保存终端日志到对应子域的 terminal_logs 表
 
         Args:
             log_type: 日志类型（INFO/WARNING/ERROR等）
             message: 日志消息
             logger: 触发日志的 logger 名称
+            domain: "lithoformer" 或 "reanimator"
         """
         timestamp = datetime.now().isoformat()
+        if domain not in {"lithoformer", "reanimator"}:
+            raise ValueError(f"Unsupported domain for terminal logs: {domain}")
+        table = "lithoformer_terminal_logs" if domain == "lithoformer" else "reanimator_terminal_logs"
 
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
-                """
-                INSERT INTO lithoformer_terminal_logs (timestamp, log_type, logger, message)
+                f"""
+                INSERT INTO {table} (timestamp, log_type, logger, message)
                 VALUES (?, ?, ?, ?)
                 """,
                 (timestamp, log_type, logger, message),
             )
             conn.commit()
 
-    def get_prompt_sections(self, version: str | None = None) -> dict[str, str]:
+    def get_prompt_sections(self, version: str | None = None, domain: str = "lithoformer") -> dict[str, str]:
         """
         获取指定版本（或最新版本）的 prompt 片段。
 
@@ -554,23 +565,24 @@ class SQLiteStatsRepository:
         Raises:
             ValueError: 当表中没有记录或指定版本不存在时抛出。
         """
+        table = "lithoformer_prompts" if domain == "lithoformer" else "reanimator_prompts"
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             if version is None:
                 cursor = conn.execute(
-                    """
+                    f"""
                     SELECT section, content
-                    FROM lithoformer_prompts
+                    FROM {table}
                     WHERE version = (
-                        SELECT MAX(version) FROM lithoformer_prompts
+                        SELECT MAX(version) FROM {table}
                     )
                     """
                 )
             else:
                 cursor = conn.execute(
-                    """
+                    f"""
                     SELECT section, content
-                    FROM lithoformer_prompts
+                    FROM {table}
                     WHERE version = ?
                     """,
                     (version,),
@@ -578,7 +590,7 @@ class SQLiteStatsRepository:
             rows = cursor.fetchall()
 
         if not rows:
-            raise ValueError("lithoformer_prompts 表中没有可用的 prompt 记录")
+            raise ValueError(f"{table} 表中没有可用的 prompt 记录")
         return {row["section"]: row["content"] for row in rows}
 
     def clear_bank(self) -> int:
@@ -622,6 +634,178 @@ class SQLiteStatsRepository:
                 cursor.execute("DELETE FROM lithoformer_processing_logs")
             conn.commit()
             return count
+
+    # ------------------------------------------------------------------
+    # Reanimator helpers
+    # ------------------------------------------------------------------
+    def save_reanimator_processing_log(
+        self,
+        *,
+        word_id: str,
+        wm_pair: str,
+        word_en: str,
+        mean_zh: str,
+        model: str,
+        batch_id: str,
+        batch_note: str,
+        have_def_en: bool,
+        have_example: bool,
+        have_rarity: bool,
+        have_field: bool,
+        note: str,
+        pos: str,
+        ipa: str,
+        etymo_en: str,
+        etymo_zh: str,
+        picture: str,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        processing_time: float | None,
+        has_error: bool,
+    ) -> None:
+        timestamp = datetime.now().isoformat()
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute(
+                """
+                INSERT INTO reanimator_processing_logs (
+                    word_id, wm_pair, word_en, mean_zh, model, batch_id, batch_note,
+                    have_def_en, have_example, have_rarity, have_field, note, pos, ipa,
+                    etymo_en, etymo_zh, picture, input_tokens, output_tokens,
+                    processing_time, has_error, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    word_id,
+                    wm_pair,
+                    word_en,
+                    mean_zh,
+                    model,
+                    batch_id,
+                    batch_note,
+                    int(have_def_en),
+                    int(have_example),
+                    int(have_rarity),
+                    int(have_field),
+                    note,
+                    pos,
+                    ipa,
+                    etymo_en,
+                    etymo_zh,
+                    picture,
+                    input_tokens,
+                    output_tokens,
+                    processing_time,
+                    int(has_error),
+                    timestamp,
+                ),
+            )
+            conn.commit()
+
+    def save_reanimator_bank(
+        self,
+        *,
+        word_id: str,
+        batch_id: str,
+        model: str,
+        wm_pair: str,
+        word_en: str,
+        mean_zh: str,
+        def_en: str,
+        example: str,
+        rarity: str,
+        field: str,
+        batch_note: str,
+        ipa: str,
+        pos: str,
+        etymo_en: str,
+        etymo_zh: str,
+        picture: str,
+        no_overwrite: bool,
+    ) -> bool:
+        timestamp = datetime.now().isoformat()
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT no_overwrite FROM reanimator_bank WHERE word_id = ?",
+                (word_id,),
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                return False
+
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO reanimator_bank (
+                    word_id, batch_id, model, wm_pair, word_en, mean_zh,
+                    def_en, example, rarity, field, batch_note, ipa, pos,
+                    etymo_en, etymo_zh, picture, no_overwrite, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    word_id,
+                    batch_id,
+                    model,
+                    wm_pair,
+                    word_en,
+                    mean_zh,
+                    def_en,
+                    example,
+                    rarity,
+                    field,
+                    batch_note,
+                    ipa,
+                    pos,
+                    etymo_en,
+                    etymo_zh,
+                    picture,
+                    int(no_overwrite),
+                    timestamp,
+                ),
+            )
+            conn.commit()
+            return True
+
+    def reanimator_word_exists(self, word_id: str) -> bool:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM reanimator_bank WHERE word_id = ?",
+                (word_id,),
+            )
+            return cursor.fetchone() is not None
+
+    def get_reanimator_entry(self, word_id: str) -> dict | None:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM reanimator_bank WHERE word_id = ?",
+                (word_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_reanimator_bank(self, limit: int | None = None) -> list[dict]:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            if limit:
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM reanimator_bank
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM reanimator_bank ORDER BY timestamp DESC"
+                )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_max_reanimator_word_id(self) -> str | None:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            cursor = conn.execute("SELECT MAX(word_id) FROM reanimator_bank")
+            row = cursor.fetchone()
+            return row[0] if row and row[0] else None
 
 
 # 全局单例

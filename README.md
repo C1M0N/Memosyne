@@ -65,13 +65,11 @@ Memosyne 是一个基于领域驱动设计（DDD）和六边形架构的 LLM 术
 - ✅ 可配置的模型、温度、重试策略
 - ✅ 子域独立管理业务逻辑（Prompts/Schemas）
 
-### 💻 **多种使用方式**
+### 💻 **使用方式**
 
-- ✅ **交互式 CLI** - 向导式操作
-- ✅ **编程 API** - 在代码中直接调用
-- ✅ **模块执行** - `python -m memosyne.reanimator.cli.main`
-- ✅ **便捷脚本** - `./scripts/run_reanimate.sh`, `./scripts/LfC.sh`, `./scripts/LfT.sh`
-- ✅ **Textual TUI** - `python -m memosyne.lithoformer.tui.app`
+- ✅ **Textual TUI** - `python -m memosyne.reanimator.tui.app` / `python -m memosyne.lithoformer.tui.app`
+- ✅ **便捷脚本** - `./scripts/RaT.sh`（Reanimator） / `./scripts/LfT.sh`（Lithoformer）
+- ℹ️  CLI 与编程 API 已移除，所有操作统一通过 TUI 完成
 
 ### 📊 **完善的数据流**
 
@@ -123,23 +121,20 @@ b
 ### 方式 1：模块执行（推荐）
 
 ```bash
-# Reanimator - 术语重生
-python -m memosyne.reanimator.cli.main
+# Reanimator TUI
+python -m memosyne.reanimator.tui.app
 
-# Lithoformer - Quiz 重塑
-python -m memosyne.lithoformer.cli.main
+# Lithoformer TUI
+python -m memosyne.lithoformer.tui.app
 ```
 
 ### 方式 2：便捷脚本
 
 ```bash
-# Reanimator
-./scripts/run_reanimate.sh
+# Reanimator Textual TUI（自动调整终端尺寸）
+./scripts/RaT.sh
 
-# Lithoformer CLI
-./scripts/LfC.sh
-
-# Lithoformer TUI
+# Lithoformer Textual TUI
 ./scripts/LfT.sh
 ```
 
@@ -156,63 +151,6 @@ python -m memosyne.lithoformer.cli.main
   - `lithoformer_terminal_logs`：终端日志（含 `logger` 列，message 已去除时间戳/级别，自动过滤 httpx 噪声）
   - `lithoformer_prompts`：按版本保存的六段 prompt 片段，运行时总是加载最新版本
 - Lithoformer 解析日志沿用 TUI 检测阶段的 `question_number`（顺序/并发模式均支持）；若缺失则回退到序号字符串，写库时批次号仅保留文件名首段（例如 `251030E006`），便于筛选与对账。
-
-### 方式 3：编程 API
-
-```python
-from memosyne.api import reanimate, lithoform
-
-# 处理术语（Reanimator）
-result = reanimate(
-    input_csv="terms.csv",
-    start_memo_index=2700,
-    model="gpt-4o-mini"
-)
-print(f"✅ 处理了 {result['processed_count']} 个术语")
-print(f"📁 输出: {result['output_path']}")
-print(f"📊 Token 使用: {result['token_usage']['total_tokens']}")
-
-# 解析 Quiz（Lithoformer）
-result = lithoform(
-    input_md="quiz.md",
-    model="gpt-4o-mini"
-)
-print(f"✅ 解析了 {result['item_count']} 道题")
-print(f"📁 输出: {result['output_path']}")
-print(f"📊 Token 使用: {result['token_usage']['total_tokens']}")
-```
-
-### CLI 参数示例（并发/目录/默认保存）
-
-```bash
-# 并发开启 + 指定并发度/重试
-python -m memosyne.lithoformer.cli.main \
-  --model o4om \
-  --input ./my_quiz.md \
-  --output ./output \
-  --concurrent --max-concurrent 8 --max-retries 2
-
-# 关闭并发
-python -m memosyne.lithoformer.cli.main --model cs45 --no-concurrent --input quiz.md
-
-# 同时保存默认目录到 config.db（TUI/CLI 共享）
-python -m memosyne.lithoformer.cli.main \
-  --model 4 \
-  --input ./data/input/lithoformer/quiz.md \
-  --output ./data/output/lithoformer \
-  --save-default-dirs
-```
-
-### 方式 4：TUI 控制台
-
-```bash
-# 启动 Textual & Rich 构建的 Lithoformer TUI
-python -m memosyne.lithoformer.tui.app
-# 或使用便捷脚本
-./scripts/LfT.sh
-```
-
-> 该界面提供文件树选择、Detect/Start 流程、逐题状态列表、实时日志与指令输入区，适合需要鼠标操作的可视化运行场景。
 
 ---
 
@@ -306,7 +244,7 @@ LOG_FORMAT=console
 ### 5. （可选）自定义输入/输出路径
 
 项目默认的示例文件位于 `misc/` 目录，配置文件 `config/paths.json` 会指向该目录。
-这些示例是只读的，CLI/API/TUI 遇到写入请求时会提示你选择真正的输出目录。
+这些示例是只读的，TUI 遇到写入请求时会提示你选择真正的输出目录。
 
 如需将默认输入或输出切换到团队自己的共享目录，修改 `config/paths.json`（或通过
 环境变量 `REANIMATOR_INPUT_DIR` / `REANIMATOR_OUTPUT_DIR` / `LITHOFORMER_*` 覆盖），示例：
@@ -340,7 +278,7 @@ Memosyne v0.10.5a 采用**领域驱动设计（DDD）**和**六边形架构（He
 1. **Domain-Driven Design (DDD)** - 领域驱动设计
    - **Bounded Context**（限界上下文）：Reanimator 和 Lithoformer 作为独立子域
    - **Shared Kernel**（共享内核）：业务无关的基础设施代码
-   - **Layered Architecture**（分层架构）：Domain → Application → Infrastructure → CLI
+   - **Layered Architecture**（分层架构）：Domain → Application → Infrastructure → TUI
 
 2. **Hexagonal Architecture** - 六边形架构
    - **Ports**（端口）：应用层定义的接口（Protocol）
@@ -364,8 +302,8 @@ Memosyne v0.10.5a 采用**领域驱动设计（DDD）**和**六边形架构（He
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    CLI / API Layer                      │  用户接口
-│              (reanimator/cli, lithoformer/cli, api.py)  │
+│                     TUI Layer                           │  用户接口
+│        (reanimator/tui/app.py, lithoformer/tui/app.py)  │
 ├─────────────────────────────────────────────────────────┤
 │              Infrastructure Layer (Adapters)            │  适配器实现
 │    (llm_adapter, csv_adapter, file_adapter, ...)        │
@@ -388,7 +326,7 @@ Memosyne v0.10.5a 采用**领域驱动设计（DDD）**和**六边形架构（He
 | **Domain** | 核心业务逻辑、领域模型、领域服务 | 不依赖任何层 |
 | **Application** | 业务流程编排、用例协调、端口定义 | 依赖 Domain |
 | **Infrastructure** | 外部系统适配、LLM 调用、文件 I/O | 实现 Application Ports |
-| **CLI/API** | 用户接口、依赖注入、流程调度 | 依赖所有层 |
+| **TUI** | 用户接口、依赖注入、流程调度 | 依赖所有层 |
 
 ### 核心设计原则
 
@@ -458,7 +396,7 @@ src/memosyne/
 ├── shared/                         # 共享内核（Shared Kernel）
 │   ├── config/                     # Pydantic Settings
 │   ├── utils/                      # 通用工具（batch, logger, progress, path, model_codes）
-│   ├── cli/                        # CLI 提示工具
+│   ├── tui/                        # Textual 共用 Widget（RateLimitBar、CustomProgressBar 等）
 │   └── infrastructure/             # 业务无关的基础设施
 │       ├── llm/                    # OpenAI/Anthropic Provider（通用）
 │       ├── storage/                # CSV/TermList Repository
@@ -477,7 +415,7 @@ src/memosyne/
 │   │   ├── schemas.py              # TERM_RESULT_SCHEMA
 │   │   ├── csv_adapter.py          # CSVTermAdapter
 │   │   └── term_list_adapter.py    # TermListAdapter
-│   └── cli/main.py                 # Reanimator CLI
+│   └── tui/                        # Reanimator Textual TUI（app.py, widgets, css）
 │
 ├── lithoformer/                    # Lithoformer 子域（Bounded Context）
 │   ├── domain/                     # 领域层
@@ -494,9 +432,7 @@ src/memosyne/
 │   │   ├── file_adapter.py         # FileAdapter
 │   │   ├── formatter_adapter.py    # FormatterAdapter
 │   │   └── formatters/             # QuizFormatter（依赖领域模型）
-│   └── cli/main.py                 # Lithoformer CLI
-│
-└── api.py                          # 编程 API（reanimate(), lithoform()）
+│   └── tui/                        # Lithoformer Textual TUI（app.py, widgets, css）
 
 config/
 └── paths.json                      # 默认路径配置（可自定义到非 misc 目录）
@@ -526,10 +462,10 @@ db/
 - **v0.10.5a** — Lithoformer TUI 第三轮布局修复：三列比例完全对齐 `layout.xml`，自适应进度条显示运行/剩余时间与 Tokens，Select 下拉样式恢复 JiraTUI 风格，按钮与批次号输入定位稳定。
 - **v0.10.4** — 新增 `lithoformer_layout.tcss` 与 Textual 日志集成；Detect/Start 状态机、问题表格宽度和命令输入区布局全部更新。
 - **v0.10.3** — 完整重写 TUI Compose 逻辑，落地 layout.xml 三列设计；Provider/Model 选择器支持搜索与自动填值；Detect 阶段生成 `DetectionResult` 快照。
-- **v0.10.1a** — Lithoformer 输出升级为逐行双语；Schema 新增翻译字段，CLI/API/TUI 全链路附带批次号与题目 `L` 编码；QuizFormatter 实现原文与译文交织。
+- **v0.10.1a** — Lithoformer 输出升级为逐行双语；Schema 新增翻译字段，TUI 全链路附带批次号与题目 `L` 编码；QuizFormatter 实现原文与译文交织。
 - **v0.9.2** — Lithoformer TUI 全面重写，采用 JiraTUI 布局，支持 Detect/Start 双阶段、实时日志与题目表格。
 - **v0.9.1a** — 扩充测验数据集，导入新的 Markdown 题库文件。
-- **v0.9.1** — 标记生产就绪，补齐 CLI/API、批次 ID、日志追踪与错误处理能力。
+- **v0.9.1** — 标记生产就绪，完成 UI 层、批次 ID、日志追踪与错误处理能力建设（早期 CLI/API 已在 v0.16 前淘汰）。
 - **v0.9.0** — 引入 DDD + Hexagonal 架构，确立 Reanimator / Lithoformer 子域与共享内核。
 
 ### 架构图表
@@ -538,15 +474,13 @@ db/
 
 ```mermaid
 flowchart LR
-    CLI["CLI / Scripts"]
-    API["Python API"]
+    TUI["Textual TUI<br/>(RaT / LfT)"]
     App["Application Layer<br/>(Use Cases & Ports)"]
     Infra["Infrastructure Layer<br/>(Adapters)"]
     Domain["Domain Layer<br/>(Models & Services)"]
     Shared["Shared Kernel<br/>(Providers · Config · Utils)"]
 
-    CLI --> App
-    API --> App
+    TUI --> App
     App --> Domain
     App --> Infra
     Infra --> Shared
@@ -554,7 +488,7 @@ flowchart LR
 ```
 
 **关键规则**
-- ✅ CLI / API 仅与 Application 层交互
+- ✅ TUI 仅与 Application 层交互
 - ✅ Infrastructure 实现 Application 定义的端口接口
 - ✅ Domain 层不依赖外层，保持业务纯净
 - ❌ Shared Kernel 不包含任何子域业务逻辑（Prompt、Schema 等需留在子域）
@@ -568,7 +502,7 @@ flowchart LR
 | Domain | `TermInput` / `TermOutput`；`apply_business_rules`、`generate_memo_id` 等领域服务 |
 | Application | `ProcessTermsUseCase`；端口接口 `LLMPort`、`TermListPort` |
 | Infrastructure | `ReanimatorLLMAdapter`、`CSVTermAdapter`、`TermListAdapter`、`REANIMATER_SYSTEM_PROMPT`、`TERM_RESULT_SCHEMA` |
-| CLI | `reanimator/cli/main.py`、`scripts/run_reanimate.sh` |
+| TUI | `reanimator/tui/app.py`、`scripts/RaT.sh` |
 
 **Lithoformer（Quiz 重塑器）**
 
@@ -577,7 +511,7 @@ flowchart LR
 | Domain | `QuizItem`（含翻译字段）、`QuizAnalysis`；`split_markdown_into_questions`、`infer_titles_from_markdown`、`infer_question_seed`|
 | Application | `ParseQuizUseCase`（对齐翻译字段、累计 Token）；端口接口 `LLMPort` |
 | Infrastructure | `LithoformerLLMAdapter`、`FileAdapter`、`FormatterAdapter`、`prompts.get_dynamic_system_prompt()`、`schemas.get_dynamic_schema()` |
-| CLI | `lithoformer/cli/main.py`、`scripts/LfC.sh` |
+| TUI | `lithoformer/tui/app.py`、`scripts/LfT.sh` |
 
 **Shared Kernel**
 
@@ -742,8 +676,8 @@ class ProcessTermsUseCase:
    - `domain/` - 领域模型和服务
    - `application/` - 用例和端口接口
    - `infrastructure/` - 适配器、Prompts、Schemas
-   - `cli/` - CLI 入口
-3. 在 `api.py` 添加新的 API 函数
+   - `tui/` - Textual TUI（可选，自定义 app/widgets）
+3. 在共享层（`shared/tui/` 等）复用需要的组件，或新增专属 Widget
 
 **无需修改其他子域**！
 
@@ -760,531 +694,24 @@ class ProcessTermsUseCase:
 
 ## 📖 API 使用指南
 
-### 快速开始
-
-#### 安装与配置
-
-1. **安装依赖**：
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **配置环境变量**：
-   ```bash
-   cp .env.example .env
-   # 编辑 .env 文件，填入你的 API 密钥
-   ```
-
-3. **导入 API**：
-   ```python
-   from memosyne.api import reanimate, lithoform
-   ```
-
-#### 示例 1：重生术语列表 (Reanimater)
-
-```python
-from memosyne.api import reanimate
-
-# 处理术语（使用默认的 OpenAI gpt-4o-mini 模型）
-result = reanimate(
-    input_csv="misc/input/reanimator/terms.csv",  # 输入 CSV 文件
-    start_memo_index=2700,                         # 起始 Memo 编号（M002701）
-    batch_note="心理学术语"                        # 批次备注
-)
-
-print(f"✓ 成功处理 {result['processed_count']} 个术语")
-print(f"✓ 批次ID: {result['batch_id']}")
-print(f"✓ 输出文件: {result['output_path']}")
-```
-
-#### 示例 2：石化测验文档 (Lithoformer)
-
-```python
-from memosyne.api import lithoform
-
-# 解析 Quiz Markdown 文档
-result = lithoform(
-    input_md="misc/input/lithoformer/chapter3.md",  # 输入 Markdown 文件
-    title_main="Chapter 3 Quiz",                    # 主标题
-    title_sub="Assessment and Classification"       # 副标题
-)
-
-print(f"✓ 成功解析 {result['item_count']} 道题")
-print(f"✓ 输出文件: {result['output_path']}")
-```
-
-### API 函数详解
-
-#### reanimate()
-
-处理术语列表，生成结构化术语卡片（Reanimater Pipeline - 术语处理）。
-
-**函数签名**
-
-```python
-def reanimate(
-    input_csv: str | Path,
-    start_memo_index: int,
-    output_csv: str | Path | None = None,
-    model: str = "gpt-4o-mini",
-    provider: Literal["openai", "anthropic"] = "openai",
-    batch_note: str = "",
-    temperature: float | None = None,
-    show_progress: bool = True,
-) -> dict:
-```
-
-**参数说明**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `input_csv` | str \| Path | ✓ | 输入 CSV 文件路径，包含 `word` 和 `zh_def` 列 |
-| `start_memo_index` | int | ✓ | 起始 Memo 编号（如 `2700` 表示从 M002701 开始） |
-| `output_csv` | str \| Path \| None | ✗ | 输出 CSV 文件路径（默认自动生成到 `misc/output/reanimator/`） |
-| `model` | str | ✗ | 模型 ID，默认 `"gpt-4o-mini"` |
-| `provider` | "openai" \| "anthropic" | ✗ | LLM 提供商，默认 `"openai"` |
-| `batch_note` | str | ✗ | 批次备注（会出现在输出 CSV 的 BatchNote 列） |
-| `temperature` | float \| None | ✗ | LLM 温度参数（0.0-2.0），`None` 使用模型默认值 |
-| `show_progress` | bool | ✗ | 是否显示进度条，默认 `True` |
-
-**返回值**
-
-返回一个字典，包含以下字段：
-
-```python
-{
-    "success": True,                  # 是否成功
-    "output_path": "misc/output/reanimator/251010A015.csv",  # 输出文件路径
-    "batch_id": "251010A015",         # 批次 ID（格式：YYMMDD + 批次字母 + 词条数）
-    "processed_count": 15,            # 成功处理的术语数量
-    "total_count": 15,                # 总术语数量
-    "results": [TermOutput(...), ...],  # 处理结果列表（Pydantic 模型）
-    "token_usage": {                  # Token 使用统计
-        "prompt_tokens": 1234,
-        "completion_tokens": 5678,
-        "total_tokens": 6912
-    }
-}
-```
-
-**输入 CSV 格式**
-
-输入文件需包含以下列（列名不区分大小写）：
-
-| 列名 | 必填 | 说明 |
-|------|------|------|
-| `word` | ✓ | 英文词条（如 "neuron"） |
-| `zh_def` | ✓ | 中文释义（如 "神经元"） |
-
-示例 CSV：
-```csv
-word,zh_def
-neuron,神经元
-synapse,突触
-hippocampus,海马体
-```
-
-**输出 CSV 格式**
-
-输出文件包含以下列：
-
-| 列名 | 说明 |
-|------|------|
-| `WMpair` | Word + ZhDef 组合 |
-| `MemoID` | Memo ID（如 M002701） |
-| `Word` | 英文词条 |
-| `ZhDef` | 中文释义 |
-| `IPA` | 国际音标（如 /ˈnjʊɹɑn/） |
-| `POS` | 词性（n., vt., vi., adj., adv., P., O., abbr.） |
-| `Tag` | 中文标签（两字，如 "心理"） |
-| `Rarity` | 稀有度（"" 或 "RARE"） |
-| `EnDef` | 英文定义 |
-| `Example` | 例句 |
-| `PPfix` | 词根/词缀（空格分隔） |
-| `PPmeans` | 词根/词缀含义（空格分隔） |
-| `BatchID` | 批次 ID |
-| `BatchNote` | 批次备注 |
-
-**使用示例**
-
-示例 1：基础用法（使用 OpenAI）
-
-```python
-from memosyne.api import reanimate
-
-result = reanimate(
-    input_csv="terms.csv",
-    start_memo_index=2700
-)
-```
-
-示例 2：使用 Anthropic Claude
-
-```python
-result = reanimate(
-    input_csv="terms.csv",
-    start_memo_index=2700,
-    provider="anthropic",
-    model="claude-sonnet-4-5"
-)
-```
-
-示例 3：自定义输出路径
-
-```python
-result = reanimate(
-    input_csv="terms.csv",
-    start_memo_index=2700,
-    output_csv="my_output.csv",  # 将保存到 misc/output/reanimator/my_output.csv
-    batch_note="测试批次"
-)
-```
-
-示例 4：调整 LLM 参数并查看 Token 使用
-
-```python
-result = reanimate(
-    input_csv="terms.csv",
-    start_memo_index=2700,
-    model="gpt-4o",             # 使用更强大的模型
-    temperature=0.3,             # 降低随机性
-    show_progress=True           # 进度条会显示实时 Token 使用量
-)
-
-# 查看 Token 使用统计
-print(f"Prompt Tokens: {result['token_usage']['prompt_tokens']}")
-print(f"Completion Tokens: {result['token_usage']['completion_tokens']}")
-print(f"Total Tokens: {result['token_usage']['total_tokens']}")
-```
-
-#### lithoform()
-
-解析 Markdown 格式的测验文档，转换为标准化格式（Lithoformer）。
-
-**函数签名**
-
-```python
-def lithoform(
-    input_md: str | Path,
-    output_txt: str | Path | None = None,
-    model: str = "gpt-4o-mini",
-    provider: Literal["openai", "anthropic"] = "openai",
-    title_main: str | None = None,
-    title_sub: str | None = None,
-    temperature: float | None = None,
-    show_progress: bool = True,
-) -> dict:
-```
-
-**参数说明**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `input_md` | str \| Path | ✓ | 输入 Markdown 文件路径 |
-| `output_txt` | str \| Path \| None | ✗ | 输出 TXT 文件路径（默认自动生成到 `misc/output/lithoformer/`） |
-| `model` | str | ✗ | 模型 ID，默认 `"gpt-4o-mini"` |
-| `provider` | "openai" \| "anthropic" | ✗ | LLM 提供商，默认 `"openai"` |
-| `title_main` | str \| None | ✗ | 主标题（`None` 自动从文件名推断） |
-| `title_sub` | str \| None | ✗ | 副标题（`None` 自动从文件名推断） |
-| `temperature` | float \| None | ✗ | LLM 温度参数（0.0-2.0），`None` 使用模型默认值 |
-| `show_progress` | bool | ✗ | 是否显示进度条（含 Token 使用量），默认 `True` |
-
-**返回值**
-
-返回一个字典，包含以下字段：
-
-```python
-{
-    "success": True,                  # 是否成功
-    "output_path": "misc/output/lithoformer/ShouldBe.txt",  # 输出文件路径
-    "item_count": 25,                 # 成功解析的题目数量
-    "total_count": 25,                # 总题目数量
-    "title_main": "Chapter 3 Quiz",   # 主标题
-    "title_sub": "Assessment and Classification",  # 副标题
-    "token_usage": {                  # Token 使用统计
-        "prompt_tokens": 2345,
-        "completion_tokens": 3456,
-        "total_tokens": 5801
-    }
-}
-```
-
-**支持的题型**
-
-- **MCQ（选择题）**：包含任意数量的字母选项（A-Z），可处理纯图片选项
-- **CLOZE（填空题）**：包含下划线 `____` 且无字母选项
-
-**使用示例**
-
-示例 1：基础用法（自动推断标题）
-
-```python
-from memosyne.api import lithoform
-
-# 文件名：Chapter 3 Quiz- Assessment and Classification.md
-# 自动推断标题
-result = lithoform(input_md="chapter3.md")
-print(result['title_main'])  # "Chapter 3 Quiz"
-print(result['title_sub'])   # "Assessment and Classification"
-```
-
-示例 2：手动指定标题
-
-```python
-result = lithoform(
-    input_md="quiz.md",
-    title_main="Midterm Exam",
-    title_sub="Chapters 1-5"
-)
-```
-
-示例 3：使用 Claude 模型
-
-```python
-result = lithoform(
-    input_md="quiz.md",
-    provider="anthropic",
-    model="claude-sonnet-4-5"
-)
-```
-
-示例 4：自定义输出路径并查看 Token 使用
-
-```python
-result = lithoform(
-    input_md="quiz.md",
-    output_txt="chapter3_output.txt",  # 保存到 misc/output/lithoformer/chapter3_output.txt
-    title_main="Chapter 3 Quiz",
-    show_progress=True  # 进度条会显示实时 Token 使用量
-)
-
-# 查看 Token 使用统计
-print(f"Total Tokens: {result['token_usage']['total_tokens']}")
-```
-
-### 高级用法
-
-#### 示例 1：批量处理多个文件
-
-```python
-from pathlib import Path
-from memosyne.api import reanimate
-
-input_dir = Path("misc/input/reanimator")
-start_index = 2700
-
-for csv_file in input_dir.glob("*.csv"):
-    print(f"\n处理文件: {csv_file.name}")
-
-    result = reanimate(
-        input_csv=csv_file,
-        start_memo_index=start_index,
-        batch_note=f"批量处理 {csv_file.stem}"
-    )
-
-    print(f"✓ {result['batch_id']}: {result['processed_count']} 个术语")
-
-    # 更新下一个文件的起始索引
-    start_index += result['processed_count']
-```
-
-#### 示例 2：自定义日志记录
-
-```python
-import logging
-from memosyne.api import reanimate
-from memosyne.shared.utils.logger import setup_logger
-
-# 配置日志
-logger = setup_logger(
-    name="my_app",
-    level="DEBUG",
-    log_file="logs/processing.log",
-    format_type="detailed"
-)
-
-logger.info("开始处理术语")
-
-try:
-    result = reanimate(
-        input_csv="terms.csv",
-        start_memo_index=2700
-    )
-    logger.info(f"成功处理 {result['processed_count']} 个术语")
-
-except Exception as e:
-    logger.error("处理失败", exc_info=True)
-    raise
-```
-
-#### 示例 3：集成到 Web 服务
-
-```python
-from fastapi import FastAPI, UploadFile
-from memosyne.api import reanimate
-import tempfile
-
-app = FastAPI()
-
-@app.post("/api/reanimate")
-async def api_reanimate(file: UploadFile, start_index: int):
-    # 保存上传的文件
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    # 处理术语
-    result = reanimate(
-        input_csv=tmp_path,
-        start_memo_index=start_index
-    )
-
-    return {
-        "batch_id": result['batch_id'],
-        "count": result['processed_count'],
-        "token_usage": result['token_usage']
-    }
-```
-
-### 错误处理
-
-#### 基础错误处理
-
-```python
-from memosyne.api import reanimate
-from memosyne.core.interfaces import LLMError, ConfigError
-
-try:
-    result = reanimate(
-        input_csv="terms.csv",
-        start_memo_index=2700
-    )
-    print(f"✓ 成功处理 {result['processed_count']} 个术语")
-
-except FileNotFoundError as e:
-    print(f"✗ 文件不存在: {e}")
-
-except ValueError as e:
-    print(f"✗ 参数错误: {e}")
-
-except ConfigError as e:
-    print(f"✗ 配置错误: {e}")
-
-except LLMError as e:
-    print(f"✗ LLM 调用失败: {e}")
-
-except Exception as e:
-    print(f"✗ 未知错误: {e}")
-```
-
-#### 重试机制
-
-```python
-import time
-from memosyne.api import reanimate
-from memosyne.core.interfaces import LLMError
-
-MAX_RETRIES = 3
-
-for attempt in range(MAX_RETRIES):
-    try:
-        result = reanimate(
-            input_csv="terms.csv",
-            start_memo_index=2700
-        )
-        print(f"✓ 成功（尝试 {attempt + 1}/{MAX_RETRIES}）")
-        break
-
-    except LLMError as e:
-        if attempt < MAX_RETRIES - 1:
-            wait_time = 2 ** attempt  # 指数退避：1s, 2s, 4s
-            print(f"✗ 失败（尝试 {attempt + 1}/{MAX_RETRIES}），{wait_time}秒后重试...")
-            time.sleep(wait_time)
-        else:
-            print(f"✗ 所有尝试均失败: {e}")
-            raise
-```
-
-### 最佳实践
-
-#### 1. 环境变量管理
-
-**推荐做法**：
-```python
-# ✓ 使用 .env 文件管理 API 密钥
-from memosyne.api import reanimate
-
-result = reanimate(...)  # 自动从 .env 读取密钥
-```
-
-**不推荐做法**：
-```python
-# ✗ 硬编码 API 密钥
-import os
-os.environ["OPENAI_API_KEY"] = "sk-..."  # 容易泄露
-```
-
-#### 2. 错误处理
-
-- 总是捕获异常，特别是 `LLMError`
-- 对关键任务实现重试机制
-- 记录错误日志便于调试
-
-#### 3. 性能优化
-
-- 对大批量任务，使用 `show_progress=True` 监控进度
-- 考虑使用更快的模型（如 `gpt-4o-mini`）
-- 避免频繁的小批量请求，合并为大批量
-
-#### 4. 成本控制
-
-- 使用 `gpt-4o-mini` 而非 `gpt-4o`（成本降低约 10 倍）
-- 监控 API 使用量
-- 对非关键任务降低 `temperature`
-
-#### 5. 数据管理
-
-- 定期备份 `misc/output/` 目录
-- 使用有意义的 `batch_note` 便于追溯
-- 保留输入文件用于审计
-
----
+> v0.16 起项目仅保留 Textual TUI（`python -m memosyne.reanimator.tui.app` / `python -m memosyne.lithoformer.tui.app` 或 `./scripts/RaT.sh`、`./scripts/LfT.sh`）。原 CLI 入口与 `memosyne.api` 编程接口已下线，如需自动化请通过批处理文件驱动 TUI 或按需复用子域 Use Case。
 
 ## 💡 使用示例
 
 ### Reanimator - 批量处理术语
 
-```python
-from memosyne.api import reanimate
-
-files = ["221.csv", "222.csv", "223.csv"]
-
-for i, filename in enumerate(files, start=221):
-    result = reanimate(
-        input_csv=filename,
-        start_memo_index=i,
-        model="gpt-4o-mini",
-        batch_note=f"批次 {i}"
-    )
-    print(f"✅ {filename}: {result['batch_id']}")
-    print(f"   Token 使用: {result['token_usage']['total_tokens']}")
-```
+1. 运行 `./scripts/RaT.sh`，窗口将自动调整到 212 列。
+2. 在右侧文件树中选择 `data/input/reanimator/221.csv` 并点击 `Detect`。
+3. 检查批次号/输出文件名，如需备注可在“输入”Tab 填写；命令行 `/bank` 可快速查看最近写入的术语。
+4. 点击 `Start` 后，TUI 会在底部进度条显示 Token、剩余时间，并将 Processing log 写入 `stat.db`。
+5. 处理下一个 CSV 只需重复选择 + Detect + Start，序号、批次号会根据文件名自动推断。
 
 ### Lithoformer - 使用 Claude
 
-```python
-from memosyne.api import lithoform
-
-result = lithoform(
-    input_md="chapter3_quiz.md",
-    model="claude-sonnet-4-5",
-    provider="anthropic",
-    temperature=0.3
-)
-print(f"✅ 解析了 {result['item_count']} 道题")
-print(f"   Token 使用: {result['token_usage']['total_tokens']}")
-```
+1. 运行 `./scripts/LfT.sh`。
+2. 在“输入”Tab 设置 `Provider=anthropic`，`Model=claude-sonnet-4-5`，选择 `misc/input/lithoformer/chapter3.md`。
+3. `Detect` 预览题目后可在命令行输入 `/clear`、`/bank` 等指令，或按 `p/t/a` 切换功能开关。
+4. `Start` 期间 RateLimitBar 会展示 Anthropics RPM/TPM，完成后输出文件命名为 `BatchId-文件名-模型.txt`，ShouldBe.txt 采用中英交织格式。
 
 ---
 
@@ -1340,8 +767,8 @@ class MyProvider(BaseLLMProvider):
    - `domain/` - 领域模型和服务
    - `application/` - 用例和端口接口
    - `infrastructure/` - 适配器、Prompts、Schemas
-   - `cli/` - CLI 入口
-3. 在 `api.py` 添加新的 API 函数
+   - `tui/` - Textual TUI（可选）
+3. 在共享层按需新增 Widget / Provider，保持与 TUI 对齐
 
 **无需修改其他子域**！
 
@@ -1445,7 +872,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 ## 📚 文档
 
 - **[AGENTS.md](AGENTS.md)** – AI 协作记忆（Claude/ChatGPT 等通用指引）
-- 架构、CLI、API 的详细说明已整合进本 README（参见目录链接）。
+- 架构与 TUI 流程的详细说明已整合进本 README（参见目录链接）。
 
 ---
 
@@ -1481,7 +908,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 **双语输出 & 题目元数据**
 
 - ✨ Lithoformer LLM Schema 新增 `stem_translation`、`options_translation` 等字段，输出逐行中英双语。
-- ✨ CLI/API/TUI 自动推算批次号与题目 `L` 编码，Formatter 在写出 ShouldBe.txt 时一并附加。
+- ✨ TUI 自动推算批次号与题目 `L` 编码，Formatter 在写出 ShouldBe.txt 时一并附加（历史 CLI/API 已在 v0.16 前移除）。
 - 🛠️ `ParseQuizUseCase` 对译文字段做长度对齐和空白清洗，防止 Formatter 阶段出现错位。
 - 🛠️ `QuizFormatter` 重写为行级交织逻辑，并在日志中记录输出统计。
 
@@ -1491,7 +918,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
 
 - ✨ Textual TUI 参考 JiraTUI 进行 UI/交互重写，加入 Detect → START 双阶段流程与文件树选择。
 - ✨ 新增实时日志、题目状态表、双进度条及命令输入区，默认保留最近 999 条记录。
-- 🛠️ CLI 与 TUI 共享批次推断逻辑，支持 Detect 阶段轻量扫描，Start 阶段流式更新。
+- 🛠️ TUI 共享批次推断逻辑，支持 Detect 阶段轻量扫描，Start 阶段流式更新。
 
 ### v0.9.1a (2025-10-14)
 
@@ -1524,7 +951,7 @@ result = reanimate(..., provider="anthropic", model="claude-sonnet-4-5")
   - 采用领域驱动设计（DDD）：Bounded Contexts（Reanimator 和 Lithoformer）
   - 采用六边形架构（Hexagonal）：Ports & Adapters 模式
   - Shared Kernel：业务无关的基础设施层
-  - 完整的 4 层分层：Domain → Application → Infrastructure → CLI/API
+  - 完整的 4 层分层：Domain → Application → Infrastructure → TUI
 
 - ✨ **子域隔离**：
   - Prompts 和 Schemas 移到各自子域 Infrastructure 层

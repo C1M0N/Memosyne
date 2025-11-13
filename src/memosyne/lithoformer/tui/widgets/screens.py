@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
 import re
 import threading
@@ -33,6 +34,7 @@ from ....shared.utils import (
     unique_path,
 )
 from ....shared.utils.model_codes import list_all_models
+from ....shared.infrastructure.stats_db import get_stats_repository
 from ...application import ParseQuizUseCase, QuizProcessingEvent
 from ...domain.services import (
     infer_titles_from_filename,
@@ -43,7 +45,7 @@ from ...domain.services import (
 from ...infrastructure import FileAdapter, FormatterAdapter, LithoformerLLMAdapter
 from ..constants import ASCII_LOGO
 from ..logging_utils import build_textual_handler
-from .feature_toggles import FeatureTogglesWidget
+from .feature_toggles import LithoformerFeatureToggles
 from .filters import (
     BatchInput,
     CommandInput,
@@ -69,12 +71,7 @@ from .filters import (
     TitleInput,
 )
 from .questions_table import QuestionRow, QuestionsTable
-from .custom_progress import CustomProgressBar
-from .rate_limit_bar import RateLimitBar
-from .rate_limit_manager import RateLimitManager
-
-# Reanimator integration
-from ....reanimator.tui.widgets.screens import ReanimatorContainer
+from ....shared.tui import CustomProgressBar, RateLimitBar, RateLimitManager
 
 
 @dataclass(slots=True)
@@ -289,120 +286,92 @@ class MainScreen(Screen):
         appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
         flags = appcfg.get_feature_flags()
 
-        # 顶层TabbedContent：包含Lithoformer和未来其他模块（如Reanimater）
-        with TabbedContent(id="app-tabs"):
-            # Lithoformer Tab
-            with TabPane(title="Lithoformer", id="tab-lithoformer"):
-                # 主容器：左列 + 右侧区域
-                with Horizontal(id="main-container"):
-                    # 左列 (0-760px): LOGO + 信息区 + 题目列表
-                    with Vertical(id="left-col"):
-                        # LOGO 和信息区合并在一个容器中
-                        with Vertical(id="header-area"):
-                            yield Static(ASCII_LOGO, id="logo-panel")
-                            yield FeatureTogglesWidget(
-                                concurrent=flags.enable_concurrent,
-                                translation=flags.enable_translation,
-                                parsing=flags.enable_parsing,
-                                id="feature-toggles"
-                            )
-                        # 题目列表区域：题目表格 + rate limit进度条
-                        questions_area = Vertical(id="questions-area")
-                        questions_area.border_title = "题目列表"
-                        with questions_area:
-                            yield QuestionsTable()
-                            yield RateLimitBar()
+        # 主容器：左列 + 右侧区域
+        with Horizontal(id="main-container"):
+            # 左列 (0-760px): LOGO + 信息区 + 题目列表
+            with Vertical(id="left-col"):
+                with Vertical(id="header-area"):
+                    yield Static(ASCII_LOGO, id="logo-panel")
+                    yield LithoformerFeatureToggles(
+                        concurrent=flags.enable_concurrent,
+                        translation=flags.enable_translation,
+                        parsing=flags.enable_parsing,
+                        id="feature-toggles"
+                    )
+                questions_area = Vertical(id="questions-area")
+                questions_area.border_title = "题目列表"
+                with questions_area:
+                    yield QuestionsTable()
+                    yield RateLimitBar()
 
-                    # 右侧区域 (760-1600px): 包含中列、右列和控制台
-                    with Vertical(id="right-area"):
-                        # 顶部：中列 + 右列
-                        with Horizontal(id="top-section"):
-                            # 中列 (760-1320px): 选项卡式内容区
-                            with Vertical(id="middle-col"):
-                                with TabbedContent(id="main-tabs"):
-                                    # 第一个选项卡：输入配置
-                                    with TabPane(title="输入", id="tab-inputs"):
-                                        yield InputPathInput(value=str(self.settings.lithoformer_input_dir))
-                                        yield OutputPathInput(value=str(self.settings.lithoformer_output_dir))
+            # 右侧区域 (760-1600px): 包含中列、右列和控制台
+            with Vertical(id="right-area"):
+                with Horizontal(id="top-section"):
+                    with Vertical(id="middle-col"):
+                        with TabbedContent(id="main-tabs"):
+                            with TabPane(title="输入", id="tab-inputs"):
+                                yield InputPathInput(value=str(self.settings.lithoformer_input_dir))
+                                yield OutputPathInput(value=str(self.settings.lithoformer_output_dir))
 
-                                        with Horizontal(id="provider-model-row"):
-                                            yield ProviderSelectionInput(value=self.settings.default_llm_provider)
-                                            yield ModelSelectionInput()
+                                with Horizontal(id="provider-model-row"):
+                                    yield ProviderSelectionInput(value=self.settings.default_llm_provider)
+                                    yield ModelSelectionInput()
 
-                                        yield ModelInput()
-                                        yield TitleInput()
+                                yield ModelInput()
+                                yield TitleInput()
 
-                                        with Horizontal(id="seq-batch-row"):
-                                            yield SequenceInput()
-                                            yield BatchInput()
+                                with Horizontal(id="seq-batch-row"):
+                                    yield SequenceInput()
+                                    yield BatchInput()
 
-                                        yield OutputFilenameInput()
-                                        yield NoteInput()
+                                yield OutputFilenameInput()
+                                yield NoteInput()
 
-                                    # 第二个选项卡：预览展示
-                                    with TabPane(title="预览", id="tab-preview"):
-                                        preview = TextArea(id="preview-area", read_only=True)
-                                        preview.border_title = "检测结果预览"
-                                        yield preview
+                            with TabPane(title="预览", id="tab-preview"):
+                                preview = TextArea(id="preview-area", read_only=True)
+                                preview.border_title = "检测结果预览"
+                                yield preview
 
-                                    # 第三个选项卡：配置管理
-                                    with TabPane(title="配置", id="tab-config"):
-                                        # 从数据库读取配置值
-                                        config_repo = self.settings._config_repo
-                                        from ....shared.infrastructure.app_config import SQLiteAppConfigService
-                                        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
-                                        paths = appcfg.get_paths()
-                                        default_input = str(paths.input_dir) if paths.input_dir else ""
-                                        default_output = str(paths.output_dir) if paths.output_dir else ""
-                                        default_model = appcfg.get_default_model()
-                                        max_concurrent = appcfg.get_config("max_concurrent") or "10"
-                                        max_retries = appcfg.get_config("max_retries") or "1"
+                            with TabPane(title="配置", id="tab-config"):
+                                from ....shared.infrastructure.app_config import SQLiteAppConfigService
+                                appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
+                                paths = appcfg.get_paths()
+                                default_input = str(paths.input_dir) if paths.input_dir else ""
+                                default_output = str(paths.output_dir) if paths.output_dir else ""
+                                default_model = appcfg.get_default_model()
+                                max_concurrent = appcfg.get_config("max_concurrent") or "10"
+                                max_retries = appcfg.get_config("max_retries") or "1"
+                                flags = appcfg.get_feature_flags()
+                                openai_tier = flags.openai_tier
+                                anthropic_tier = flags.anthropic_tier
+                                reserved_5 = appcfg.get_config("reserved_config_5") or ""
+                                reserved_6 = appcfg.get_config("reserved_config_6") or ""
+                                reserved_7 = appcfg.get_config("reserved_config_7") or ""
 
-                                        # 读取Tier配置（从feature表）
-                                        from ....shared.infrastructure.app_config import SQLiteAppConfigService
-                                        appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
-                                        flags = appcfg.get_feature_flags()
-                                        openai_tier = flags.openai_tier
-                                        anthropic_tier = flags.anthropic_tier
+                                yield ConfigDefaultInputDirInput(value=default_input)
+                                yield ConfigDefaultOutputDirInput(value=default_output)
+                                yield ConfigDefaultModelInput(value=default_model)
+                                yield ConfigMaxConcurrentInput(value=max_concurrent)
+                                yield ConfigMaxRetriesInput(value=max_retries)
+                                yield ConfigOpenAITierSelect(value=openai_tier)
+                                yield ConfigAnthropicTierSelect(value=anthropic_tier)
+                                yield ConfigReserved5Input(value=reserved_5)
+                                yield ConfigReserved6Input(value=reserved_6)
+                                yield ConfigReserved7Input(value=reserved_7)
 
-                                        reserved_5 = appcfg.get_config("reserved_config_5") or ""
-                                        reserved_6 = appcfg.get_config("reserved_config_6") or ""
-                                        reserved_7 = appcfg.get_config("reserved_config_7") or ""
+                    with Vertical(id="right-col"):
+                        yield self._file_tree
+                        yield Button("Detect", id="action-button", variant="primary")
 
-                                        yield ConfigDefaultInputDirInput(value=default_input)
-                                        yield ConfigDefaultOutputDirInput(value=default_output)
-                                        yield ConfigDefaultModelInput(value=default_model)
-                                        yield ConfigMaxConcurrentInput(value=max_concurrent)
-                                        yield ConfigMaxRetriesInput(value=max_retries)
-                                        yield ConfigOpenAITierSelect(value=openai_tier)
-                                        yield ConfigAnthropicTierSelect(value=anthropic_tier)
-                                        yield ConfigReserved5Input(value=reserved_5)
-                                        yield ConfigReserved6Input(value=reserved_6)
-                                        yield ConfigReserved7Input(value=reserved_7)
+                log_view = RichLog(id="log-view", highlight=True, markup=True)
+                log_view.border_title = "控制台"
+                if hasattr(log_view, "max_lines"):
+                    log_view.max_lines = 999
+                yield log_view
+                yield CommandInput()
 
-                            # 右列 (1320-1600px): 文件树 + 按钮
-                            with Vertical(id="right-col"):
-                                yield self._file_tree
-                                yield Button("Detect", id="action-button", variant="primary")
-
-                        # 控制台区 (横跨整个右侧区域，760-1600px)
-                        log_view = RichLog(id="log-view", highlight=True, markup=True)
-                        log_view.border_title = "控制台"
-                        if hasattr(log_view, "max_lines"):
-                            log_view.max_lines = 999
-                        yield log_view
-
-                        yield CommandInput()
-
-                # 底部：进度条区（使用新的自定义进度条）
-                yield CustomProgressBar(total=1, id="total-progress")
-
-                # Footer：显示快捷键
-                yield Footer()
-
-            # Reanimator Tab
-            with TabPane(title="Reanimator", id="tab-reanimator"):
-                yield ReanimatorContainer(id="reanimator-container")
+        yield CustomProgressBar(total=1, id="total-progress")
+        yield Footer()
 
     @staticmethod
     def _extract_select_value(raw: object) -> str | None:
@@ -453,17 +422,17 @@ class MainScreen(Screen):
         else:
             return
 
-        # 更新 FeatureTogglesWidget 显示
-        toggles = self.query_one("#feature-toggles", FeatureTogglesWidget)
+        # 更新 LithoformerFeatureToggles 显示
+        toggles = self.query_one("#feature-toggles", LithoformerFeatureToggles)
         toggles.update_toggle(feature_name, new_value)
 
         # 输出日志
         status = "已启用" if new_value else "已禁用"
         self.logger.info(f"✓ {feature_label}模式{status}")
 
-    @on(FeatureTogglesWidget.ToggleChanged)
-    def handle_toggle_changed(self, event: FeatureTogglesWidget.ToggleChanged) -> None:
-        """处理 FeatureTogglesWidget 的点击事件"""
+    @on(LithoformerFeatureToggles.ToggleChanged)
+    def handle_toggle_changed(self, event: LithoformerFeatureToggles.ToggleChanged) -> None:
+        """处理 LithoformerFeatureToggles 的点击事件"""
         # 保存到数据库
         from ....shared.infrastructure.app_config import SQLiteAppConfigService
         appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
@@ -664,49 +633,48 @@ class MainScreen(Screen):
     async def handle_command_submitted(self, event: Input.Submitted) -> None:
         """Handle command input submission."""
         command = event.value.strip().lower()
+        self._set_input_value(self.command_input, "")
+        if not command:
+            return
 
-        # v1.9.2: 如果正在等待bank保存确认，则处理y/n输入
+        yes_tokens = {"y", "yes", "/yes"}
+        no_tokens = {"n", "no", "/no"}
+
+        # v1.9.2: 如果正在等待bank保存确认，则处理确认命令
         if self._waiting_for_bank_confirmation:
-            if command in ["y", "yes"]:
-                self._set_input_value(self.command_input, "")
+            if command in yes_tokens:
                 await self._save_to_bank_confirmed()
                 return
-            elif command in ["n", "no"]:
-                self._set_input_value(self.command_input, "")
+            if command in no_tokens:
                 await self._skip_bank_save()
                 return
-            else:
-                self.logger.warning("请输入 y (保存) 或 n (跳过)")
-                self._set_input_value(self.command_input, "")
-                return
+            self.logger.warning("请输入 /yes (保存) 或 /no (跳过)")
+            return
 
-        # v1.9.3: 如果正在等待覆盖确认，则处理y/n输入
+        # v1.9.3: 如果正在等待覆盖确认，则处理确认命令
         if self._waiting_for_overwrite_confirmation:
-            if command in ["y", "yes"]:
-                self._set_input_value(self.command_input, "")
+            if command in yes_tokens:
                 await self._execute_bank_save()
                 return
-            elif command in ["n", "no"]:
-                self._set_input_value(self.command_input, "")
+            if command in no_tokens:
                 await self._skip_bank_save()
                 return
-            else:
-                self.logger.warning("请输入 y (覆盖) 或 n (跳过)")
-                self._set_input_value(self.command_input, "")
-                return
+            self.logger.warning("请输入 /yes (覆盖) 或 /no (跳过)")
+            return
 
         # 常规命令处理
         if command == "/clear":
             self.log_view.clear()
-            self._set_input_value(self.command_input, "")
             self.logger.info("日志已清空")
+        elif command == "/bank":
+            self._log_recent_bank_entries()
         elif command == "/exit":
             self.logger.info("收到退出指令，正在关闭应用…")
-            self._set_input_value(self.command_input, "")
             await self.app.action_quit()
-        elif command:
+        elif command in yes_tokens | no_tokens:
+            self.logger.warning("当前没有需要确认的操作")
+        else:
             self.logger.warning("未知命令：%s", command)
-            self._set_input_value(self.command_input, "")
 
     @on(Input.Changed, "#command-input")
     async def handle_command_changed(self, event: Input.Changed) -> None:
@@ -975,7 +943,6 @@ class MainScreen(Screen):
         # 读取功能配置（统一服务）
         from ....shared.infrastructure.app_config import SQLiteAppConfigService
         from ...domain.models import FeatureConfig
-        from ....shared.infrastructure.config_db import get_stats_repository
 
         appcfg = SQLiteAppConfigService(self.settings.db_dir / "config.db")
         flags = appcfg.get_feature_flags()
@@ -1457,8 +1424,45 @@ class MainScreen(Screen):
             self.logger.info(f"    新题: 批次 {new_batch_id} | 题干: \"{new_stem_preview}\"")
             self.logger.info("")
 
-        self.logger.info("是否全部覆盖？(y/n)")
+        self.logger.info("是否全部覆盖？请输入 /yes 或 /no")
         self.logger.info("=" * 50)
+
+    def _log_recent_bank_entries(self, limit: int = 10) -> None:
+        """输出最近的题库记录供命令面板查看。"""
+        stats_repo = get_stats_repository(self.settings.db_dir / "stat.db")
+        entries = stats_repo.get_lithoformer_bank(limit=limit)
+        if not entries:
+            self.logger.info("\n[bold cyan]题库暂无记录[/bold cyan]")
+            return
+
+        self.logger.info("\n[bold cyan]题库最近 %d 条[/bold cyan]", len(entries))
+        for entry in entries:
+            preview = self._stem_preview_from_output(entry.get("output"))
+            self.logger.info(
+                "  %s | 批次 %s | %s | %s",
+                entry.get("question_number", "--"),
+                entry.get("batch_id", "--"),
+                entry.get("model", "--"),
+                preview,
+            )
+
+    @staticmethod
+    def _stem_preview_from_output(output: str | None) -> str:
+        if not output:
+            return "(无预览)"
+        try:
+            data = json.loads(output)
+            stem = (
+                data.get("stem")
+                or data.get("question")
+                or data.get("prompt")
+                or ""
+            ).strip()
+            if not stem:
+                return "(无题干)"
+            return stem[:40] + ("…" if len(stem) > 40 else "")
+        except Exception:
+            return "(解析失败)"
 
     # region detection helpers ----------------------------------------------------
     def _detect_worker(

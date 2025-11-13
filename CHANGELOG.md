@@ -13,6 +13,10 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 - 单题 LLM 调用增加 5 分钟超时保护，超时会自动消耗一次 `max_retries` 发起重试，避免长时间卡死。
 - 新增 `lithoformer_prompts` 表（存储 prompt 版本），提示词改为从 `stat.db` 动态加载，可按版本迭代。
 - `lithoformer_terminal_logs` 表新增 `logger` 列，持久化原始 logger 名称并在写入时剥离时间戳/级别前缀，同时屏蔽 httpx 内部噪声日志。
+- 移除遗留 CLI 层与 `memosyne.api`：删除 `src/memosyne/*/cli/`、`scripts/run_reanimate.sh`、`scripts/LfC.sh` 与 `api.py`，仅保留 Textual TUI（`./scripts/RaT.sh`、`./scripts/LfT.sh`）。README / AGENTS 重写以反映新的入口。
+- Reanimator TUI 与 Lithoformer 对齐：新增数据库日志 handler、命令面板 `/clear`/`/bank`/`/yes`/`/no`、输入/配置字段即时校验、自动重建目录树与序号预览，并共用 RateLimitBar + CustomProgressBar 实现。
+- Reanimator Start 阶段强制关闭 `tqdm` 进度条（只使用 Textual 更新），修复 macOS 3.13 `bad value(s) in fds_to_keep` 崩溃。
+- 移除 tqdm 依赖：`Progress` 工具成为轻量级占位实现，`requirements.txt` 不再需要 tqdm。
 
 ### Fixed
 - Propagated TUI-detected `question_number` values into sequential/concurrent Lithoformer pipelines (stats + bank writes) with index-based fallback, and trimmed stored `batch_id` to the leading segment (e.g. `251030E006`).
@@ -26,8 +30,8 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 - Introduced `AppConfigService` (SQLite-backed) exposing typed models: `FeatureFlags`, `RuntimeTuning`, `AppConfigBundle`, `LithoformerPaths`.
 - TUI “配置/功能” tabs now read/write via `AppConfigService`; default model is persisted only from the “配置” tab (model dropdown does not persist).
 - Unified concurrent/sequential pipelines behind a single async event interface: `ConcurrentParseQuizUseCase.stream_async()`; TUI consumes events to update rows/progress/tokens.
-- Added `UseCaseFactory` to assemble provider/adapter/use case in the Application layer; TUI/CLI reuse the factory.
-- CLI reads defaults (paths, flags, tuning) from `AppConfigService`; supports concurrent mode and streams progress per question.
+- Added `UseCaseFactory` to assemble provider/adapter/use case in the Application layer; UI 入口（当时包含 CLI）复用该工厂。
+- UI 入口（当时 CLI + TUI）读取 `AppConfigService` 默认路径/旗标/调优配置，支持并发模式并按题目流式输出进度。
 - Settings refactor: only API keys (and temp) remain from `.env`; default dirs and model now resolved via `AppConfigService` with sample-dir safeguards.
 
 ### Fixed
@@ -49,7 +53,7 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 - Moved the reference `layout.xml` blueprint into `misc/layout.xml` to keep the project root tidy.
 - Renamed the TUI “标签”字段为 `NoteInput` 并改为非必填，保持备注可选同时沿用 LLM 提示附加逻辑。
 - Questions table now displays canonical `L` 题号 derived from the sequence seed, and the preview选项卡会同步展示该题的完整 Markdown 原文。
-- Introduced `config/paths.json` and `misc/` sample directories; CLI/API/TUI detect read-only samples and prompt users for real input/output paths.
+- Introduced `config/paths.json` and `misc/` sample directories; TUI 会在检测到只读样例时提示用户选择真实的输入/输出目录。
 
 ### Fixed
 - Batch ID input now shares the row with sequence as designed; Detect/Start button remains anchored below the directory tree.
@@ -83,14 +87,14 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 ## [v0.10.1a] - 2025-10-16
 
 ### Added
-- Lithoformer bilingual pipeline: LLM schema emits paired `*_translation` fields consumed by CLI, API, and TUI.
+- Lithoformer bilingual pipeline: LLM schema emits paired `*_translation` fields供 UI 层使用（历史 CLI 已废弃，现统一由 TUI 消费）。
 - QuizFormatter interleaves original text and Simplified Chinese line-by-line and appends batch IDs with sequential `L` codes.
 
 ### Changed
-- CLI/API forward batch identifiers and question seeds so formatter output stays deterministic across a batch.
+- UI 层会传递批次号与题号种子，保证 Formatter 输出在同一批次内保持一致。
 
 ## [v0.9.3]
-- Introduced the bilingual formatter pipeline and synchronized it with CLI/TUI flows.
+- Introduced the bilingual formatter pipeline and synchronized it with Textual TUI flows。
 
 ## [v0.9.2]
 - First Textual-based Lithoformer TUI rewrite featuring Detect/Start workflow, live log tailing, and the responsive questions table.

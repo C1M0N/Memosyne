@@ -1,5 +1,5 @@
 #!/bin/bash
-# Lithoformer TUI 标准启动脚本（带窗口大小自动调整）
+# Reanimator TUI 启动脚本
 
 set -euo pipefail
 
@@ -21,13 +21,10 @@ else
   exit 127
 fi
 
-# 设置理想的终端窗口尺寸
+# 可选：调大终端窗口，便于显示 Reanimator TUI（与 Lithoformer 保持一致）
 IDEAL_COLS=212
 IDEAL_ROWS=64
-
-# 尝试调整终端窗口大小（使用XTerm转义序列）
-# 注意：iTerm2用户需要关闭 Preferences > Terminal > "Disable session-initiated window resizing"
 printf '\e[8;%d;%dt' "$IDEAL_ROWS" "$IDEAL_COLS"
 
 export PYTHONPATH=src
-"$PY_BIN" -m memosyne.lithoformer.tui.app "$@"
+"$PY_BIN" -m memosyne.reanimator.tui.app "$@"

@@ -7,38 +7,16 @@ The innermost layer following strict dependency rules:
 - Encapsulates business rules (POS correction, tag mapping)
 - Independently testable (no mocks needed)
 """
-from .models import TermInput, LLMResponse, TermOutput, MemoID
-from .services import (
-    apply_business_rules,
-    get_chinese_tag,
-    generate_memo_id,
-    validate_word_format,
-    should_force_phrase_pos,
-)
-from .exceptions import (
-    ReanimatorDomainError,
-    InvalidTermError,
-    InvalidMemoIDError,
-    TermValidationError,
-    POSCorrectionError,
-)
+from .models import TermInput, LLMResponse, TermOutput, WordID
+from .services import apply_business_rules, map_field_label, generate_word_id, parse_word_index_from_filename
 
 __all__ = [
-    # Models
     "TermInput",
     "LLMResponse",
     "TermOutput",
-    "MemoID",
-    # Services
+    "WordID",
     "apply_business_rules",
-    "get_chinese_tag",
-    "generate_memo_id",
-    "validate_word_format",
-    "should_force_phrase_pos",
-    # Exceptions
-    "ReanimatorDomainError",
-    "InvalidTermError",
-    "InvalidMemoIDError",
-    "TermValidationError",
-    "POSCorrectionError",
+    "map_field_label",
+    "generate_word_id",
+    "parse_word_index_from_filename",
 ]

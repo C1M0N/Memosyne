@@ -8,15 +8,37 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from ..config.app_config import FeatureFlags, RuntimeTuning, AppConfigBundle, LithoformerPaths, LLMModelInfo
+from ..config.app_config import (
+    FeatureFlags,
+    RuntimeTuning,
+    AppConfigBundle,
+    WorkspacePaths,
+    LLMModelInfo,
+)
 
 
 class SQLiteAppConfigService:
     """Unified configuration service backed by SQLite (config.db)."""
 
-    def __init__(self, db_path: Path) -> None:
+    _VALID_CONTEXTS = {"lithoformer", "reanimator"}
+
+    def __init__(self, db_path: Path, *, context: str = "lithoformer") -> None:
+        if context not in self._VALID_CONTEXTS:
+            raise ValueError(f"Unsupported context: {context}")
         self.db_path = db_path
+        self.context = context
+        self._config_table = f"{context}_config"
+        self._feature_table = f"{context}_feature"
+        self._input_key, self._output_key = self._resolve_path_keys(context)
         self._ensure_db_exists()
+
+    @staticmethod
+    def _resolve_path_keys(context: str) -> tuple[str, str]:
+        if context == "lithoformer":
+            return "lithoformer_input_dir", "lithoformer_output_dir"
+        if context == "reanimator":
+            return "reanimator_input_dir", "reanimator_output_dir"
+        return (f"{context}_input_dir", f"{context}_output_dir")
 
     def _ensure_db_exists(self) -> None:
         """确保数据库表已初始化（使用全局单例）"""
@@ -26,9 +48,9 @@ class SQLiteAppConfigService:
 
     # --- feature flags ---
     def get_feature_flags(self) -> FeatureFlags:
-        """从lithoformer_feature表（key/value格式）读取功能配置"""
+        """读取当前上下文的 feature 表。"""
         with sqlite3.connect(str(self.db_path)) as conn:
-            cursor = conn.execute("SELECT key, value FROM lithoformer_feature")
+            cursor = conn.execute(f"SELECT key, value FROM {self._feature_table}")
             rows = cursor.fetchall()
 
             # 将key/value对转换为字典
@@ -52,13 +74,20 @@ class SQLiteAppConfigService:
         """更新功能配置（支持bool和int类型，存储为key/value对）"""
         if not kwargs:
             return
-        valid = {
-            "enable_translation",
-            "enable_parsing",
-            "enable_concurrent",
-            "openai_tier",
-            "anthropic_tier",
-        }
+        if self.context == "lithoformer":
+            valid = {
+                "enable_translation",
+                "enable_parsing",
+                "enable_concurrent",
+                "openai_tier",
+                "anthropic_tier",
+            }
+        else:
+            valid = {
+                "enable_translation",
+                "enable_parsing",
+                "enable_concurrent",
+            }
         fields = {k: v for k, v in kwargs.items() if k in valid}
         if not fields:
             return
@@ -68,15 +97,14 @@ class SQLiteAppConfigService:
 
         with sqlite3.connect(str(self.db_path)) as conn:
             for key, value in fields.items():
-                # 将bool转换为'1'/'0'，int转换为字符串
                 if isinstance(value, bool):
                     value_str = "1" if value else "0"
                 else:
                     value_str = str(value)
 
                 conn.execute(
-                    """
-                    INSERT INTO lithoformer_feature (key, value, updated_at)
+                    f"""
+                    INSERT INTO {self._feature_table} (key, value, updated_at)
                     VALUES (?, ?, ?)
                     ON CONFLICT(key) DO UPDATE SET
                         value = excluded.value,
@@ -89,13 +117,16 @@ class SQLiteAppConfigService:
     # --- key/value config ---
     def get_config(self, key: str) -> str | None:
         with sqlite3.connect(str(self.db_path)) as conn:
-            row = conn.execute("SELECT value FROM lithoformer_config WHERE key = ?", (key,)).fetchone()
+            row = conn.execute(
+                f"SELECT value FROM {self._config_table} WHERE key = ?",
+                (key,),
+            ).fetchone()
             return row[0] if row else None
 
     def set_config(self, key: str, value: str) -> None:
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute(
-                "INSERT INTO lithoformer_config (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+                f"INSERT INTO {self._config_table} (key, value, updated_at) VALUES (?, ?, datetime('now'))"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (key, value),
             )
@@ -106,18 +137,19 @@ class SQLiteAppConfigService:
         max_concurrent = self.get_config("max_concurrent")
         max_retries = self.get_config("max_retries")
 
-        # 处理max_concurrent的"auto"值
         if max_concurrent:
             if max_concurrent.lower() == "auto":
-                max_concurrent_value = "auto"  # 保持字符串，由RuntimeTuning的validator处理
+                max_concurrent_value = "auto"
             else:
                 max_concurrent_value = int(max_concurrent)
         else:
-            max_concurrent_value = 10
+            max_concurrent_value = 10 if self.context == "lithoformer" else 3
+
+        default_retries = 1 if self.context == "lithoformer" else 3
 
         return RuntimeTuning(
             max_concurrent=max_concurrent_value,
-            max_retries=int(max_retries) if max_retries else 1,
+            max_retries=int(max_retries) if max_retries else default_retries,
         )
 
     def get_default_model(self) -> str:
@@ -144,11 +176,11 @@ class SQLiteAppConfigService:
         )
 
     # --- paths ---
-    def get_paths(self) -> LithoformerPaths:
-        input_dir = self.get_config("lithoformer_input_dir")
-        output_dir = self.get_config("lithoformer_output_dir")
+    def get_paths(self) -> WorkspacePaths:
+        input_dir = self.get_config(self._input_key)
+        output_dir = self.get_config(self._output_key)
         from pathlib import Path
-        return LithoformerPaths(
+        return WorkspacePaths(
             input_dir=Path(input_dir).expanduser().resolve() if input_dir else None,
             output_dir=Path(output_dir).expanduser().resolve() if output_dir else None,
         )
@@ -156,9 +188,9 @@ class SQLiteAppConfigService:
     def update_paths(self, *, input_dir: str | None = None, output_dir: str | None = None) -> None:
         from pathlib import Path
         if input_dir is not None:
-            self.set_config("lithoformer_input_dir", str(Path(input_dir).expanduser().resolve()))
+            self.set_config(self._input_key, str(Path(input_dir).expanduser().resolve()))
         if output_dir is not None:
-            self.set_config("lithoformer_output_dir", str(Path(output_dir).expanduser().resolve()))
+            self.set_config(self._output_key, str(Path(output_dir).expanduser().resolve()))
 
     # --- LLM models ---
     def get_all_models(self, active_only: bool = True) -> list[LLMModelInfo]:
@@ -311,10 +343,12 @@ class SQLiteAppConfigService:
         """
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
-                SELECT key, value FROM lithoformer_config
+            cursor = conn.execute(
+                f"""
+                SELECT key, value FROM {self._config_table}
                 WHERE key IN ('batch_timezone', 'max_batch_runs_per_day', 'reanimator_term_list_version')
-            """)
+                """
+            )
             rows = cursor.fetchall()
 
             config = {row["key"]: row["value"] for row in rows}
@@ -338,11 +372,13 @@ class SQLiteAppConfigService:
         """
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
-                SELECT key, value FROM lithoformer_config
+            cursor = conn.execute(
+                f"""
+                SELECT key, value FROM {self._config_table}
                 WHERE key IN ('rate_limit_max_retries', 'rate_limit_base_delay',
                              'rate_limit_max_wait', 'other_error_retry_delay')
-            """)
+                """
+            )
             rows = cursor.fetchall()
 
             config = {row["key"]: row["value"] for row in rows}
@@ -365,10 +401,12 @@ class SQLiteAppConfigService:
         """
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            cursor = conn.execute("""
-                SELECT key, value FROM lithoformer_config
+            cursor = conn.execute(
+                f"""
+                SELECT key, value FROM {self._config_table}
                 WHERE key IN ('anthropic_max_tokens', 'openai_max_retries')
-            """)
+                """
+            )
             rows = cursor.fetchall()
 
             config = {row["key"]: row["value"] for row in rows}

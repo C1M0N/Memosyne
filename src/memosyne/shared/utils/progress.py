@@ -2,6 +2,9 @@
 通用进度显示工具
 
 提供适用于逐项处理流程和长时间等待步骤的统一进度体验。
+为了兼容纯 Textual/TUI 流程，这里的 Progress 为轻量级占位实现，
+不会依赖 tqdm 或尝试操作终端，调用方可以继续使用 progress_callback
+获取实时进度。
 """
 from __future__ import annotations
 
@@ -12,14 +15,12 @@ from contextlib import contextmanager
 from itertools import cycle
 from typing import Iterable, Iterator, Optional, TypeVar
 
-from tqdm import tqdm
-
 T = TypeVar("T")
 _SPINNER_FRAMES = "|/-\\"
 
 
 class Progress:
-    """简单封装 tqdm 以便在各个子域复用。"""
+    """轻量级进度追踪器（不进行终端绘制，由调用方决定如何显示）。"""
 
     def __init__(
         self,
@@ -35,50 +36,33 @@ class Progress:
         self._desc = desc
         self._unit = unit
         self._ncols = ncols
-        self._bar: Optional[tqdm] = None
+        self._current = 0
+        self._progress_desc: Optional[str] = desc
 
     def __enter__(self) -> "Progress":
-        if self._enabled:
-            bar_format = "{l_bar}{bar}| {n_fmt}/{total_fmt} [{rate_fmt}] [剩余: {remaining}]" if self._total else "{l_bar}{bar}| {n_fmt} [{rate_fmt}]"
-            self._bar = tqdm(
-                total=self._total,
-                desc=self._desc,
-                unit=self._unit,
-                ncols=self._ncols,
-                ascii=True,
-                mininterval=0.0,
-                miniters=1,
-                smoothing=0.0,
-                dynamic_ncols=False,
-                bar_format=bar_format,
-                leave=True,
-            )
-            self._bar.refresh()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
 
     def advance(self, n: int = 1, *, desc: Optional[str] = None) -> None:
-        if not self._bar:
+        if not self._enabled:
             return
+        self._current += n
         if desc is not None:
-            self._bar.set_description(desc)
-        self._bar.update(n)
-        self._bar.refresh()
+            self._progress_desc = desc
 
     def set_description(self, desc: str) -> None:
-        if self._bar:
-            self._bar.set_description(desc)
+        if not self._enabled:
+            return
+        self._progress_desc = desc
 
     def set_postfix(self, **kwargs) -> None:
-        if self._bar:
-            self._bar.set_postfix(kwargs, refresh=True)
+        # no-op placeholder保持兼容
+        return
 
     def close(self) -> None:
-        if self._bar:
-            self._bar.close()
-            self._bar = None
+        return
 
     @property
     def enabled(self) -> bool:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
-from textual.widgets import DirectoryTree, Input
+from textual.widgets import DirectoryTree, Input, Select
 
 
 INPUT_SUBTITLE = "[dodger_blue2]输入[/]"
@@ -17,7 +17,7 @@ class InputPathInput(Input):
 
     def __init__(self, value: str | None = None):
         super().__init__(
-            id="reanimator-input-directory",
+            id="input-directory",
             value=value or "",
             placeholder="请选择或输入包含术语 CSV 的目录",
         )
@@ -29,11 +29,47 @@ class OutputPathInput(Input):
 
     def __init__(self, value: str | None = None):
         super().__init__(
-            id="reanimator-output-directory",
+            id="output-directory",
             value=value or "",
             placeholder="处理结果输出目录",
         )
         self.border_title = "输出路径"
+
+
+class ProviderSelectionInput(Select):
+    """Selection widget for choosing the LLM provider."""
+
+    def __init__(self, options: list[tuple[str, str]] | None = None, value: str | None = None):
+        normalized = options or [("OpenAI", "openai"), ("Anthropic", "anthropic")]
+        default_value = value or (normalized[0][1] if normalized else Select.BLANK)
+        super().__init__(
+            options=normalized,
+            value=default_value,
+            allow_blank=False,
+            id="provider-select",
+            prompt="选择厂商",
+            name="provider-select",
+            type_to_search=True,
+            compact=True,
+        )
+        self.border_title = "厂商选择"
+
+
+class ModelSelectionInput(Select):
+    """Selection widget for choosing a concrete model."""
+
+    def __init__(self, options: list[tuple[str, str]] | None = None, value: str | None = None):
+        super().__init__(
+            options=options or [],
+            value=value or Select.BLANK,
+            allow_blank=True,
+            id="model-select",
+            prompt="选择模型",
+            name="model-select",
+            type_to_search=True,
+            compact=True,
+        )
+        self.border_title = "模型选择"
 
 
 class ModelInput(Input):
@@ -41,7 +77,7 @@ class ModelInput(Input):
 
     def __init__(self, value: str | None = None):
         super().__init__(
-            id="reanimator-model-input",
+            id="model-input",
             value=value or "",
             placeholder="格式：Provider::model（如 OpenAI::gpt-4o）",
         )
@@ -53,9 +89,9 @@ class BatchNoteInput(Input):
 
     def __init__(self, value: str | None = None):
         super().__init__(
-            id="reanimator-batch-note-input",
+            id="batch-note-input",
             value=value or "",
-            placeholder="可选，填写批次备注信息",
+            placeholder="可选，填写批次备注信息（会写入输出）",
         )
         self.border_title = "批次备注"
 
@@ -65,23 +101,11 @@ class BatchIdInput(Input):
 
     def __init__(self, value: str | None = None):
         super().__init__(
-            id="reanimator-batch-id-input",
+            id="batch-input",
             value=value or "",
             placeholder="批次号自动生成（YYMMDDX###），可覆盖",
         )
         self.border_title = "批次号"
-
-
-class StartMemoIndexInput(Input):
-    """Input widget for starting Memo ID index (auto-detected from bank)."""
-
-    def __init__(self, value: str | None = None):
-        super().__init__(
-            id="reanimator-start-memo-input",
-            value=value or "",
-            placeholder="起始 Memo 编号，自动从库中推断，可覆盖",
-        )
-        self.border_title = "起始 Memo 编号"
 
 
 class OutputFilenameInput(Input):
@@ -89,11 +113,36 @@ class OutputFilenameInput(Input):
 
     def __init__(self, value: str | None = None):
         super().__init__(
-            id="reanimator-output-filename-input",
+            id="output-filename-input",
             value=value or "",
             placeholder="输出文件名（含扩展名）",
         )
         self.border_title = "输出文件名"
+
+
+class SequenceInput(Input):
+    """Read-only input showing the derived start sequence."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="sequence-input",
+            value=value or "",
+            placeholder="由文件名自动推断",
+            disabled=True,
+        )
+        self.border_title = "序号"
+
+
+class NoteInput(Input):
+    """Extra instruction input appended to prompts (like Lithoformer)."""
+
+    def __init__(self, value: str | None = None):
+        super().__init__(
+            id="note-input",
+            value=value or "",
+            placeholder="可选，填写额外提示，会附加到 LLM 指令末尾",
+        )
+        self.border_title = "备注"
 
 
 class CommandInput(Input):
@@ -101,8 +150,8 @@ class CommandInput(Input):
 
     def __init__(self):
         super().__init__(
-            id="reanimator-command-input",
-            placeholder="/clear 清空日志 | /bank 查看术语库",
+            id="command-input",
+            placeholder="/clear /bank /yes /no",
         )
         self.border_title = "指令输入"
 
@@ -111,7 +160,7 @@ class ReanimatorDirectoryTree(DirectoryTree):
     """Directory tree widget for CSV file selection."""
 
     def __init__(self, root: Path):
-        super().__init__(root, id="reanimator-file-tree")
+        super().__init__(root, id="file-tree")
         self.border_title = "CSV 文件选择"
 
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:  # noqa: D401 - textual override

@@ -11,7 +11,7 @@ class ReanimatorApp(App):
     """Reanimator TUI Application."""
 
     TITLE = "Reanimator - 术语重生器"
-    CSS_PATH = None  # CSS defined inline in ReanimatorScreen
+    CSS_PATH = "css/reanimator_layout.tcss"
 
     def on_mount(self) -> None:
         """Push the main screen on app startup."""
@@ -25,3 +25,7 @@ def main() -> None:
 
 
 __all__ = ["ReanimatorApp", "main"]
+
+
+if __name__ == "__main__":
+    main()

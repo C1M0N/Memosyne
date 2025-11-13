@@ -135,7 +135,8 @@ class SequenceInput(Input):
         super().__init__(
             id="sequence-input",
             value=value or "",
-            placeholder="序号，例如 23",
+            placeholder="由文件名自动推断",
+            disabled=True,
         )
         self.border_title = "序号"
 
@@ -167,7 +168,7 @@ class CommandInput(Input):
     def __init__(self):
         super().__init__(
             id="command-input",
-            placeholder="/clear 清空日志",
+            placeholder="/clear /bank /yes /no",
         )
         self.border_title = "指令输入"
 

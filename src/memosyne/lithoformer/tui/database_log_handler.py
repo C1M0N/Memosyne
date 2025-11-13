@@ -79,6 +79,7 @@ class DatabaseLogHandler(logging.Handler):
                 log_type=log_type,
                 message=message,
                 logger=record.name,
+                domain="lithoformer",
             )
         except Exception:
             # 避免日志记录本身出错影响程序运行

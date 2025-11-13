@@ -43,9 +43,13 @@ class AppConfigBundle(BaseModel):
     tuning: RuntimeTuning = Field(default_factory=RuntimeTuning)
 
 
-class LithoformerPaths(BaseModel):
+class WorkspacePaths(BaseModel):
     input_dir: Path | None = Field(default=None)
     output_dir: Path | None = Field(default=None)
+
+
+# 向后兼容：大量旧代码仍引用 LithoformerPaths
+LithoformerPaths = WorkspacePaths
 
 
 class LLMModelInfo(BaseModel):

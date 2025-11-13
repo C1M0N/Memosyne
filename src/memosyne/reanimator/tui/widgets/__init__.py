@@ -1,5 +1,6 @@
 """Reanimator TUI widgets."""
 
+from .feature_toggles import ReanimatorFeatureToggles
 from .filters import (
     BatchIdInput,
     BatchNoteInput,
@@ -11,14 +12,18 @@ from .filters import (
     ConfigMaxRetriesInput,
     ConfigTermListPathInput,
     InputPathInput,
+    NoteInput,
+    SequenceInput,
+    ModelSelectionInput,
     ModelInput,
     OutputFilenameInput,
     OutputPathInput,
+    ProviderSelectionInput,
     ReanimatorDirectoryTree,
-    StartMemoIndexInput,
 )
 
 __all__ = [
+    "ReanimatorFeatureToggles",
     "BatchIdInput",
     "BatchNoteInput",
     "CommandInput",
@@ -29,9 +34,12 @@ __all__ = [
     "ConfigMaxRetriesInput",
     "ConfigTermListPathInput",
     "InputPathInput",
+    "NoteInput",
+    "SequenceInput",
+    "ModelSelectionInput",
     "ModelInput",
     "OutputFilenameInput",
     "OutputPathInput",
+    "ProviderSelectionInput",
     "ReanimatorDirectoryTree",
-    "StartMemoIndexInput",
 ]

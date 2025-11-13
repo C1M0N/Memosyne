@@ -1,0 +1,423 @@
+/* Lithoformer TUI - Based on layout.xml (1600×900) - Fixed */
+
+Screen {
+    background: #050c15;
+    color: #c9d6e8;
+    layout: vertical;
+}
+
+/* ==================================================================
+   APP-LEVEL TABBED CONTENT - 顶层Tab容器（Lithoformer + 未来其他模块）
+   ================================================================== */
+
+#app-tabs {
+    height: 100%;
+    background: #070d16;
+}
+
+/* 顶层Tabs栏 - 与jiraTUI保持一致的风格 */
+#app-tabs > Tabs {
+    height: 2;  /* tabs栏占用2行高度 */
+    background: #0d141f;
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* 顶层Tab按钮样式 */
+#app-tabs Tab {
+    background: transparent;
+    color: #9cb3ce;
+}
+
+#app-tabs Tab:hover {
+    background: #14253a;
+    color: #ffffff;
+}
+
+#app-tabs Tab.-active {
+    background: #2b61a7;
+    color: #ffffff;
+    text-style: bold;
+}
+
+/* 顶层TabPane内容区域 */
+#app-tabs TabPane {
+    height: 1fr;
+    padding: 0;
+    margin: 0;
+    background: #050c15;
+}
+
+#app-tabs ContentSwitcher {
+    height: 1fr;
+    background: #050c15;
+    margin: 0;
+    padding: 0;
+}
+
+/* ==================================================================
+   MAIN CONTAINER - 左列 + 右侧区域
+   ================================================================== */
+
+#main-container {
+    layout: horizontal;
+    height: 1fr;
+}
+
+/* 左列: LOGO + 信息区 + 题目列表 (760px / 1600px ≈ 47.5%) */
+#left-col {
+    width: 19fr;  /* 760/40 */
+    layout: vertical;
+    padding: 0;
+    margin: 0;
+}
+
+/* 消除 left-col 内部所有子元素之间的间距 */
+#left-col > * {
+    margin: 0;
+}
+
+/* 右侧区域: 中列 + 右列 + 控制台 (840px / 1600px ≈ 52.5%) */
+#right-area {
+    width: 21fr;  /* 840/40 */
+    layout: vertical;
+    padding: 0;
+    margin: 0;
+}
+
+/* 消除 right-area 内部所有子元素之间的间距 */
+#right-area > * {
+    margin: 0;
+}
+
+/* 顶部区域：中列和右列的水平容器 */
+#top-section {
+    layout: horizontal;
+    height: 28;  /* ~560px - 完整显示所有输入控件包括备注 */
+    padding: 0;
+    margin: 0 0 -2 0 !important;  /* 底部负边距，向下拉伸覆盖空行 */
+}
+
+/* 中列: 配置输入 (560px / 840px ≈ 66.7%) */
+#middle-col {
+    width: 2fr;  /* 560/280 = 2 */
+    layout: vertical;
+    padding: 0;
+    margin: 0;
+}
+
+/* 右列: 文件树 + 按钮 (280px / 840px ≈ 33.3%) */
+#right-col {
+    width: 1fr;  /* 280/280 = 1 */
+    layout: grid;
+    grid-size: 1;  /* 1列，行数自动 */
+    grid-rows: 1fr auto;  /* 文件树1fr占满，按钮auto自适应 */
+    padding: 0;
+    margin: 0;
+}
+
+/* ==================================================================
+   LEFT COLUMN
+   ================================================================== */
+
+/* LOGO + 信息区容器 */
+#header-area {
+    height: auto;
+    background: #0d141f;
+    border: none;  /* 容器不显示边框 */
+    padding: 0;
+    margin: 0 0 0 0;  /* 与题目列表之间不要空行 */
+}
+
+/* 消除 header-area 内部所有子元素之间的间距 */
+#header-area > * {
+    margin: 0;
+}
+
+#logo-panel {
+    height: 11;  /* ~220px (加高2行) */
+    padding: 1;
+    color: #4aa8ff;
+    background: #0d141f;
+    border: none;  /* 去掉边框 */
+    text-style: bold;
+    margin: 0;  /* 去掉底部边距 */
+    content-align: center middle;  /* 内容居中 */
+}
+
+#feature-toggles {
+    height: 3;  /* 3行高度 - 紧凑显示开关状态 */
+    border: none;  /* 去掉边框 */
+    background: #0d141f;
+    padding: 0 1;
+    color: #9cb3ce;
+    margin: 0;  /* 去掉底部边距 */
+}
+
+#questions-table {
+    height: 1fr;  /* 自适应高度 */
+    min-height: 10;  /* 最小高度 */
+    border: round #1f4b8f;
+    background: #070d16;
+    scrollbar-size-vertical: 1;
+    margin: 0;  /* 与上方 header-area 之间不要空行 */
+}
+
+/* ==================================================================
+   MIDDLE COLUMN
+   ================================================================== */
+
+#middle-col Input {
+    border: round #1f4b8f;
+    background: #070d16;
+    color: #d7e3f4;
+    height: 3;
+    padding: 0 1;
+    margin-bottom: 0;  /* 减小间距 */
+    &:focus {
+        border: round #4aa8ff;
+    }
+}
+
+#middle-col Select {
+    border: round #1f4b8f;
+    background: #070d16;
+    height: 3;
+    margin-bottom: 0;  /* 减小间距 */
+    &:focus {
+        border: round #4aa8ff;
+    }
+}
+
+/* Select选中值的显示 - 增强对比度 */
+#middle-col Select > SelectCurrent {
+    color: #ffffff;
+    background: #0d1b2e;
+    text-style: bold;
+}
+
+/* Select下拉箭头 */
+#middle-col Select > .select--arrow {
+    color: #4aa8ff;
+}
+
+/* jira风格的Select */
+.jira-selector {
+    border: round #2b61a7;
+    padding: 0 1;
+
+    &:focus {
+        border: round #4aa8ff;
+        background: #0d1b2e;
+    }
+}
+
+/* Select overlay (下拉菜单) */
+Select > SelectOverlay {
+    background: #0d1b2e;
+    border: round #4aa8ff;
+}
+
+/* Select 选项列表 */
+Select OptionList {
+    background: #0d1b2e;
+    color: #d7e3f4;
+}
+
+/* Select 选中的选项高亮 */
+Select OptionList > .option-list--option-highlighted {
+    background: #1f4b8f;
+    color: #ffffff;
+}
+
+/* Select 当前选中的选项 */
+Select OptionList > .option-list--option-selected {
+    background: #2b61a7;
+    color: #ffffff;
+    text-style: bold;
+}
+
+#provider-model-row {
+    layout: horizontal;
+    height: 3;
+}
+
+#provider-model-row Select {
+    width: 1fr;  /* 两个Select平分宽度 */
+    margin-bottom: 0;
+}
+
+#seq-batch-row {
+    layout: horizontal;
+    height: 3;
+}
+
+#seq-batch-row Input {
+    width: 1fr;  /* 两个Input平分宽度 */
+    margin-bottom: 0;
+}
+
+/* 控制台区域 */
+#log-view {
+    height: 1fr;  /* 自适应高度 */
+    min-height: 10;  /* 最小高度 */
+    border: round #1f4b8f;
+    background: #070d16;
+    scrollbar-size-vertical: 1;
+    padding: 1;
+    margin: -4 0 0 0 !important;  /* 使用更大的负上边距向上移动4行，消除空行 */
+}
+
+#command-input {
+    border: round #1f4b8f;
+    background: #070d16;
+    color: #d7e3f4;
+    height: 3;  /* 增加高度，确保能看到输入 */
+    padding: 0 1;
+    margin: 0;  /* 去掉所有边距 */
+    &:focus {
+        border: round #4aa8ff;
+    }
+}
+
+/* ==================================================================
+   RIGHT COLUMN
+   ================================================================== */
+
+#file-tree {
+    height: 23;  /* Tabs减少1行后，文件树相应减少，底部与输出文件名对齐 */
+    border: round #1f4b8f;
+    background: #070d16;
+    scrollbar-size-vertical: 1;
+    padding: 1;
+    margin: 0;
+}
+
+#action-button {
+    width: 100%;
+    height: 3;
+    text-style: bold;
+    margin: -2 0 0 0;  /* 向上移动2行，与备注对齐 */
+}
+
+/* ==================================================================
+   BOTTOM SECTION - Custom Progress Bar
+   ================================================================== */
+
+#total-progress {
+    height: 5;  /* 3行：信息行 + 进度条行 + 百分比行 */
+    border: round #1f4b8f;
+    background: #0d141f;
+    margin: 0;  /* 去掉上边距，紧贴控制台 */
+}
+
+/* ==================================================================
+   BUTTON STATES - 重要！
+   ================================================================== */
+
+Button.-primary {
+    border: wide #2b61a7;  /* 蓝色 - Detect */
+    color: #bcd8ff;
+    background: #14253a;
+    margin: 0;
+    content-align: center middle;  /* 文字居中 */
+}
+
+Button.-error {
+    border: wide #ff4b4b;  /* 红色 - Start */
+    color: #ffd8d8;
+    background: #3a1c1c;
+}
+
+Button.-warning {
+    border: wide #f1a208;  /* 黄色 - Running */
+    color: #ffe4b2;
+    background: #3f2a12;
+}
+
+Button:disabled {
+    border: wide #29354b;
+    color: #5f6f81;
+    background: #0d141f;
+}
+
+/* ==================================================================
+   GENERAL STYLES
+   ================================================================== */
+
+Input {
+    border-title-color: #69b3ff;
+}
+
+Select {
+    border-title-color: #69b3ff;
+}
+
+Static {
+    border-title-color: #69b3ff;
+}
+
+/* ==================================================================
+   TABBED CONTENT - jiraTUI 风格选项卡
+   ================================================================== */
+
+#main-tabs {
+    height: 1fr;
+    background: #070d16;
+}
+
+/* Tabs 栏 - 类似 jiraTUI 的选项卡行 */
+#main-tabs > Tabs {
+    height: 2;  /* 减少高度，消除空行 */
+    background: transparent;  /* 透明背景 */
+    border: none;  /* 去掉底部蓝线 */
+    margin: 0;
+    padding: 0;
+}
+
+/* Tab 选项卡按钮 - jiraTUI 配色方案 */
+Tab {
+    background: transparent;
+    color: #9cb3ce;
+}
+
+Tab:hover {
+    background: #14253a;
+    color: #ffffff;
+}
+
+Tab.-active {
+    background: #2b61a7;
+    color: #ffffff;
+    text-style: bold;
+}
+
+/* TabPane 内容区域 */
+#main-tabs ContentSwitcher {
+    height: 1fr;
+    background: #070d16;
+    margin: 0;
+    padding: 0;
+}
+
+#main-tabs TabPane {
+    height: 1fr;
+    padding: 0;
+    margin: 0;
+    background: #070d16;
+}
+
+/* 预览区域 TextArea */
+#preview-area {
+    height: 1fr;
+    border: round #1f4b8f;
+    background: #0d141f;
+    color: #d7e3f4;
+    padding: 1;
+}
+
+#preview-area:focus {
+    border: round #4aa8ff;
+}
+

@@ -16,10 +16,9 @@ class TermRow:
 
     row_key: str
     index: int
-    memo_id: str
+    word_id: str
     wm_pair: str
-    pos: str = "—"
-    tag: str = "—"
+    field: str = "—"
     status: str = "Pending"
     elapsed: float = 0.0
     error: str | None = None
@@ -40,7 +39,7 @@ class TermsTable(DataTable):
 
     def __init__(self):
         super().__init__(
-            id="terms-table",
+            id="questions-table",
             cursor_type="row",
             zebra_stripes=True,
         )
@@ -53,10 +52,9 @@ class TermsTable(DataTable):
     def _setup_columns(self) -> None:
         """Set up the table columns."""
         self.add_column("#", key="index", width=3)
-        self.add_column("Memo ID", key="memo_id", width=10)
-        self.add_column("词义对", key="wm_pair", width=35)
-        self.add_column("词性", key="pos", width=8)
-        self.add_column("标签", key="tag", width=12)
+        self.add_column("Word ID", key="word_id", width=10)
+        self.add_column("词义对", key="wm_pair", width=40)
+        self.add_column("领域", key="field", width=12)
         self.add_column("Status", key="status", width=11)
         self.add_column("时间", key="elapsed", width=8)
 
@@ -93,10 +91,9 @@ class TermsTable(DataTable):
 
         self.add_row(
             str(term.index),
-            term.memo_id,
+            term.word_id,
             wm_pair_display,
-            term.pos,
-            term.tag,
+            term.field or "—",
             Text(term.status, style=style),
             f"{term.elapsed:.2f}s" if term.elapsed > 0 else "—",
             key=term.row_key,
@@ -106,8 +103,7 @@ class TermsTable(DataTable):
         self,
         row_key: str,
         status: str | Text,
-        pos: str | None = None,
-        tag: str | None = None,
+        field_value: str | None = None,
         elapsed: float | None = None,
     ) -> None:
         """Update the status and other fields of a term row."""
@@ -120,11 +116,8 @@ class TermsTable(DataTable):
 
         self.update_cell(row_key, "status", status_text)
 
-        if pos is not None:
-            self.update_cell(row_key, "pos", pos)
-
-        if tag is not None:
-            self.update_cell(row_key, "tag", tag)
+        if field_value is not None:
+            self.update_cell(row_key, "field", field_value)
 
         if elapsed is not None:
             self.update_cell(row_key, "elapsed", f"{elapsed:.2f}s")

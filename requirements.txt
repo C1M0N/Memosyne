@@ -6,7 +6,6 @@ anthropic>=0.31.0
 pandas>=2.0.0
 jsonschema>=4.20.0
 python-dotenv>=1.0.1
-tqdm>=4.66.0
 
 # === 新增：重构所需依赖 ===
 pydantic>=2.5.0              # 数据验证

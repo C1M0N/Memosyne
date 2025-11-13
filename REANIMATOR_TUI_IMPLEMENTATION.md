@@ -158,8 +158,8 @@ src/memosyne/
 │       │   ├── screens.py                ⬜ [待创建]
 │       │   ├── filters.py                ⬜ [待创建]
 │       │   ├── terms_table.py            ⬜ [待创建]
-│       │   ├── custom_progress.py        🔄 [复用Lithoformer]
-│       │   ├── rate_limit_bar.py         🔄 [复用Lithoformer]
+│       │   ├── custom_progress.py        🔄 [迁移至 shared/tui/widgets]
+│       │   ├── rate_limit_bar.py         🔄 [迁移至 shared/tui/widgets]
 │       │   └── feature_toggles.py        ⬜ [待创建]
 │       └── css/
 │           └── reanimator_layout.tcss    ⬜ [待创建]

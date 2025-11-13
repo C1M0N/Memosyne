@@ -17,10 +17,10 @@ DDD 原则（Phase 4.6）：
 - 不应放在 Shared Kernel 中
 - Adapter 负责组装完整的请求
 """
-from typing import Any
+from typing import Any, Iterable
 
 from ...core.interfaces import LLMProvider, LLMError
-from .prompts import REANIMATER_SYSTEM_PROMPT, REANIMATER_USER_TEMPLATE
+from .prompts import get_reanimator_system_prompt, get_reanimator_user_prompt
 from .schemas import TERM_RESULT_SCHEMA
 
 
@@ -38,7 +38,13 @@ class ReanimatorLLMAdapter:
         """
         self.provider = provider
 
-    def process_term(self, word: str, zh_def: str) -> tuple[dict[str, Any], dict[str, int]]:
+    def process_term(
+        self,
+        word: str,
+        zh_def: str,
+        batch_note: str = "",
+        requested_fields: Iterable[str] = (),
+    ) -> tuple[dict[str, Any], dict[str, int]]:
         """
         处理单个术语（实现 LLMPort.process_term）
 
@@ -54,11 +60,16 @@ class ReanimatorLLMAdapter:
         """
         try:
             # 组装 Reanimator 特定的 prompts
-            system_prompt = REANIMATER_SYSTEM_PROMPT
-            user_prompt = REANIMATER_USER_TEMPLATE.format(word=word, zh_def=zh_def)
+            system_prompt = get_reanimator_system_prompt()
+            user_prompt = get_reanimator_user_prompt(
+                word_en=word,
+                mean_zh=zh_def,
+                batch_note=batch_note,
+                requested_fields=tuple(requested_fields),
+            )
 
             # 调用底层 LLM Provider 的通用方法
-            llm_response, token_usage = self.provider.complete_structured(
+            llm_response, token_usage, rate_limit_info = self.provider.complete_structured(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 schema=TERM_RESULT_SCHEMA["schema"],
@@ -72,7 +83,7 @@ class ReanimatorLLMAdapter:
                 "total_tokens": token_usage.total_tokens,
             }
 
-            return llm_response, token_dict
+            return llm_response, token_dict, rate_limit_info
 
         except LLMError:
             # LLM 错误直接向上传播

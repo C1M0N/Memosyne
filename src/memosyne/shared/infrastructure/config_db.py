@@ -205,6 +205,8 @@ class SQLiteConfigRepository:
             # 初始化 Reanimator 功能开关
             reanimator_features = [
                 ('enable_concurrent', '0'),
+                ('enable_translation', '0'),
+                ('enable_parsing', '0'),
             ]
             for key, value in reanimator_features:
                 conn.execute(

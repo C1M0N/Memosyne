@@ -33,16 +33,24 @@ class LLMPort(Protocol):
     - ReanimatorLLMAdapter (infrastructure/llm_adapter.py)
     """
 
-    def process_term(self, word: str, zh_def: str) -> tuple[dict, dict]:
+    def process_term(
+        self,
+        word_en: str,
+        mean_zh: str,
+        batch_note: str = "",
+        requested_fields: tuple[str, ...] = (),
+    ) -> tuple[dict, dict, dict | None]:
         """
         处理单个术语，调用 LLM 生成术语信息
 
         Args:
-            word: 英文词条
-            zh_def: 中文释义
+            word_en: 英文词条
+            mean_zh: 中文释义
+            batch_note: 批次备注（可选）
+            requested_fields: 需要 LLM 生成的可选字段集合（如 ("DefEn", "Example")）
 
         Returns:
-            (llm_response_dict, token_usage_dict)
+            (llm_response_dict, token_usage_dict, rate_limit_info)
             - llm_response_dict: LLM 返回的术语信息（字典格式）
             - token_usage_dict: Token 使用统计
 
@@ -51,7 +59,7 @@ class LLMPort(Protocol):
 
         Example:
             >>> adapter = ReanimatorLLMAdapter(...)
-            >>> resp, tokens = adapter.process_term("neuron", "神经元")
+            >>> resp, tokens = adapter.process_term(\"neuron\", \"神经元\")
             >>> resp["POS"]
             'n.'
             >>> tokens["total_tokens"]

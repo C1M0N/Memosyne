@@ -19,10 +19,11 @@ from .domain import (
     TermInput,
     LLMResponse,
     TermOutput,
-    MemoID,
+    WordID,
     apply_business_rules,
-    get_chinese_tag,
-    generate_memo_id,
+    map_field_label,
+    generate_word_id,
+    parse_word_index_from_filename,
 )
 
 # Application layer exports
@@ -45,10 +46,11 @@ __all__ = [
     "TermInput",
     "LLMResponse",
     "TermOutput",
-    "MemoID",
+    "WordID",
     "apply_business_rules",
-    "get_chinese_tag",
-    "generate_memo_id",
+    "map_field_label",
+    "generate_word_id",
+    "parse_word_index_from_filename",
     # Application
     "LLMPort",
     "TermRepositoryPort",
