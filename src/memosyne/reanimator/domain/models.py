@@ -144,6 +144,22 @@ class TermOutput(BaseModel):
 
         resolved_field = term_input.field or field_zh
 
+        missing_required = [
+            name
+            for name, value in {
+                "DefEn": def_en,
+                "Example": example,
+                "IPA": ipa,
+                "POS": pos,
+            }.items()
+            if not value.strip()
+        ]
+        if missing_required:
+            raise ValueError(
+                f"{word_id} 缺少必填字段：{', '.join(missing_required)}；"
+                "请检查输入或 LLM 输出。"
+            )
+
         return cls(
             wm_pair=term_input.wm_pair,
             word_en=term_input.word_en,

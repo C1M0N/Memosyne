@@ -17,6 +17,7 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 - Reanimator TUI 与 Lithoformer 对齐：新增数据库日志 handler、命令面板 `/clear`/`/bank`/`/yes`/`/no`、输入/配置字段即时校验、自动重建目录树与序号预览，并共用 RateLimitBar + CustomProgressBar 实现。
 - Reanimator Start 阶段强制关闭 `tqdm` 进度条（只使用 Textual 更新），修复 macOS 3.13 `bad value(s) in fds_to_keep` 崩溃。
 - 移除 tqdm 依赖：`Progress` 工具成为轻量级占位实现，`requirements.txt` 不再需要 tqdm。
+- Reanimator `LLMResponse` / `TermOutput` 对齐 Lithoformer：missing 字段自动补空，输出阶段校验 `DefEn/Example/IPA/POS` 等必填列；当 CSV 自带字段时跳过 LLM prompt 但仍保证最终输出完整，并在缺失时给出友好提示。
 
 ### Fixed
 - Propagated TUI-detected `question_number` values into sequential/concurrent Lithoformer pipelines (stats + bank writes) with index-based fallback, and trimmed stored `batch_id` to the leading segment (e.g. `251030E006`).

@@ -76,6 +76,19 @@ class ReanimatorLLMAdapter:
                 schema_name="TermResult"
             )
 
+            # 确保可选字段始终存在，便于 Pydantic 接收并由后续逻辑兜底
+            optional_defaults = {
+                "DefEn": "",
+                "Example": "",
+                "FieldEn": "",
+                "Rarity": "",
+                "EtymoEn": "",
+                "EtymoZh": "",
+                "Picture": "",
+            }
+            for key, default_value in optional_defaults.items():
+                llm_response.setdefault(key, default_value)
+
             # 转换 TokenUsage 对象为字典（适配端口接口）
             token_dict = {
                 "prompt_tokens": token_usage.prompt_tokens,

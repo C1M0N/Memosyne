@@ -777,6 +777,9 @@ class ReanimatorScreen(Screen):
 
             self._handle_outputs(result.items)
 
+        except ValueError as exc:
+            self.logger.error(str(exc))
+            self._reset_to_detect()
         except Exception as exc:  # noqa: BLE001
             self.logger.error(f"Start 失败: {exc}")
             import traceback
