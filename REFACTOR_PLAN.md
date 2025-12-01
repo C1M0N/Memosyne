@@ -29,6 +29,7 @@
 - [x] Command palette parity（`/clear`、`/bank`、`/yes`、`/no` 等命令在两个 TUIs 行为一致）
 - [x] Remove CLI scripts + `memosyne.api`; README/AGENTS/CHANGELOG updated accordingly
 
+
 ## Phase 4 – Cleanup & Verification
 - [ ] Migrate existing `stat.db` data to new schema (scripts/migration doc)
 - [ ] Add smoke tests (unit or e2e) covering both flows
