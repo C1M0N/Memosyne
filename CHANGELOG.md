@@ -4,7 +4,52 @@ All notable changes to this project are recorded here. Detailed iteration notes 
 
 ## [Unreleased]
 
-### Changed
+## [v0.17.0] - 2025-11-12
+
+### 🎯 大规模重构：Reanimator/Lithoformer 完全分离
+
+这是项目架构的重大里程碑版本。Reanimator 和 Lithoformer 从共享顶层 Tab 的单一应用，重构为两个完全独立的应用，各自拥有对称的 DDD + Hexagonal 架构结构。
+
+#### Added
+- **Reanimator 独立应用**
+  - 独立的 TUI 入口：`reanimator/tui/app.py`（启动脚本：`./scripts/RaT.sh`）
+  - 完整的 Textual TUI 实现（Detect → Start 工作流、进度追踪、日志系统）
+  - 独立的 Widget 组件：`reanimator/tui/widgets/` (screens.py, filters.py, terms_table.py)
+  - 独立的 CSS 样式：`reanimator/tui/css/reanimator_layout.tcss`
+  - 独立的配置服务：`SQLiteReanimatorConfigService`
+  - 独立的数据库表：`reanimator_config`, `reanimator_feature`
+  - TUI 基础设施：`constants.py` (ASCII Logo), `logging_utils.py` (日志工具)
+
+- **架构对称性**
+  - 两个应用完全遵循相同的分层模式：Domain → Application → Infrastructure → TUI
+  - Widget ID 隔离：Reanimator 使用 `reanimator-*` 前缀，Lithoformer 使用普通 ID
+  - CSS 文件隔离：各自维护独立的样式文件
+  - 配置和数据完全分离，互不影响
+
+#### Changed
+- **Lithoformer 架构调整**
+  - 从 `Screen` 改为 `Widget`，支持嵌入式部署（作为 TabPane）或独立运行
+  - 加载两个 CSS 文件：`lithoformer_layout.tcss` + `reanimator_layout.tcss`
+  - 所有 widget property 改用 ID 选择器查询，避免与 Reanimator 同名类冲突
+
+- **配置系统完善**
+  - 每个应用有独立的配置服务和数据库表
+  - Reanimator: `SQLiteReanimatorConfigService` + `reanimator_config` 表
+  - Lithoformer: `SQLiteAppConfigService` + `lithoformer_config` 表
+
+#### Fixed
+- 修复 Reanimator CustomProgressBar 缩进位置（从 right-area 内部移到 main-container 外部）
+- 修复 Reanimator CSS 未加载问题（Lithoformer app.py 需加载两个 CSS）
+- 修复 widget 查询冲突（使用 ID 选择器而非类型查询）
+- 修复配置污染问题（两个应用配置完全隔离）
+
+#### Documentation
+- README.md 添加 Reanimator/Lithoformer 架构对称性表格
+- AGENTS.md 添加通用开发工作流和调试指南
+- AGENTS.md 添加常见错误和解决方案
+- 版本号更新至 v0.17.0
+
+### Changed (继续之前的 Unreleased 内容)
 - Lithoformer LLM 适配器默认使用动态生成的 system prompt 与 JSON Schema；移除了 `LITHOFORMER_SYSTEM_PROMPT` / `QUESTION_SCHEMA` 常量，统一调用动态构建器。
 - Lithoformer 只保留 MCQ / CLOZE 题型：彻底移除 ORDER 相关字段与逻辑，提示词升级为通用考试场景并强调零幻觉输出。
 - 选择题选项扩展为 A-Z，Schema / 域模型 / Formatter 支持任意数量的字母选项，并要求解析（distractors）覆盖全部错误选项。

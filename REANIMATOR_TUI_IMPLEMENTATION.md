@@ -80,7 +80,7 @@ CREATE TABLE reanimator_processing_logs (
 ```sql
 CREATE TABLE reanimator_bank (
     wm_pair TEXT PRIMARY KEY,        -- 词义对（唯一标识）
-    memo_id TEXT NOT NULL,            -- M + 6位数字
+    memo_id TEXT NOT NULL,            -- R + 6位数字
     word TEXT NOT NULL,
     zh_def TEXT NOT NULL,
     ipa TEXT,                         -- 音标

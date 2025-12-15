@@ -12,8 +12,12 @@ from datetime import datetime
 from pathlib import Path
 
 from ...lithoformer.infrastructure.prompt_defaults import (
-    DEFAULT_PROMPT_VERSION,
-    DEFAULT_PROMPTS,
+    DEFAULT_PROMPT_VERSION as LITHO_PROMPT_VERSION,
+    DEFAULT_PROMPTS as LITHO_DEFAULT_PROMPTS,
+)
+from ...reanimator.infrastructure.prompt_defaults import (
+    DEFAULT_PROMPT_VERSION as REANIMATOR_PROMPT_VERSION,
+    DEFAULT_PROMPTS as REANIMATOR_DEFAULT_PROMPTS,
 )
 
 
@@ -132,15 +136,15 @@ class SQLiteStatsRepository:
                     VALUES (?, ?, ?)
                     """,
                     [
-                        (section, DEFAULT_PROMPT_VERSION, content)
-                        for section, content in DEFAULT_PROMPTS.items()
+                        (section, LITHO_PROMPT_VERSION, content)
+                        for section, content in LITHO_DEFAULT_PROMPTS.items()
                     ],
                 )
 
             # v1.9.2: 迁移旧的lithoformer_bank表结构（从id主键改为question_number主键）
             self._migrate_bank_table_if_needed(cursor)
 
-            # ===== Reanimator 相关表（v0.16.0） =====
+            # ===== Reanimator 相关表（v0.16.0+） =====
 
             # 创建表5: reanimator_processing_logs（处理日志）
             cursor.execute(
@@ -173,7 +177,7 @@ class SQLiteStatsRepository:
                 """
             )
 
-            # 创建表6: reanimator_bank（术语库，wm_pair 为主键）
+            # 创建表6: reanimator_bank（术语库）
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS reanimator_bank (
@@ -228,24 +232,23 @@ class SQLiteStatsRepository:
             cursor.execute("SELECT COUNT(*) FROM reanimator_prompts")
             reanimator_prompt_count = cursor.fetchone()[0]
             if reanimator_prompt_count == 0:
-                # 从 reanimator/infrastructure/prompts.py 导入默认 prompts
-                try:
-                    from ...reanimator.infrastructure.prompts import (
-                        DEFAULT_PROMPT_VERSION,
-                        DEFAULT_PROMPT_SECTIONS,
-                    )
-                    cursor.executemany(
-                        """
-                        INSERT INTO reanimator_prompts (section, version, content)
-                        VALUES (?, ?, ?)
-                        """,
-                        [
-                            (section, DEFAULT_PROMPT_VERSION, content)
-                            for section, content in DEFAULT_PROMPT_SECTIONS.items()
-                        ],
-                    )
-                except ImportError:
-                    pass  # Prompts 文件可能还未创建，跳过初始化
+                cursor.executemany(
+                    """
+                    INSERT INTO reanimator_prompts (section, version, content)
+                    VALUES (?, ?, ?)
+                    """,
+                    [
+                        (section, REANIMATOR_PROMPT_VERSION, content)
+                        for section, content in REANIMATOR_DEFAULT_PROMPTS.items()
+                    ],
+                )
+
+            # 确保最新版本的 prompt 被写入（幂等，不覆盖旧版本）
+            self._seed_prompt_versions(cursor)
+
+            # 迁移旧版 Reanimator 表结构（如有）
+            self._migrate_reanimator_processing_logs_if_needed(cursor)
+            self._migrate_reanimator_bank_table_if_needed(cursor)
 
             conn.commit()
 
@@ -317,6 +320,258 @@ class SQLiteStatsRepository:
             cursor.execute("ALTER TABLE lithoformer_bank_new RENAME TO lithoformer_bank")
 
             logger.info("lithoformer_bank表结构迁移完成")
+
+    def _migrate_reanimator_processing_logs_if_needed(self, cursor) -> None:
+        """迁移旧版 reanimator_processing_logs 表到新结构（使用 word_id 等字段）"""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reanimator_processing_logs'"
+        )
+        if not cursor.fetchone():
+            return
+
+        cursor.execute("PRAGMA table_info(reanimator_processing_logs)")
+        columns = {row[1]: row for row in cursor.fetchall()}
+
+        # 如果已经包含新字段 word_id，视为新结构
+        if "word_id" in columns:
+            return
+
+        import logging
+
+        logger = logging.getLogger("memosyne.shared.infrastructure.stats_db")
+        logger.info("检测到旧版 reanimator_processing_logs 表结构，开始迁移...")
+
+        # 重命名旧表
+        cursor.execute(
+            "ALTER TABLE reanimator_processing_logs RENAME TO reanimator_processing_logs_old"
+        )
+
+        # 创建新表（与 _ensure_db_exists 中的定义保持一致）
+        cursor.execute(
+            """
+            CREATE TABLE reanimator_processing_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                word_id TEXT NOT NULL,
+                wm_pair TEXT NOT NULL,
+                word_en TEXT NOT NULL,
+                mean_zh TEXT NOT NULL,
+                model TEXT NOT NULL,
+                batch_id TEXT NOT NULL,
+                batch_note TEXT,
+                have_def_en INTEGER DEFAULT 0,
+                have_example INTEGER DEFAULT 0,
+                have_rarity INTEGER DEFAULT 0,
+                have_field INTEGER DEFAULT 0,
+                note TEXT,
+                pos TEXT,
+                ipa TEXT,
+                etymo_en TEXT,
+                etymo_zh TEXT,
+                picture TEXT,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
+                processing_time REAL,
+                has_error BOOLEAN DEFAULT 0,
+                timestamp TEXT NOT NULL
+            )
+            """
+        )
+
+        # 从旧表迁移数据到新表：
+        # - memo_id -> word_id
+        # - word -> word_en
+        # - zh_def -> mean_zh
+        cursor.execute(
+            """
+            INSERT INTO reanimator_processing_logs (
+                word_id,
+                wm_pair,
+                word_en,
+                mean_zh,
+                model,
+                batch_id,
+                batch_note,
+                have_def_en,
+                have_example,
+                have_rarity,
+                have_field,
+                note,
+                pos,
+                ipa,
+                etymo_en,
+                etymo_zh,
+                picture,
+                input_tokens,
+                output_tokens,
+                processing_time,
+                has_error,
+                timestamp
+            )
+            SELECT
+                memo_id AS word_id,
+                wm_pair,
+                word AS word_en,
+                zh_def AS mean_zh,
+                model,
+                batch_id,
+                NULL AS batch_note,
+                0 AS have_def_en,
+                0 AS have_example,
+                0 AS have_rarity,
+                0 AS have_field,
+                NULL AS note,
+                NULL AS pos,
+                NULL AS ipa,
+                NULL AS etymo_en,
+                NULL AS etymo_zh,
+                NULL AS picture,
+                input_tokens,
+                output_tokens,
+                processing_time,
+                has_error,
+                timestamp
+            FROM reanimator_processing_logs_old
+            """
+        )
+
+        # 删除旧表
+        cursor.execute("DROP TABLE reanimator_processing_logs_old")
+
+        logger.info("reanimator_processing_logs 表结构迁移完成")
+
+    def _migrate_reanimator_bank_table_if_needed(self, cursor) -> None:
+        """迁移旧版 reanimator_bank 表到新结构（以 word_id 为主键）"""
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reanimator_bank'"
+        )
+        if not cursor.fetchone():
+            return
+
+        cursor.execute("PRAGMA table_info(reanimator_bank)")
+        columns = {row[1]: row for row in cursor.fetchall()}
+
+        # 如果已经包含新字段 word_id，视为新结构
+        if "word_id" in columns:
+            return
+
+        import logging
+
+        logger = logging.getLogger("memosyne.shared.infrastructure.stats_db")
+        logger.info("检测到旧版 reanimator_bank 表结构，开始迁移...")
+
+        # 重命名旧表
+        cursor.execute("ALTER TABLE reanimator_bank RENAME TO reanimator_bank_old")
+
+        # 创建新表（与 _ensure_db_exists 中的定义保持一致）
+        cursor.execute(
+            """
+            CREATE TABLE reanimator_bank (
+                word_id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL,
+                model TEXT NOT NULL,
+                wm_pair TEXT NOT NULL,
+                word_en TEXT NOT NULL,
+                mean_zh TEXT NOT NULL,
+                def_en TEXT,
+                example TEXT,
+                rarity TEXT,
+                field TEXT,
+                batch_note TEXT,
+                ipa TEXT,
+                pos TEXT,
+                etymo_en TEXT,
+                etymo_zh TEXT,
+                picture TEXT,
+                no_overwrite INTEGER DEFAULT 0,
+                timestamp TEXT NOT NULL
+            )
+            """
+        )
+
+        # 从旧表迁移数据到新表：
+        # - memo_id -> word_id
+        # - word -> word_en
+        # - zh_def -> mean_zh
+        # - en_def -> def_en
+        # - tag -> field
+        # - pp_fix/pp_means -> etymo_en/etymo_zh
+        cursor.execute(
+            """
+            INSERT INTO reanimator_bank (
+                word_id,
+                batch_id,
+                model,
+                wm_pair,
+                word_en,
+                mean_zh,
+                def_en,
+                example,
+                rarity,
+                field,
+                batch_note,
+                ipa,
+                pos,
+                etymo_en,
+                etymo_zh,
+                picture,
+                no_overwrite,
+                timestamp
+            )
+            SELECT
+                memo_id AS word_id,
+                batch_id,
+                model,
+                wm_pair,
+                word AS word_en,
+                zh_def AS mean_zh,
+                en_def AS def_en,
+                example,
+                rarity,
+                tag AS field,
+                batch_note,
+                ipa,
+                pos,
+                pp_fix AS etymo_en,
+                pp_means AS etymo_zh,
+                '' AS picture,
+                0 AS no_overwrite,
+                timestamp
+            FROM reanimator_bank_old
+            """
+        )
+
+        # 删除旧表
+        cursor.execute("DROP TABLE reanimator_bank_old")
+
+        logger.info("reanimator_bank 表结构迁移完成")
+
+    def _seed_prompt_versions(self, cursor) -> None:
+        """
+        将当前代码中的默认 prompt 版本写入数据库（INSERT OR IGNORE，保持幂等）。
+        即使表已存在旧版本，也会补齐最新版本，读取时仍按 MAX(version) 取最新。
+        """
+        self._upsert_prompt_set(
+            cursor=cursor,
+            table="lithoformer_prompts",
+            version=LITHO_PROMPT_VERSION,
+            prompts=LITHO_DEFAULT_PROMPTS,
+        )
+        self._upsert_prompt_set(
+            cursor=cursor,
+            table="reanimator_prompts",
+            version=REANIMATOR_PROMPT_VERSION,
+            prompts=REANIMATOR_DEFAULT_PROMPTS,
+        )
+
+    @staticmethod
+    def _upsert_prompt_set(*, cursor, table: str, version: str, prompts: dict[str, str]) -> None:
+        cursor.executemany(
+            f"""
+            INSERT OR IGNORE INTO {table} (section, version, content)
+            VALUES (?, ?, ?)
+            """,
+            [(section, version, content) for section, content in prompts.items()],
+        )
 
     def save_processing_log(
         self,
@@ -592,6 +847,29 @@ class SQLiteStatsRepository:
         if not rows:
             raise ValueError(f"{table} 表中没有可用的 prompt 记录")
         return {row["section"]: row["content"] for row in rows}
+
+    def upsert_prompt_sections(self, *, domain: str, version: str, sections: dict[str, str]) -> None:
+        """
+        插入新的 prompt 版本（幂等，不覆盖已有版本）。
+
+        Args:
+            domain: "lithoformer" 或 "reanimator"
+            version: 版本号（如 "0002"）
+            sections: section -> content
+        """
+        if domain not in {"lithoformer", "reanimator"}:
+            raise ValueError(f"Unsupported domain for prompts: {domain}")
+        table = "lithoformer_prompts" if domain == "lithoformer" else "reanimator_prompts"
+
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.executemany(
+                f"""
+                INSERT OR IGNORE INTO {table} (section, version, content)
+                VALUES (?, ?, ?)
+                """,
+                [(section, version, content) for section, content in sections.items()],
+            )
+            conn.commit()
 
     def clear_bank(self) -> int:
         """清空题库表（v1.9.1c：用于清理错误数据）

@@ -133,6 +133,8 @@ class TermsTable(DataTable):
             "Conflict": "yellow",  # 冲突状态
             "Saved": "cyan",  # 已保存到库
         }
+        if status.startswith("Waiting 429"):
+            return "magenta"
         return styles.get(status, "white")
 
     def on_data_table_row_selected(self, event) -> None:  # type: ignore[override]

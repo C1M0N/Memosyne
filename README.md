@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.15.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-0.17.0-orange.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-DDD%20%2B%20Hexagonal-purple.svg)]()
 
 *领域驱动设计、类型安全、生产就绪的 LLM 工作流工具*
@@ -271,7 +271,31 @@ LOG_FORMAT=console
 
 ### 架构概览
 
-Memosyne v0.10.5a 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
+Memosyne v0.17.0 采用**领域驱动设计（DDD）**和**六边形架构（Hexagonal Architecture，又称端口适配器模式）**，确保代码的可维护性、可测试性和可扩展性。
+
+### Reanimator/Lithoformer 架构对称性
+
+从 v0.17.0 开始，Reanimator 和 Lithoformer 作为**两个完全独立的应用**运行，拥有完全对称的架构结构：
+
+| 层级 / 组件 | Reanimator（RaT）| Lithoformer（LfT）| 说明 |
+|------------|------------------|-------------------|------|
+| **TUI 应用** | `reanimator/tui/app.py` | `lithoformer/tui/app.py` | 独立的 Textual TUI 应用 |
+| **启动脚本** | `./scripts/RaT.sh` | `./scripts/LfT.sh` | 便捷启动脚本 |
+| **Domain 层** | `reanimator/domain/` | `lithoformer/domain/` | 领域模型和业务规则 |
+| **Application 层** | `reanimator/application/` | `lithoformer/application/` | Use Cases + Ports |
+| **Infrastructure 层** | `reanimator/infrastructure/` | `lithoformer/infrastructure/` | Adapters + Prompts + Schemas |
+| **TUI 组件** | `reanimator/tui/widgets/` | `lithoformer/tui/widgets/` | Screens + Filters + Tables |
+| **CSS 样式** | `reanimator/tui/css/` | `lithoformer/tui/css/` | 独立的 TCSS 样式文件 |
+| **配置服务** | `SQLiteReanimatorConfigService` | `SQLiteAppConfigService` | 独立的配置管理 |
+| **数据库表** | `reanimator_config` / `reanimator_feature` | `lithoformer_config` / `lithoformer_feature` | 完全隔离的配置存储 |
+| **数据仓储** | `ReanimatorRepository` | 题库 Bank（`lithoformer_bank`）| 独立的数据访问层 |
+
+**关键设计原则**：
+- ✅ **完全隔离**：两个应用不共享任何业务逻辑代码
+- ✅ **Widget ID 前缀**：Reanimator 使用 `reanimator-*`，Lithoformer 使用普通 ID
+- ✅ **独立 CSS**：各自维护样式文件，避免样式冲突
+- ✅ **数据库隔离**：配置和数据完全分离，互不影响
+- ✅ **统一架构**：两者遵循相同的 DDD + Hexagonal 分层模式
 
 #### 核心架构模式
 

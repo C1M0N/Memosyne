@@ -86,8 +86,8 @@ class LLMResponse(BaseModel):
 
     @model_validator(mode="after")
     def sanitize(self):
-        if self.pos == "abbr." and self.ipa:
-            self.ipa = ""
+        # 当 POS=abbr. 时，IPA 应填写完整词汇展开形式，而非音标
+        # 因此不再强制清空 IPA
         self.field_en = self.field_en.strip().lower()
         return self
 
@@ -144,12 +144,12 @@ class TermOutput(BaseModel):
 
         resolved_field = term_input.field or field_zh
 
+        # 验证必须输出项（按照需求：DefEn, Example, POS 必填；IPA 可以为空）
         missing_required = [
             name
             for name, value in {
                 "DefEn": def_en,
                 "Example": example,
-                "IPA": ipa,
                 "POS": pos,
             }.items()
             if not value.strip()

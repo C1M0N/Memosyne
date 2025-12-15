@@ -14,37 +14,49 @@ TERM_RESULT_SCHEMA = {
         "properties": {
             "IPA": {
                 "type": "string",
-                "description": "American IPA between slashes; empty only if POS is abbr.",
-                "pattern": r"^(\/[^\s\/].*\/|)$"
+                "description": "American IPA (slash-wrapped) or full expansion for abbr. Must be non-empty.",
+                "minLength": 1
             },
             "POS": {
                 "type": "string",
+                "description": "Part of speech (MANDATORY, never empty)",
                 "enum": ["n.", "vt.", "vi.", "adj.", "adv.", "P.", "O.", "abbr."]
             },
             "Rarity": {
                 "type": "string",
+                "description": "Empty or RARE. Can be empty.",
                 "enum": ["", "RARE"]
             },
-            "EnDef": {
+            "DefEn": {
                 "type": "string",
+                "description": "English definition (MANDATORY, never empty)",
                 "minLength": 1
             },
             "Example": {
                 "type": "string",
+                "description": "Example sentence (MANDATORY, never empty)",
                 "minLength": 1
             },
-            "PPfix": {
-                "type": "string"
-            },
-            "PPmeans": {
+            "FieldEn": {
                 "type": "string",
-                "description": "ASCII only; use underscores inside a token for multi-word gloss.",
-                "pattern": r"^[\x20-\x7E]*$"
+                "description": "Subject field tag in English. Should be non-empty lowercase ASCII.",
+                "minLength": 1
             },
-            "TagEN": {
-                "type": "string"
+            "EtymoEn": {
+                "type": "string",
+                "description": "Etymology in English. Must be non-empty.",
+                "minLength": 1
+            },
+            "EtymoZh": {
+                "type": "string",
+                "description": "Etymology in Chinese. Must be non-empty.",
+                "minLength": 1
+            },
+            "Picture": {
+                "type": "string",
+                "description": "Picture description. Can be empty."
             }
         },
-        "required": ["IPA", "POS", "Rarity", "EnDef", "Example", "PPfix", "PPmeans", "TagEN"]
+        "required": ["IPA", "POS", "Rarity", "DefEn", "Example", "FieldEn", "EtymoEn", "EtymoZh", "Picture"]
     }
 }

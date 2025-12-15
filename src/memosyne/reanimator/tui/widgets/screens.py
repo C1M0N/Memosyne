@@ -30,7 +30,7 @@ from ....shared.infrastructure.storage.csv_repository import CSVTermRepository
 from ....shared.tui import CustomProgressBar, RateLimitBar, RateLimitManager
 from ....shared.utils import unique_path
 from ....shared.utils.batch import BatchIDGenerator
-from ....shared.utils.filename import generate_output_filename
+from ....shared.utils.filename import generate_output_filename, format_batch_id
 from ....shared.utils.model_codes import resolve_model_input, get_provider_from_model
 from ...application.concurrent_use_case import ConcurrentProcessTermsUseCase
 from ...application.use_cases import ProcessTermsUseCase
@@ -289,13 +289,31 @@ class ReanimatorScreen(Screen):
         total: int,
         token_usage: TokenUsage,
         rate_limit_info: dict | None,
+        term_index: int | None = None,
+        term_elapsed: float | None = None,
+        state: str = "done",
+        retry_wait: float | None = None,
     ) -> None:
         def _update() -> None:
-            elapsed = perf_counter() - self._run_start_time if self._run_start_time else 0
+            elapsed_run = perf_counter() - self._run_start_time if self._run_start_time else 0
             self._total_tokens = token_usage
-            self._update_progress_summary(elapsed, completed, total)
+            self._update_progress_summary(elapsed_run, completed, total)
             if rate_limit_info:
                 self._update_rate_limit_bar(rate_limit_info)
+            if term_index is not None:
+                row = self._rows.get(term_index + 1)
+                if row:
+                    if state == "start":
+                        self.terms_table.update_term_status(row.row_key, "In Progress")
+                    elif state == "waiting_429":
+                        label = "Waiting 429"
+                        if retry_wait is not None:
+                            label = f"Waiting 429 ({int(retry_wait)}s)"
+                        self.terms_table.update_term_status(row.row_key, label)
+                    elif state == "done":
+                        self.terms_table.update_term_status(row.row_key, "Done", elapsed=term_elapsed)
+                    elif state == "error":
+                        self.terms_table.update_term_status(row.row_key, "ERROR", elapsed=term_elapsed)
 
         import threading
 
@@ -311,6 +329,44 @@ class ReanimatorScreen(Screen):
         with suppress(Exception):
             bar = self.query_one("#rate-limit-bar", RateLimitBar)
             bar.update_rate_limit(current)
+
+    def _refresh_detection_model(self) -> None:
+        """模型输入变化时，实时刷新检测缓存和输出文件名。"""
+        if not self._detection:
+            return
+        try:
+            provider, model_name, model_code = self._resolve_model()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("解析模型输入失败，保持原配置：%s", exc)
+            return
+
+        detection = self._detection
+        changed = False
+
+        if detection.provider != provider or detection.model != model_name:
+            detection.provider = provider
+            detection.model = model_name
+            detection.model_code = model_code
+            changed = True
+
+        new_output = generate_output_filename(
+            batch_id=detection.batch_id,
+            model_code=model_code,
+            input_filename=detection.file_path.name,
+            ext="csv",
+        )
+        if detection.output_filename != new_output:
+            detection.output_filename = new_output
+            with suppress(Exception):
+                self._set_input_value(self.output_filename_input, new_output)
+            changed = True
+
+        if changed:
+            self.logger.info(
+                "检测配置已更新：模型 %s，输出文件名调整为 %s",
+                model_code,
+                detection.output_filename,
+            )
 
     def _update_progress_summary(self, elapsed: float, completed: int, total: int) -> None:
         remaining = 0.0
@@ -342,6 +398,26 @@ class ReanimatorScreen(Screen):
             return raw
         value = getattr(raw, "value", None)
         return value if isinstance(value, str) else None
+
+    def _resolve_model(self) -> tuple[str, str, str]:
+        """解析当前模型输入，返回 (provider, model_name, model_code)。"""
+        raw_model = self.model_input.value.strip()
+        bundle = self._config_service.get_bundle()
+        if not raw_model:
+            raw_model = bundle.default_model
+
+        provider_hint = None
+        model_name = raw_model
+        if "::" in raw_model:
+            provider_hint, model_name = raw_model.split("::", 1)
+            model_name = model_name.strip()
+
+        model_name, model_code = resolve_model_input(model_name)
+        provider = provider_hint.lower() if provider_hint else get_provider_from_model(model_name)
+        # 同步写回标准化的 provider::model 形式
+        with suppress(Exception):
+            self._set_input_value(self.model_input, f"{provider}::{model_name}")
+        return provider, model_name, model_code
 
     # ------------------------------------------------------------------
     # Convenience accessors
@@ -585,6 +661,14 @@ class ReanimatorScreen(Screen):
         status = "已启用" if new_value else "已禁用"
         self.logger.info(f"并行模式{status}")
 
+    @on(Input.Changed, "#model-input")
+    def handle_model_input_changed(self, event: Input.Changed) -> None:
+        if self._suspend_change_events:
+            return
+        if event.input is not self.model_input:
+            return
+        self._refresh_detection_model()
+
     # ------------------------------------------------------------------
     # Detect
     # ------------------------------------------------------------------
@@ -617,20 +701,7 @@ class ReanimatorScreen(Screen):
                     term.batch_note = batch_note
 
             extra_note = self.note_input.value.strip()
-            raw_model = self.model_input.value.strip()
-            bundle = self._config_service.get_bundle()
-            if not raw_model:
-                raw_model = bundle.default_model
-
-            provider_hint = None
-            model_name = raw_model
-            if "::" in raw_model:
-                provider_hint, model_name = raw_model.split("::", 1)
-                model_name = model_name.strip()
-
-            model_name, model_code = resolve_model_input(model_name)
-            provider = provider_hint.lower() if provider_hint else get_provider_from_model(model_name)
-            self.model_input.value = f"{provider}::{model_name}"
+            provider, model_name, model_code = self._resolve_model()
 
             output_dir_input = (
                 self.output_path_input.value.strip()
@@ -639,11 +710,16 @@ class ReanimatorScreen(Screen):
             output_dir = Path(output_dir_input).expanduser()
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            generator = BatchIDGenerator(output_dir)
+            generator = BatchIDGenerator(
+                output_dir=output_dir,
+                timezone=self.settings.batch_timezone,
+            )
             batch_id = self.batch_id_input.value.strip()
             if not batch_id:
                 batch_id = generator.generate(len(terms))
-                self.batch_id_input.value = batch_id
+            else:
+                batch_id = format_batch_id(batch_id)
+            self.batch_id_input.value = batch_id
             self.sequence_input.value = str(WordID(start_word_index))
 
             output_filename = self.output_filename_input.value.strip()
@@ -738,6 +814,8 @@ class ReanimatorScreen(Screen):
 
             tuning = self._config_service.get_runtime_tuning()
             max_concurrent = tuning.max_concurrent if isinstance(tuning.max_concurrent, int) else 3
+            max_retries = tuning.max_retries if isinstance(tuning.max_retries, int) else 3
+            retry_config = self._config_service.get_retry_config()
             extra_note = self.note_input.value.strip()
             prompt_note = self._detection.batch_note.strip()
             if extra_note:
@@ -752,6 +830,8 @@ class ReanimatorScreen(Screen):
                     batch_id=self._detection.batch_id,
                     batch_note=prompt_note,
                     max_concurrent=max_concurrent,
+                    max_retries=max_retries,
+                    retry_config=retry_config,
                 )
             else:
                 use_case = ProcessTermsUseCase(
@@ -760,14 +840,24 @@ class ReanimatorScreen(Screen):
                     start_word_index=self._detection.start_word_index,
                     batch_id=self._detection.batch_id,
                     batch_note=prompt_note,
+                    max_retries=max_retries,
+                    retry_config=retry_config,
                 )
 
             self._run_start_time = perf_counter()
-            result = use_case.execute(
-                self._detection.terms,
-                show_progress=False,
-                progress_callback=self._handle_progress_event,
-            )
+            if concurrent_enabled:
+                result = await use_case.execute(
+                    self._detection.terms,
+                    show_progress=False,
+                    progress_callback=self._handle_progress_event,
+                )
+            else:
+                result = await asyncio.to_thread(
+                    use_case.execute,
+                    self._detection.terms,
+                    False,
+                    self._handle_progress_event,
+                )
             elapsed = perf_counter() - self._run_start_time
             self._total_tokens = result.token_usage
 
@@ -850,10 +940,13 @@ class ReanimatorScreen(Screen):
             )
             for conflict in conflicts[:5]:
                 self.logger.warning(f"  - {conflict.word_id}: {conflict.wm_pair}")
+
+            self._write_output_file(outputs)
         else:
+            self._write_output_file(outputs)
             self._reset_to_detect()
 
-        self._write_output_file(outputs)
+        # 在有冲突等待覆盖确认时，保持当前检测状态，避免清空 _detection。
 
     def _write_output_file(self, outputs: list[TermOutput]) -> None:
         assert self._detection is not None
@@ -902,7 +995,11 @@ class ReanimatorScreen(Screen):
         self.terms_table.clear()
         self.total_progress.reset()
         self._update_rate_limit_bar(None)
+        self._run_start_time = None
+        self._total_tokens = TokenUsage()
         self.sequence_input.value = ""
+        self.batch_id_input.value = ""
+        self.output_filename_input.value = ""
         self._current_prompt_note = ""
 
         self._waiting_for_overwrite_confirmation = False

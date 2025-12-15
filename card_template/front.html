@@ -1,0 +1,93 @@
+<div class="frame">
+  <div class="card-bg front">
+    <!-- 字段顺序（新）：WMPair｜WordEn｜MeanZh｜DefEn｜Example｜Rarity｜Field｜BatchNote｜IPA｜POS｜EtymoEn｜EtymoZh｜BatchId｜Picture｜WordId -->
+    <div class="hole-left"></div>
+
+    {{#Rarity}}<div class="rare">{{Rarity}}</div>{{/Rarity}}
+    {{#Field}}   <div class="tag">{{Field}}</div>{{/Field}}
+    {{#POS}}   <div class="pos">{{POS}}</div>{{/POS}}
+
+    {{#EtymoEn}}<div id="ppTopF" class="pp-top" data-raw="{{EtymoEn}}"></div>{{/EtymoEn}}
+
+    <div id="wordBox" class="word-box">
+      <div id="wordFit" class="word-fit">
+        <div id="wordText" class="word">{{WordEn}}</div>
+      </div>
+      {{#IPA}}<div id="ipa" class="ipa">{{IPA}}</div>{{/IPA}}
+    </div>
+
+    <!-- Example：底部 30% 高度，宽 70%，居中 -->
+    {{#Example}}
+    <div class="ex-wrap">
+      <div id="exBox" class="ex-box">
+        <div id="exText" class="ex-text">{{Example}}</div>
+      </div>
+    </div>
+    {{/Example}}
+
+    <!-- 左下角 Batch/WordId -->
+    <div class="bm">
+      {{#BatchId}}<div class="bm-batch">{{BatchId}}</div>{{/BatchId}}
+      {{#WordId}} <div class="bm-memo">{{WordId}}</div>{{/WordId}}
+    </div>
+  </div>
+</div>
+
+<script>
+(()=>{  // 与你现有完全同风格 + Example 自适配
+  function bracketize(s){
+    s=(s||'').trim(); if(!s) return '';
+    return s.split(/\s+/).map(t=> /^\[.*\]$/.test(t)? t : `[${t}]`).join(' ');
+  }
+  const pp = document.getElementById('ppTopF');
+  if(pp){ pp.textContent = bracketize(pp.dataset.raw||pp.textContent); }
+
+  function isSingleToken(t){ return !(/\s/.test((t||'').trim())); }
+  function fitToBox(el, box, {min=10, max=40, step=0.25}={}){
+    if(!el || !box) return;
+    const fits = ()=> el.scrollWidth<=box.clientWidth && el.scrollHeight<=box.clientHeight;
+    el.style.fontSize = max+'px';
+    if (fits()) return;
+    let lo=min, hi=max;
+    while(hi-lo>step){
+      const mid=(lo+hi)/2; el.style.fontSize = mid+'px';
+      if (fits()) lo=mid; else hi=mid;
+    }
+    el.style.fontSize = lo+'px';
+  }
+
+  function layoutWord(){
+    const el  = document.getElementById('wordText');
+    const fit = document.getElementById('wordFit');
+    if(!el||!fit) return;
+    if (isSingleToken(el.textContent)){
+      el.style.whiteSpace='nowrap'; el.style.wordBreak='normal'; el.style.overflowWrap='normal';
+    }else{
+      el.style.whiteSpace='normal'; el.style.wordBreak='break-word'; el.style.overflowWrap='break-word';
+    }
+    fitToBox(el, fit, {min:10, max:40});
+  }
+
+  // Example 自适配（12~20）
+  function layoutEx(){
+    const el  = document.getElementById('exText');
+    const fit = document.getElementById('exBox');
+    if(!el||!fit) return;
+    el.style.whiteSpace='normal';
+    el.style.wordBreak='break-word';
+    el.style.overflowWrap='break-word';
+    fitToBox(el, fit, {min:12, max:20});
+  }
+
+  const ro = new ResizeObserver(()=>{ layoutWord(); layoutEx(); });
+  const wordFit = document.getElementById('wordFit');
+  const exFit   = document.getElementById('exBox');
+  if(wordFit) ro.observe(wordFit);
+  if(exFit)   ro.observe(exFit);
+
+  window.addEventListener('resize', ()=>{ layoutWord(); layoutEx(); });
+  document.addEventListener('readystatechange', ()=>{ layoutWord(); layoutEx(); });
+  if('fonts' in document) document.fonts.ready.then(()=>{ layoutWord(); layoutEx(); });
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ layoutWord(); layoutEx(); }));
+})();
+</script>

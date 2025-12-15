@@ -1,0 +1,100 @@
+<div class="frame">
+  <div class="card-bg back">
+    <!-- 字段顺序（新）：WMPair｜WordEn｜MeanZh｜DefEn｜Example｜Rarity｜Field｜BatchNote｜IPA｜POS｜EtymoEn｜EtymoZh｜BatchId｜Picture｜WordId -->
+    <div class="hole-right"></div>
+
+    {{#Rarity}}<div class="rare">{{Rarity}}</div>{{/Rarity}}
+    {{#Field}}   <div class="tag">{{Field}}</div>{{/Field}}
+    {{#POS}}   <div class="pos">{{POS}}</div>{{/POS}}
+
+    <!-- 左下角：BatchId / WordId -->
+    <div class="bm">
+      {{#BatchId}}<div class="bm-batch">{{BatchId}}</div>{{/BatchId}}
+      {{#WordId}}<div class="bm-memo">{{WordId}}</div>{{/WordId}}
+    </div>
+
+    <!-- 顶部：EtymoZh -->
+    {{#EtymoZh}}<div id="ppTopB" class="pp-top" data-raw="{{EtymoZh}}"></div>{{/EtymoZh}}
+
+    <!-- 释义区 -->
+    <div id="defsBox" class="defs-box">
+      <div id="enBox" class="en-box">
+        {{#DefEn}}<div id="enText" class="en-def">{{DefEn}}</div>{{/DefEn}}
+      </div>
+      <div class="zh-box">
+        {{#MeanZh}}<div class="zh-def">{{MeanZh}}</div>{{/MeanZh}}
+      </div>
+    </div>
+
+    <!-- 图片按钮 + 舞台 -->
+    {{#Picture}}
+      <button class="arrow-btn" aria-label="show image" onclick="toggleImg()">
+        <svg viewBox="0 0 24 24" class="arrow-ic" xmlns="http://www.w3.org/2000/svg">
+          <path d="M15 6 L9 12 L15 18" stroke="#FFFFFF" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    {{/Picture}}
+    <div id="imgStage" class="img-stage">{{Picture}}</div>
+  </div>
+</div>
+
+<script>
+function toggleImg(){
+  var stage=document.getElementById('imgStage');
+  var card=document.querySelector('.card-bg.back');
+  if(!stage||!card) return;
+  var side = Math.floor(card.clientHeight * 0.86); /* 高度的86% */
+  stage.style.width = side+'px';
+  stage.style.height = side+'px';
+  stage.style.display = (stage.style.display==='flex'?'none':'flex');
+}
+
+(()=>{  // PPmeans 方括号、英文自适应、原词下划线
+  function bracketize(s){
+    s=(s||'').trim(); if(!s) return '';
+    return s.split(/\s+/).map(t=> /^\[.*\]$/.test(t)? t : `[${t}]`).join(' ');
+  }
+  const pp = document.getElementById('ppTopB');
+  if(pp){ pp.textContent = bracketize(pp.dataset.raw||pp.textContent); }
+
+  function fitToBox(el, box, {min=12, max=20, step=0.25}={}){
+    const fits = ()=> el.scrollWidth<=box.clientWidth && el.scrollHeight<=box.clientHeight;
+    el.style.fontSize = max+'px';
+    if (fits()) return;
+    let lo=min, hi=max;
+    while(hi-lo>step){
+      const mid=(lo+hi)/2; el.style.fontSize = mid+'px';
+      if (fits()) lo=mid; else hi=mid;
+    }
+    el.style.fontSize = lo+'px';
+  }
+  function layout(){
+    const el  = document.getElementById('enText');
+    const box = document.getElementById('enBox');
+    if(!el||!box) return;
+    el.style.whiteSpace='normal'; el.style.wordBreak='break-word'; el.style.overflowWrap='break-word';
+    fitToBox(el, box, {min:12, max:20});
+  }
+
+  // 给英文释义里出现的 Word（含常见后缀）加下划线
+  (function underline(){
+    var word = "{{WordEn}}";
+    var el = document.getElementById('enText');
+    if(!word || !el) return;
+    var esc = word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    var re = new RegExp("\\b"+esc+"(?:s|es|ed|ing)?\\b","gi");
+    el.innerHTML = el.innerHTML.replace(re,'<span class="u">$&</span>');
+  })();
+
+  const ro=new ResizeObserver(layout);
+  const mo=new MutationObserver(layout);
+  const box=document.getElementById('enBox');
+  const el =document.getElementById('enText');
+  if(box) ro.observe(box);
+  if(el)  mo.observe(el,{childList:true,characterData:true,subtree:true});
+  window.addEventListener('resize',layout);
+  document.addEventListener('readystatechange',layout);
+  if('fonts' in document) document.fonts.ready.then(layout);
+  requestAnimationFrame(()=>requestAnimationFrame(layout));
+})();
+</script>

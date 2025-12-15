@@ -1,0 +1,96 @@
+/* —— 你原有的变量 —— */
+:root{
+  --bg:#333; --card:#fff; --black:#000;
+  --pink:#E43CD2; --green:#196B24; --navy:#163E64; --red:#FF0000;
+  --pp:#46B1E1;
+
+  --hole: clamp(18px, min(6.0vw,6.0vh), 64px);
+  --pad: clamp(12px, min(3.8vw,3.8vh), 28px);
+  --radius: clamp(16px, min(4.2vw,4.2vh), 36px);
+  --edge: clamp(10px, min(2.2vw,2.2vh), 22px);
+  --cornerF: clamp(16px, min(3.8vw,3.8vh), 34px);
+  --ipa-gap: clamp(10px, min(2.6vw,2.6vh), 26px);
+
+  /* 左下 Batch/Memo 字号 */
+  --bmSmall: clamp(10px, min(2.2vw,2.2vh), 18px);
+  --bmLarge: clamp(12px, min(2.6vw,2.6vh), 22px);
+}
+
+/* 画布、卡片、圆孔与角落元素（与你的相同） */
+.card{background:var(--bg); color:var(--black)}
+.frame{ width:min(96vw,1100px); aspect-ratio:2.4/1; margin:auto; position:relative; display:flex; align-items:center; justify-content:center; }
+.card-bg{ position:relative; width:100%; height:100%; background:var(--card); border-radius:var(--radius); overflow:hidden; padding:var(--pad); }
+
+.hole-left,.hole-right{ position:absolute; top:50%; width:var(--hole); height:var(--hole); border-radius:50%; background:var(--bg); transform:translateY(-50%); z-index:2; }
+.hole-left{ left:0;  transform:translate(100%,-50%); }
+.hole-right{ right:0; transform:translate(-100%,-50%); }
+
+.rare{ position:absolute; left:var(--edge); top:var(--edge); font:700 var(--cornerF)/1 "Courier New",Menlo,monospace; color:var(--pink); z-index:3; }
+.tag { position:absolute; right:var(--edge); top:var(--edge); font:700 calc(var(--cornerF)*1.05)/1 "Yuanti TC","PingFang SC",sans-serif; color:var(--green); z-index:3; }
+.tag::before{content:"["} .tag::after{content:"]"}
+.pos { position:absolute; right:var(--edge); bottom:var(--edge); font:700 var(--cornerF)/1 "Courier New",Menlo,monospace; color:var(--red); z-index:3; }
+
+/* 顶部 EtymoEn/EtymoZh（保持中上位置，不动） */
+.pp-top{
+  position:absolute; left:50%; top:calc(var(--edge) + 2px); transform:translateX(-50%);
+  font-family:"Futura","Avenir Next","Helvetica Neue",Arial,sans-serif;
+  color:var(--pp); font-weight:700; text-align:center; white-space:nowrap;
+  font-size: clamp(14px, min(2.8vw,2.8vh), 34px); z-index:3;
+}
+
+/* —— Word + IPA（与你的相同） —— */
+.word-box{ position:absolute; left:12%; right:12%; top:22%; height:56%; }
+.word-fit{ position:absolute; inset:0 0 var(--ipa-gap) 0; display:flex; align-items:center; justify-content:center; text-align:center; }
+.word{ font-family:"Futura","Avenir Next","Helvetica Neue",Arial,sans-serif; font-weight:700; line-height:1.06; margin:0; color:var(--black); }
+.ipa{
+  position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+  white-space:nowrap; word-break:keep-all; overflow-wrap:normal; width:max-content;
+  font:700 clamp(14px, min(3.6vw,3.6vh), 28px)/1 Menlo,"Courier New",monospace; color:var(--navy);
+}
+
+/* —— 释义区（与你的相同） —— */
+.defs-box{ position:absolute; left:10%; right:10%; top:20%; height:60%; display:flex; flex-direction:column; }
+.en-box{ position:relative; height:66%; display:flex; align-items:flex-end; justify-content:center; padding-bottom: clamp(6px,1.2vw,12px); }
+.en-def{ font-family:"Futura","Avenir Next","Helvetica Neue",Arial,sans-serif; color:var(--navy); font-weight:700; line-height:1.25; margin:0; text-align:left; word-break:break-word; overflow-wrap:break-word; }
+.zh-box{ position:relative; height:34%; display:flex; align-items:flex-end; justify-content:center; padding-bottom: clamp(6px,1.0vw,12px); }
+.zh-def{ font-family:"PingFang HK","PingFang SC","Hiragino Sans GB",sans-serif; color:var(--black); font-weight:700; line-height:1.28; margin:0; text-align:center; word-break:break-word; overflow-wrap:break-word; font-size: clamp(16px, min(5.2vw,5.2vh), 40px); }
+
+/* 箭头按钮（你前面那套） */
+.arrow-btn{ position:absolute; top:45.2%; right:-0.8%; transform:translate(-92%,-60%); width:var(--hole); height:var(--hole); z-index:4; border-radius:50%; background:transparent; display:grid; place-items:center; border:none; padding:0; outline:0; cursor:pointer; }
+.arrow-ic{ width:calc(var(--hole)*0.58); height:calc(var(--hole)*0.58); display:block }
+.img-stage{ position:absolute; left:50%; top:52%; transform:translate(-50%,-50%); width:280px; height:280px; max-width:90%; max-height:90%; background:#fff; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,.25); display:none; align-items:center; justify-content:center; z-index:5; }
+.img-stage img{ max-width:100%; max-height:100%; object-fit:contain; }
+
+.u{ text-decoration:underline; }
+
+/* —— 左下角 BatchId + WordId —— */
+.bm{
+  position:absolute; left:var(--edge); bottom:var(--edge);
+  display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  font-family:"Eurostile","Eurostile LT","Microgramma","Bank Gothic","DIN Alternate","Arial Black",Arial,sans-serif;
+  z-index:4;              /* 在 Example 之上 */
+}
+.bm-batch{ color:#D1D1D1; font-weight:700; font-size:var(--bmSmall); line-height:1; letter-spacing:.02em; }
+.bm-memo { color:#7F7F7F; font-weight:800; font-size:var(--bmLarge); line-height:1.05; letter-spacing:.02em; }
+
+/* —— 新增：正面底部 Example —— */
+.ex-wrap{
+  position:absolute;
+  left:0; right:0;
+  bottom:var(--pad);        /* 紧贴内边距底部 */
+  height:8%;              /* 占底部 30% 高度 */
+  display:flex; align-items:flex-end; justify-content:center;
+  z-index:2;               /* 在 Batch/Memo(4) 之下，不挡住它 */
+  pointer-events:none;
+}
+.ex-box{
+  width:70%; height:100%;  /* 宽 70%，高 100%(即底部30%区) */
+  display:flex; align-items:center; justify-content:center;
+  pointer-events:auto;
+}
+.ex-text{
+  font-family:"Futura","Avenir Next","Helvetica Neue",Arial,sans-serif;
+  color:var(--black); font-weight:700; line-height:1.25; margin:0; text-align:center;
+  word-break:break-word; overflow-wrap:break-word;
+  /* 具体字号由前端 JS 的 fitToBox(12~20) 控制 */
+}
