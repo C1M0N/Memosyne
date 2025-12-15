@@ -54,7 +54,8 @@ TERM_RESULT_SCHEMA = {
             },
             "Picture": {
                 "type": "string",
-                "description": "Picture description. Can be empty."
+                "description": "Picture is disabled for Reanimator outputs; always use empty string.",
+                "enum": [""]
             }
         },
         "required": ["IPA", "POS", "Rarity", "DefEn", "Example", "FieldEn", "EtymoEn", "EtymoZh", "Picture"]

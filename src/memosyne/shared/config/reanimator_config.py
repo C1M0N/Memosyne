@@ -20,7 +20,7 @@ class ReanimatorConfig(BaseModel):
     reanimator_output_dir: str = Field(default="misc/output/reanimator", description="输出目录")
     default_model: str = Field(default="OpenAI::gpt-4o", description="默认模型")
     term_list_path: str = Field(default="db/term_list_v1.csv", description="术语表路径")
-    max_concurrent: int = Field(default=3, ge=1, le=20, description="最大并发数")
+    max_concurrent: int = Field(default=3, ge=1, le=777, description="最大并发数")
     max_retries: int = Field(default=3, ge=0, le=10, description="最大重试次数")
 
 

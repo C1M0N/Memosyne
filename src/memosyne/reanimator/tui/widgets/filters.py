@@ -228,7 +228,7 @@ class ConfigMaxConcurrentInput(Input):
         super().__init__(
             id="reanimator-config-max-concurrent",
             value=value or "3",
-            placeholder="并发数（1-20）",
+            placeholder="并发数（1-777）",
         )
         self.border_title = "并发数"
 

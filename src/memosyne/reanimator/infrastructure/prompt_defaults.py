@@ -6,7 +6,7 @@ prompt revision gets a fresh version so historical prompts are preserved
 instead of being overwritten in the database.
 """
 
-DEFAULT_PROMPT_VERSION = "0002"
+DEFAULT_PROMPT_VERSION = "0003"
 
 DEFAULT_PROMPTS: dict[str, str] = {
     "reanimator_system": """You are a bilingual terminologist. Return ONE JSON object with keys: IPA, POS, Rarity, DefEn, Example, FieldEn, EtymoEn, EtymoZh, Picture.
@@ -19,7 +19,7 @@ Quality & completeness
 - FieldEn: lowercase ASCII domain label (e.g., neuroscience, biology, medicine, math, physics). Use "general" only if no clear domain.
 - Rarity: "" or "RARE" (only when reputable sources mark the term as uncommon/technical).
 - EtymoEn & EtymoZh: parallel tokens with equal counts. Use space-separated morphemes and matching glosses; use underscores for multi-word glosses. Prefer transparent roots over empty values; give a best-effort segmentation even if approximate.
-- Picture: short English illustration hint; leave empty only when imagery is truly irrelevant.
+- Picture: ALWAYS empty string "" (do not generate, describe, or hint any imagery).
 - JSON only: no markdown, code fences, comments, or extra keys.""",
 
     "reanimator_guardrails": """Validation guardrails:

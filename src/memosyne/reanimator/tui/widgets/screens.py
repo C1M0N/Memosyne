@@ -627,8 +627,8 @@ class ReanimatorScreen(Screen):
                 self.logger.info("默认模型已更新为：%s", value)
             elif widget_id == "reanimator-config-max-concurrent":
                 num = int(value)
-                if num < 1 or num > 20:
-                    raise ValueError("并发数必须在1-20之间")
+                if num < 1 or num > 777:
+                    raise ValueError("并发数必须在1-777之间")
                 self._config_service.set_config("max_concurrent", str(num))
                 self.logger.info("并发数已更新为：%d", num)
             elif widget_id == "reanimator-config-max-retries":
